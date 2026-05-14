@@ -1,0 +1,9 @@
+#ifndef COZIP_VERSION_H
+#define COZIP_VERSION_H
+
+#define COZIP_VERSION_STRING "@PROJECT_VERSION@"
+
+#include "cozip.h"
+COZIP_API const char* cozip_version_string(void);
+
+#endif

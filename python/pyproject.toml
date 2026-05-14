@@ -1,0 +1,95 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cozip"
+dynamic = ["version"]
+description = "Python bindings to libcozip, the reference writer for the Cloud-Optimized ZIP (cozip) format."
+readme = { file = "../README.md", content-type = "text/markdown" }
+license = { file = "../LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+    "cffi>=1.16",
+    "pyarrow>=14",
+]
+authors = [
+    { name = "Cesar Aybar", email = "cesar@asterisk.coop" },
+    { name = "Julio Contreras", email = "julio.contreras@uv.es" },
+    { name = "Roy Yali", email = "ryali93@gmail.com" },
+]
+keywords = [
+    "zip",
+    "cloud-optimized",
+    "archive",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: System :: Archiving :: Compression",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://asterisk.coop/taco/cozip"
+Repository = "https://github.com/asterisk-labs/taco"
+Issues = "https://github.com/asterisk-labs/taco/issues"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "geopandas>=1.0",
+    "shapely>=2.0",
+]
+
+# Single source of truth for the version: cozip/VERSION.
+# Hatchling reads it at build time so wheel metadata and tag stay in sync.
+[tool.hatch.version]
+path = "../VERSION"
+pattern = "^(?P<version>.+)$"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cozip"]
+# Include the prebuilt native lib in the wheel.
+artifacts = ["cozip/_lib/*.dylib", "cozip/_lib/*.so", "cozip/_lib/*.dll"]
+
+# README and LICENSE live one directory up (shared with C/R/Julia bindings).
+# `force_include` copies them into the wheel root so PyPI / pip metadata
+# can find them.
+[tool.hatch.build.targets.wheel.force-include]
+"../README.md" = "README.md"
+"../LICENSE" = "LICENSE"
+
+# Mark the wheel as platform-specific (because of the bundled .dylib),
+# but ABI-agnostic (cffi ABI mode works on any Python 3.x).
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+# The sdist must be self-contained: it lives at cozip/python/ but
+# needs files from cozip/ (VERSION, README.md, LICENSE).
+[tool.hatch.build.targets.sdist]
+include = [
+    "cozip/**",
+    "tests/**",
+    "hatch_build.py",
+]
+
+[tool.hatch.build.targets.sdist.force-include]
+"../VERSION" = "VERSION"
+"../README.md" = "README.md"
+"../LICENSE" = "LICENSE"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

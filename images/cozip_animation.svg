@@ -1,0 +1,95 @@
+<svg width="100%" viewBox="0 0 680 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How cozip reads work">
+  <defs>
+    <marker id="ah-gold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#b58a00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="ah-magenta" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#492AE8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="ah-magenta-sm" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#492AE8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <style>
+    @keyframes coStep {
+      0%, 3% { opacity: 0; }
+      9%, 92% { opacity: 1; }
+      97%, 100% { opacity: 0; }
+    }
+    .anim { opacity: 1; }
+    @media (prefers-reduced-motion: no-preference) {
+      .anim { opacity: 0; animation: coStep 7s linear infinite; }
+    }
+    .d0 { animation-delay: 0s; }
+    .d1 { animation-delay: 0.7s; }
+    .d2 { animation-delay: 1.8s; }
+    .f0 { animation-delay: 2.6s; }
+    .f1 { animation-delay: 2.8s; }
+    .f2 { animation-delay: 3.0s; }
+    .f3 { animation-delay: 3.2s; }
+    .f4 { animation-delay: 3.4s; }
+    .f5 { animation-delay: 3.6s; }
+    .f6 { animation-delay: 3.8s; }
+    .f7 { animation-delay: 4.0s; }
+    .lbl { font-size: 14px; font-weight: 700; font-family: "League Spartan", system-ui, sans-serif; }
+    .sub { font-size: 12px; font-weight: 600; font-family: "League Spartan", system-ui, sans-serif; }
+    .byt { font-size: 13px; font-weight: 700; fill: #676762; font-family: "League Spartan", system-ui, sans-serif; }
+  </style>
+
+  <!-- Archive container -->
+  <rect x="270" y="65" width="140" height="525" rx="10" fill="#ffffff" stroke="#d6d0c3" stroke-width="1.5"/>
+
+  <!-- cozip index (gold) -->
+  <rect x="275" y="70" width="130" height="55" rx="6" fill="#fff0a5" stroke="#f7cc0b" stroke-width="1.5"/>
+  <text class="lbl" x="340" y="94" text-anchor="middle" fill="#7a5c00">cozip index</text>
+  <text class="sub" x="340" y="111" text-anchor="middle" fill="#8a6f00">~2 KiB</text>
+
+  <!-- DATA (neutral) -->
+  <rect x="275" y="130" width="130" height="345" fill="#f4f2ea" stroke="#d6d0c3" stroke-width="1"/>
+  <text class="lbl" x="340" y="298" text-anchor="middle" fill="#353532">DATA</text>
+  <text class="sub" x="340" y="315" text-anchor="middle" fill="#676762">3M files</text>
+
+  <!-- Manifest (magenta) -->
+  <rect x="275" y="480" width="130" height="55" rx="6" fill="#e8e3ff" stroke="#492ae8" stroke-width="1.5"/>
+  <text class="lbl" x="340" y="504" text-anchor="middle" fill="#2f1c95">__metadata__</text>
+  <text class="sub" x="340" y="520" text-anchor="middle" fill="#492ae8">Parquet manifest</text>
+
+  <!-- Central Directory (ignored, muted) -->
+  <rect x="275" y="540" width="130" height="45" rx="6" fill="none" stroke="#a8a69d" stroke-width="1" stroke-dasharray="5 3"/>
+  <text class="lbl" x="340" y="560" text-anchor="middle" fill="#8b8b83">Central Directory</text>
+  <text class="sub" x="340" y="576" text-anchor="middle" fill="#a0a0a0">(ignored)</text>
+
+  <!-- Byte markers -->
+  <text class="byt" x="420" y="78" text-anchor="start">0</text>
+  <text class="byt" x="420" y="592" text-anchor="start">EOF</text>
+
+  <!-- Step 1: First read (gold) -->
+  <g class="anim d0">
+    <line x1="200" y1="97" x2="269" y2="97" stroke="#f7cc0b" stroke-width="3" marker-end="url(#ah-gold)"/>
+    <text class="lbl" x="195" y="101" text-anchor="end" fill="#7a5c00">First read</text>
+  </g>
+
+  <!-- Step 2: points to manifest (magenta curved) -->
+  <g class="anim d1">
+    <path d="M 405 100 Q 510 100 510 305 Q 510 510 410 510" stroke="#492ae8" stroke-width="2" stroke-dasharray="5 3" fill="none" marker-end="url(#ah-magenta)"/>
+    <text class="sub" x="525" y="300" text-anchor="start" fill="#492ae8">points to</text>
+    <text class="sub" x="525" y="316" text-anchor="start" fill="#492ae8">manifest</text>
+  </g>
+
+  <!-- Step 3: Second read (magenta) -->
+  <g class="anim d2">
+    <text class="lbl" x="195" y="498" text-anchor="end" fill="#2f1c95">Second read</text>
+    <line x1="200" y1="507" x2="269" y2="507" stroke="#492ae8" stroke-width="3" marker-end="url(#ah-magenta)"/>
+    <text class="sub" x="195" y="522" text-anchor="end" fill="#492ae8">loads to memory</text>
+  </g>
+
+  <!-- Fan-out fetches (magenta dashed) -->
+  <g class="anim f0"><line x1="340" y1="479" x2="295" y2="165" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+  <g class="anim f1"><line x1="340" y1="479" x2="385" y2="195" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+  <g class="anim f2"><line x1="340" y1="479" x2="308" y2="235" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+  <g class="anim f3"><line x1="340" y1="479" x2="378" y2="270" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+  <g class="anim f4"><line x1="340" y1="479" x2="298" y2="335" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+  <g class="anim f5"><line x1="340" y1="479" x2="372" y2="375" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+  <g class="anim f6"><line x1="340" y1="479" x2="313" y2="410" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+  <g class="anim f7"><line x1="340" y1="479" x2="382" y2="445" stroke="#492AE8" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#ah-magenta-sm)"/></g>
+</svg>

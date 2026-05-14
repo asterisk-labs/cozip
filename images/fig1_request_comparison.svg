@@ -1,0 +1,52 @@
+<svg width="100%" viewBox="0 0 680 600" role="img" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Standard ZIP vs cozip access patterns</title>
+  <desc>A standard ZIP archive places its Central Directory at the end of the file, forcing every reader's first request to reach the tail. A cozip places a compact index at byte 0 so the reader starts at the beginning of the file.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M2 1 L8 5 L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <text x="190" y="40" text-anchor="middle" font-size="14" font-weight="500" fill="#2C2C2A">Standard ZIP</text>
+  <text x="490" y="40" text-anchor="middle" font-size="14" font-weight="500" fill="#2C2C2A">cozip</text>
+
+  <text x="72" y="82" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="11" fill="#888780">0</text>
+  <text x="72" y="558" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="11" fill="#888780">EOF</text>
+  <text x="608" y="82" text-anchor="start" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="11" fill="#888780">0</text>
+  <text x="608" y="558" text-anchor="start" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="11" fill="#888780">EOF</text>
+
+  <rect x="80" y="70" width="220" height="490" rx="8" fill="#FAFAF9" stroke="#888780" stroke-width="0.5"/>
+
+  <rect x="86" y="76" width="208" height="310" rx="4" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+  <text x="190" y="225" text-anchor="middle" font-size="14" font-weight="500" fill="#444441">DATA</text>
+  <text x="190" y="245" text-anchor="middle" font-size="12" fill="#5F5E5A">3M files</text>
+
+  <rect x="86" y="390" width="208" height="164" rx="4" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="190" y="442" text-anchor="middle" font-size="14" font-weight="500" fill="#501313">Central Directory</text>
+  <text x="190" y="478" text-anchor="middle" font-size="20" font-weight="500" fill="#A32D2D">~200 MB</text>
+  <text x="190" y="510" text-anchor="middle" font-size="12" fill="#791F1F">at the end of the file</text>
+
+  <text x="345" y="460" text-anchor="middle" font-size="12" font-weight="500" fill="#A32D2D">First read</text>
+  <line x1="348" y1="475" x2="302" y2="475" stroke="#A32D2D" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <rect x="380" y="70" width="220" height="490" rx="8" fill="#FAFAF9" stroke="#888780" stroke-width="0.5"/>
+
+  <rect x="386" y="76" width="208" height="50" rx="4" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+  <text x="490" y="98" text-anchor="middle" font-size="14" font-weight="500" fill="#085041">cozip index</text>
+  <text x="490" y="116" text-anchor="middle" font-size="12" fill="#0F6E56">~2 KiB</text>
+
+  <rect x="386" y="130" width="208" height="328" rx="4" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+  <text x="490" y="285" text-anchor="middle" font-size="14" font-weight="500" fill="#444441">DATA</text>
+  <text x="490" y="305" text-anchor="middle" font-size="12" fill="#5F5E5A">3M files</text>
+
+  <rect x="386" y="462" width="208" height="50" rx="4" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+  <text x="490" y="484" text-anchor="middle" font-size="14" font-weight="500" fill="#0C447C">Priority files</text>
+  <text x="490" y="502" text-anchor="middle" font-size="12" fill="#185FA5">e.g. metadata containers</text>
+
+  <rect x="386" y="516" width="208" height="38" rx="4" fill="none" stroke="#B4B2A9" stroke-width="0.5" stroke-dasharray="4,3"/>
+  <text x="490" y="540" text-anchor="middle" font-size="12" fill="#888780">Central Directory (ignored)</text>
+
+  <text x="335" y="88" text-anchor="middle" font-size="12" font-weight="500" fill="#0F6E56">First read</text>
+  <line x1="332" y1="100" x2="378" y2="100" stroke="#0F6E56" stroke-width="1" marker-end="url(#arrow)"/>
+</svg>

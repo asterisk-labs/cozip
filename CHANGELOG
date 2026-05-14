@@ -1,0 +1,276 @@
+# Changelog
+
+All notable changes to cozip are documented here. The same version stamp
+applies to every binding (C library, Python, R, Julia) since they share
+a single source of truth at `cozip/VERSION`.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
+
+
+
+## [2026.5.10] — 2026-05-10
+
+### Added
+
+- 3 contract tests in `cozip/julia/test/runtests.jl` for the new
+  `stage_metadata` return shape: NamedTuple form, `paths` row-aligned
+  with `metadata`, and end-to-end use of the returned `paths` in
+  `stage_create` without reconstructing them from the input table.
+- `INDEX_NAME`, `PADDING_NAME`, `METADATA_NAME` cached as module
+  constants in `cozip/julia/src/LibCozip.jl`. Populated once via
+  `ccall` in `__init__`, replacing per-call lookups in the validation
+  hot paths.
+
+### Changed
+
+- **Julia binding API**: `stage_metadata(table)` returns a NamedTuple
+  `(metadata, paths)` instead of just the metadata `DataFrame`.
+  `paths` is a `Vector{Tuple{String,String}}` row-aligned with
+  `metadata`, ready to feed into `stage_create`. Aligns the Julia
+  surface with Python and R, where the same three-layer writer API
+  has been the contract since 2026.5.1. Existing call sites that did
+  `md = stage_metadata(tbl)` switch to
+  `md = stage_metadata(tbl).metadata` or
+  `md, paths = stage_metadata(tbl)`.
+- `cozip/julia/src/Writer.jl`: `create` consumes `(metadata, paths)`
+  directly and no longer reconstructs paths from the input table.
+- `cozip/julia/src/Writer.jl`: `_validate_parquet_values` vectorized
+  via `findfirst(.!=)`, replacing the per-row loop.
+- `.github/workflows/release.yml`: header narrative and per-job
+  descriptions stripped. WHY-comments preserved (BUILD_SHARED_LIBS
+  rationale, Sequoia codesign, manylinux quirks, symbol-leak
+  detection, prerelease detection). PyPI Trusted Publisher config
+  moved next to the `publish-pypi` job.
+
+### Removed
+
+- Dead enum redefinitions from `cozip/julia/src/LibCozip.jl`:
+  `COZIP_OK`, `COZIP_ERR_INVALID_LFH`, `COZIP_ERR_ARCHIVE_TOO_SMALL`,
+  `COZIP_ERR_INVALID_ARGUMENT`, `COZIP_ERR_BUFFER_TOO_SMALL`,
+  `COZIP_ERR_IO`, `COZIP_PROFILE_NONE`, `COZIP_PROFILE_FLAT`,
+  `COZIP_PROFILE_TACO`. None were referenced by the binding (status
+  checks compared against literal `0`; the FLAT profile selector is
+  set internally by `cozip_write_flat`). `COZIP_SOURCE_PATH`,
+  `COZIP_SOURCE_BUFFER`, and `COZIP_ERROR_MESSAGE_SIZE` remain.
+
+## [2026.5.2] — 2026-05-02
+
+### Added
+
+- `core/libzip/` and `core/zlib/` — vendored upstream sources
+  (libzip 1.11.4, zlib 1.3.1) with hand-written cross-platform
+  `config.h` and minimal per-library `CMakeLists.txt`. No more
+  `FetchContent`, no network during build.
+- `cozip_version_string()` declaration in `core/cozip.h` (the
+  function was implemented but never declared, breaking strict
+  consumers).
+- `make wasm` target — builds `cozip.{js,wasm}` via Emscripten into
+  `javascript/wasm/`. Confirms portability to browser/Node/webR
+  runtimes; outputs are gitignored, regenerated on demand.
+- `cozip/javascript/` placeholder directory with a README documenting
+  the JS-binding pathway. No public API yet — that work is deferred
+  until a concrete use case appears.
+- `r/src/libzip/` and `r/src/zlib/` — vendored mirrors of the
+  upstream sources, kept in sync with `core/` by `make sync-c`.
+  The R package now compiles from source on Linux, macOS, Windows
+  (Rtools45), and WebAssembly (webR), with no external libraries
+  required at install time.
+- `r/LICENSE.note` — BSD-3-Clause (libzip) + zlib license attribution
+  for the vendored third-party code.
+- `.gitattributes` at the repo root marks the four vendored trees as
+  `linguist-vendored` so they don't dominate the GitHub language
+  breakdown.
+
+### Changed
+
+- `core/CMakeLists.txt` rewritten — uses `add_subdirectory(zlib)` and
+  `add_subdirectory(libzip)` against the vendored sources. Visibility
+  rules tightened so the final `cozip.dylib`/`.so`/`.dll` exports
+  exactly the 8 public `cozip_*` functions and nothing else.
+- `Makefile`: `BUILD_DIR` moved from `build/lib/` to `core/build/`,
+  matching the principle that the C build artifacts belong inside
+  `core/`.
+- `release.yml` rewritten without FetchContent assumptions, ~3 min
+  faster per platform. Added a symbol-isolation check that fails the
+  build if any non-`cozip_*` symbol leaks into the shared library.
+- `r/DESCRIPTION`: drops `SystemRequirements: libzip` (no longer
+  needed) and adds `SystemRequirements: GNU make` (required by the
+  new `Makevars`).
+- `r/src/Makevars` and `r/src/Makevars.win` — rewritten. No
+  `pkg-config`, no `-lzip`, no `-lz`. Builds libzip + zlib + cozip
+  + glue from the vendored sources via `$(wildcard …)` plus a small
+  exclusion list per platform. `Makevars.win` adds `-ladvapi32` for
+  libzip's Win32 RNG backend.
+- `Makefile` extended: `sync-c` now mirrors `core/{libzip,zlib}/`
+  into `r/src/` via `rsync -a --delete`; `sync-check` validates the
+  trees with `diff -r -q`; `r-clean` recursively deletes `.o` files.
+- `.pre-commit-config.yaml` regex extended to fire `sync-check` when
+  any file under `core/{libzip,zlib}/` or `r/src/{libzip,zlib}/`
+  changes.
+
+### Removed
+
+- `core/cozip.c`: dead helper `get_u64()` (never called by any code
+  path; would have been needed only if the writer parsed ZIP64 LFH
+  extras, which it doesn't).
+- `r/configure` — the package no longer detects a system libzip,
+  so there is nothing left to configure.
+
+### Fixed
+
+- Final `.dylib`/`.so` no longer re-exports libzip and zlib symbols.
+  The previous build leaked hundreds of `_zip_*`, `_inflate_*`, and
+  `__tr_*` symbols into the cozip ABI, risking clashes with consumers
+  that linked a different libzip through another path.
+
+## [2026.5.1] — 2026-05-01
+
+### Added
+
+- R binding (`cozip/r/`) with FLAT-profile `create()` and low-level
+  `.Call` shims to `cozip_plan` and `cozip_finalize`. Vendored copies
+  of `cozip.{c,h}` in `r/src/` are kept in sync with `core/` by
+  pre-commit, not symlinks (CRAN/Windows refuse symlinks).
+- `Makevars` generates `r/src/version.h` at compile time from
+  `$(PACKAGE_VERSION)` (which R extracts from `DESCRIPTION`). Header
+  never lives in git.
+- `.pre-commit-config.yaml` runs `make sync-check` whenever `VERSION`,
+  `r/DESCRIPTION`, or `core`/`r/src` source files change. Fail-mode,
+  no auto-fix — divergence must be resolved consciously by running
+  `make sync`.
+- `cozip/Makefile` gets `sync-version`, `sync-c`, `sync-check`, plus
+  an `all` target that runs `sync + lib + py-install + r-build` for
+  full pre-push validation.
+- R binding is auto-built by r-universe from the `cozip/r` subdirectory
+  via `packages.json`; cross-platform binaries (Linux + macOS + Windows)
+  available at `https://asterisk-labs.r-universe.dev`.
+
+### Changed
+
+- `core/version.h.in` simplified to emit only `COZIP_VERSION_STRING`.
+  `MAJOR`/`MINOR`/`PATCH` integer macros removed — nothing in the
+  codebase consumed them.
+- Python `cozip.__version_c__` removed from the public API. With
+  coordinated releases it always equals `__version__`; keeping both
+  was misleading. `__version__` remains.
+- Python `__all__` now includes `read` (was missing while `create`
+  was present — inconsistent).
+- Python `_resolve_lib_path()` no longer recursively scans `build/`
+  directories as a fallback. Could silently load stale `.so` files
+  from previous builds; `make py-install` now reliably populates
+  `_lib/` so the canonical path is enough.
+- `cozip/Makefile` reads version from `cozip/VERSION` directly.
+  Previous version parsed `pyproject.toml`, which now uses dynamic
+  version, so the regex returned empty and `make sdist` produced
+  `cozip-source-.tar.gz`.
+- CI architecture collapsed: `ci.yml` deleted, single `release.yml`
+  triggered only by version tags. Removed `reuse-lib` (downloading
+  libcozip from previous releases when `core/` was unchanged) — the
+  bookkeeping wasn't worth ~5 min saved on releases that happen
+  every few weeks.
+
+### Removed
+
+- `tools/sync_version.sh` — replaced by `make sync-version`.
+- `tools/gen-version.sh` — replaced by inline generation in
+  `Makevars`.
+- Symlinks from `r/src/cozip.{c,h}` to `core/` — CRAN rejects them
+  and they break Windows builds. Replaced with physical copies kept
+  in sync by pre-commit.
+- `r/src/version.h` from git — generated at compile time, ignored.
+- `R CMD check` job from CI — r-universe runs the canonical
+  cross-platform check on every push.
+
+### Fixed
+
+- `Makevars` now correctly orders the build: `version.h` is generated
+  before any `.c` is compiled, and both `cozip.o` and `cozip_glue.o`
+  are listed in `OBJECTS` so neither is silently skipped.
+
+## [2026.4.30] — 2026-04-30
+
+### Added
+
+- `cozip/VERSION` as the single source of truth for the version string,
+  read at build time by every binding. CMake parses it before
+  `project()`; hatchling reads it via `[tool.hatch.version]` with
+  `path = "../VERSION"`; future R and Julia bindings will read the
+  same file via their own configure scripts.
+- `cozip_version_string()` C API. Returns `COZIP_VERSION_STRING`
+  populated from `cozip/VERSION` at compile time. Useful for FFI
+  bindings to verify the loaded library matches their expectations.
+- Generated header `cozip/version.h` with `COZIP_VERSION_MAJOR`,
+  `COZIP_VERSION_MINOR`, `COZIP_VERSION_PATCH`, and
+  `COZIP_VERSION_STRING` macros.
+- Python: `cozip.__version_c__` attribute exposes the version reported
+  by the loaded `libcozip` binary (mostly for debugging — `__version__`
+  remains the canonical version users care about).
+- Python: PyPI metadata — `readme` rendered on the project page,
+  `license = MIT`, authors (Roy Yali, Cesar Aybar, Julio Contreras),
+  keywords, classifiers, and project URLs.
+- CI: `.github/workflows/release.yml` — tag-driven release pipeline
+  with libcozip reuse. When `cozip/core/**` is unchanged since the
+  previous tag, libcozip binaries are downloaded from the previous
+  GitHub Release instead of recompiled, saving ~12 min per release
+  for Python-only patches.
+- CI: `.github/workflows/ci.yml` — path-based gating per binding via
+  `dorny/paths-filter`. PRs touching only Python skip the libcozip
+  matrix build and pull the binary from the latest published release.
+
+### Changed
+
+- Python wheels are now tagged `py3-none-<platform>` instead of
+  `cp312-cp312-<platform>`. Because cozip uses cffi in ABI mode
+  (`ffi.dlopen` at runtime) the wheel is genuinely Python-version
+  agnostic, so 4 wheels cover Python 3.10–3.14 across all platforms
+  rather than requiring 16 separate builds.
+- macOS wheel platform tag relaxed from `macosx_14_0_arm64` to
+  `macosx_11_0_universal2`, matching `CMAKE_OSX_DEPLOYMENT_TARGET=11.0`
+  and the universal binary content. Intel Macs on macOS 11+ now also
+  receive a wheel.
+- Linux wheel platform tag now `manylinux_2_28_<arch>` (via
+  `auditwheel repair`). PyPI rejects the bare `linux_<arch>` tag that
+  hatchling produces by default.
+- `pyproject.toml` migrated from `version = "..."` static to
+  `dynamic = ["version"]` reading from `../VERSION`.
+- `cozip/core/CMakeLists.txt` no longer hardcodes `VERSION 1.0.0`.
+- CI architecture: `pywheels.yml` removed; its responsibilities are
+  split between `ci.yml` (validation, no publish) and `release.yml`
+  (build + publish, tag-only).
+
+### Fixed
+
+- PyPI upload no longer emits `long_description missing` warnings.
+  Both `README.md` and `LICENSE` are force-included in the wheel root
+  and the sdist.
+- The sdist is now self-contained: `../VERSION`, `../README.md`, and
+  `../LICENSE` are absorbed into the archive root via
+  `[tool.hatch.build.targets.sdist.force-include]`.
+- Previous `ci.yml` referenced `cat VERSION` from the repo root, which
+  silently fell back to `0.0.0-dev` since `VERSION` lives at
+  `cozip/VERSION`. The new `release.yml` reads `cozip/VERSION`.
+
+## [2026.4.29] — 2026-04-29
+
+### Added
+
+- First public release.
+- `libcozip` C library implementing the Cloud-Optimized ZIP v1.0-draft.4
+  specification: `__cozip__` index entry at byte 0, FNV-1a 64 integrity
+  hash at LFH bytes 43–50, profiles `NONE`, `FLAT`, and `TACO`.
+- Python bindings (`cozip` on PyPI) with cffi ABI-mode loading of the
+  bundled native library. Public API: `cozip.create()`, `cozip.lib`,
+  `cozip.ffi`, `CozipError`.
+- Cross-platform builds: Linux x86_64 + aarch64 (manylinux_2_28),
+  macOS universal2, Windows x86_64.
+- Vendored zlib v1.3.1 and libzip v1.11.4 via FetchContent for a
+  self-contained shared library that depends only on libc.
+- GitHub Release with `libcozip-<version>-<platform>.{tar.gz,zip}`
+  archives for C-standalone consumers.
+
+[Unreleased]: https://github.com/asterisk-labs/taco/compare/v2026.5.2...HEAD
+[2026.5.2]: https://github.com/asterisk-labs/taco/compare/v2026.5.1...v2026.5.2
+[2026.5.1]: https://github.com/asterisk-labs/taco/compare/v2026.4.30...v2026.5.1
+[2026.4.30]: https://github.com/asterisk-labs/taco/compare/v2026.4.29...v2026.4.30
+[2026.4.29]: https://github.com/asterisk-labs/taco/releases/tag/v2026.4.29

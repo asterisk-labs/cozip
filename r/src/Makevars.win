@@ -1,0 +1,43 @@
+# r/src/Makevars.win — Windows build (Rtools45 / MinGW-w64)
+#
+# Same logic as r/src/Makevars: compile libcozip + libzip 1.11.4 +
+# zlib 1.3.1 from vendored sources. The split is on which libzip
+# backend files are platform-specific.
+#
+#   On Windows: include zip_source_file_win32*.c + zip_random_win32.c.
+#               Exclude the Unix-only zip_random_unix.c and
+#               zip_source_file_stdio_named.c.
+#   PKG_LIBS:   -ladvapi32 for SystemFunction036 (RtlGenRandom),
+#               used by libzip's Win32 RNG backend.
+
+PKG_CPPFLAGS = -DCOZIP_BUILDING -I. -Ilibzip -Izlib -DHAVE_CONFIG_H \
+               -DWIN32_LEAN_AND_MEAN
+PKG_LIBS     = -ladvapi32
+
+# Unix-only files in libzip; excluded from the Windows build. The
+# Win32 counterparts (zip_random_win32.c, zip_source_file_win32*.c)
+# stay in.
+LIBZIP_EXCLUDE = \
+    libzip/zip_random_unix.c \
+    libzip/zip_source_file_stdio_named.c
+
+LIBZIP_C = $(filter-out $(LIBZIP_EXCLUDE), $(wildcard libzip/*.c))
+ZLIB_C   = $(wildcard zlib/*.c)
+
+OBJECTS = \
+    cozip.o \
+    cozip_glue.o \
+    $(LIBZIP_C:.c=.o) \
+    $(ZLIB_C:.c=.o)
+
+all: $(SHLIB)
+
+# Same as Unix: version.h is generated from $(PACKAGE_VERSION),
+# only cozip.c includes it.
+cozip.o: version.h
+
+version.h:
+	@echo '#define COZIP_VERSION_STRING "$(PACKAGE_VERSION)"' > $@
+
+clean:
+	rm -f $(OBJECTS) version.h $(SHLIB)

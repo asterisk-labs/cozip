@@ -1,0 +1,30 @@
+Package: cozip
+Type: Package
+Title: Cloud-Optimized ZIP — Open a ZIP Like a Table
+Version: 2026.5.13
+Date: 2026-04-30
+Authors@R: c(
+    person("Cesar", "Aybar", email = "cesar@asterisk.coop", role = c("aut", "cre")),
+    person("Roy", "Yali", email = "ryali93@gmail.com", role = "aut"),
+    person("Julio", "Contreras", email = "julio.contreras@uv.es", role = "aut"))
+Description: R bindings to libcozip, the reference writer for the
+    Cloud-Optimized ZIP (cozip) format. 
+License: MIT + file LICENSE
+URL: https://asterisk.coop/taco/cozip, https://github.com/asterisk-labs/taco
+BugReports: https://github.com/asterisk-labs/taco/issues
+Encoding: UTF-8
+Language: en-US
+Depends:
+    R (>= 4.1)
+Imports:
+    arrow (>= 14.0.0),
+    bit64
+Suggests:
+    testthat (>= 3.0.0),
+    withr,
+    sf,
+    geoarrow
+SystemRequirements: GNU make
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3

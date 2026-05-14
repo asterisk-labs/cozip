@@ -1,0 +1,50 @@
+# r/src/Makevars — Unix build (Linux + macOS + WASM via webR)
+#
+# Compiles libcozip + libzip 1.11.4 + zlib 1.3.1 from vendored
+# sources. No system libzip-dev / libz-dev required.
+#
+# Layout:
+#   r/src/cozip.c, cozip.h        ← mirrored from core/ by `make sync-c`
+#   r/src/cozip_glue.c            ← R bindings (.Call shims)
+#   r/src/libzip/                 ← vendored libzip 1.11.4
+#   r/src/zlib/                   ← vendored zlib 1.3.1
+#
+# Sister file: Makevars.win — same logic with Windows-specific
+# libzip sources and -ladvapi32 for the Win32 RNG.
+
+PKG_CPPFLAGS = -DCOZIP_BUILDING -I. -Ilibzip -Izlib -DHAVE_CONFIG_H
+PKG_LIBS     =
+
+# libzip ships several files for backends we don't enable (Win32
+# I/O, Win32 RNG). Excluded from the Unix build — the Unix
+# counterparts (zip_random_unix.c, zip_source_file_stdio_named.c)
+# stay in.
+LIBZIP_EXCLUDE = \
+    libzip/zip_random_win32.c \
+    libzip/zip_source_file_win32.c \
+    libzip/zip_source_file_win32_ansi.c \
+    libzip/zip_source_file_win32_named.c \
+    libzip/zip_source_file_win32_utf16.c \
+    libzip/zip_source_file_win32_utf8.c
+
+LIBZIP_C = $(filter-out $(LIBZIP_EXCLUDE), $(wildcard libzip/*.c))
+ZLIB_C   = $(wildcard zlib/*.c)
+
+OBJECTS = \
+    cozip.o \
+    cozip_glue.o \
+    $(LIBZIP_C:.c=.o) \
+    $(ZLIB_C:.c=.o)
+
+all: $(SHLIB)
+
+# version.h is generated from $(PACKAGE_VERSION) (which R reads
+# from DESCRIPTION). Only cozip.c includes it, so only cozip.o
+# needs the dependency.
+cozip.o: version.h
+
+version.h:
+	@echo '#define COZIP_VERSION_STRING "$(PACKAGE_VERSION)"' > $@
+
+clean:
+	rm -f $(OBJECTS) version.h $(SHLIB)

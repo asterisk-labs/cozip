@@ -1,0 +1,1151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="cozip adds a Parquet-powered table of contents to ordinary ZIP archives. Filter, query, and jump straight to the bytes you need with one byte-range request.">
+  <meta name="theme-color" content="#492AE8">
+  <meta property="og:title" content="cozip — Open a ZIP like a table">
+  <meta property="og:description" content="A Parquet table of contents at the heart of every ZIP. Random access, queryable manifest, 100% ZIP-spec compliant.">
+  <meta property="og:type" content="website">
+  <title>cozip — Open a ZIP like a table</title>
+  <link rel="icon" href="images/cozip_logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    /* tokens */
+    :root {
+      color-scheme: light;
+      --bg: #fafaf7;
+      --surface: #ffffff;
+      --surface-soft: #f4f2ea;
+      --ink: #0a0a0a;
+      --ink-2: #353532;
+      --ink-3: #676762;
+      --ink-4: #8b8b83;
+      --line: #e5e1d7;
+      --line-2: #d6d0c3;
+      --gold: #f7cc0b;
+      --gold-soft: #fff0a5;
+      --magenta: #492ae8;
+      --magenta-2: #6d54ff;
+      --code-bg: #0f0d1f;
+      --code-fg: #f4f3ee;
+      --shadow-sm: 0 12px 30px rgba(30, 47, 85, 0.08);
+      --shadow-md: 0 22px 60px rgba(30, 47, 85, 0.14);
+      --shadow-lg: 0 36px 100px rgba(30, 47, 85, 0.22);
+      --radius-sm: 14px;
+      --radius-md: 20px;
+      --radius-lg: 28px;
+      --container: 1160px;
+      --nav-height: 92px;
+    }
+
+    @view-transition { navigation: auto; }
+
+    * { box-sizing: border-box; }
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: calc(var(--nav-height) + 28px);
+      text-size-adjust: 100%;
+    }
+
+    body {
+      min-width: 320px;
+      margin: 0;
+      font-family: "League Spartan", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 18px;
+      font-weight: 400;
+      line-height: 1.55;
+      color: var(--ink-2);
+      background:
+        radial-gradient(circle at 78% 8%, rgba(73, 42, 232, 0.10), transparent 38rem),
+        var(--bg);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(30, 47, 85, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 47, 85, 0.03) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 82%);
+    }
+
+    a { color: inherit; text-decoration: none; }
+    a:not(.btn):not(.brand):not(.nav-link):not(.lang-card):not(.footer-brand):not(.footer-link) {
+      color: var(--magenta);
+      text-decoration: underline;
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    svg, img { display: block; max-width: 100%; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    ::selection { color: var(--ink); background: rgba(247, 204, 11, 0.55); }
+    :focus-visible {
+      outline: 3px solid rgba(73, 42, 232, 0.36);
+      outline-offset: 4px;
+      border-radius: 10px;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: 14px; left: 14px;
+      z-index: 1000;
+      transform: translateY(-160%);
+      padding: 10px 14px;
+      color: var(--surface);
+      background: var(--ink);
+      border-radius: 999px;
+      transition: transform 160ms ease;
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .container {
+      width: min(100% - clamp(36px, 6vw, 72px), var(--container));
+      margin: 0 auto;
+    }
+
+    /* header */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(250, 250, 247, 0.82);
+      border-bottom: 1px solid rgba(229, 225, 215, 0.86);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .nav {
+      min-height: var(--nav-height);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ink);
+      font-size: 42px;
+      font-weight: 900;
+      letter-spacing: -0.05em;
+      white-space: nowrap;
+    }
+    .brand img {
+      width: 60px;
+      height: 60px;
+      flex: 0 0 auto;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      color: var(--ink-2);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      transition: color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+    .nav-link:hover {
+      color: var(--magenta);
+      background: rgba(73, 42, 232, 0.08);
+      transform: translateY(-1px);
+    }
+    .nav-link svg { width: 17px; height: 17px; }
+    .nav-link.primary {
+      color: var(--surface);
+      background: var(--ink);
+      box-shadow: 0 10px 24px rgba(10, 10, 10, 0.12);
+    }
+    .nav-link.primary:hover {
+      color: var(--surface);
+      background: var(--magenta);
+    }
+
+    main { isolation: isolate; }
+
+    /* hero */
+    .hero {
+      position: relative;
+      padding: clamp(72px, 10vw, 128px) 0 clamp(66px, 8vw, 110px);
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+      gap: clamp(44px, 7vw, 84px);
+      align-items: center;
+    }
+
+    .hero-title {
+      max-width: 780px;
+      margin: 0;
+      color: var(--ink);
+      font-size: clamp(54px, 8.4vw, 104px);
+      font-weight: 900;
+      line-height: 0.9;
+      letter-spacing: -0.065em;
+    }
+    .hero-title .highlight {
+      position: relative;
+      display: inline-block;
+      padding: 0 0.08em;
+      color: var(--ink);
+      z-index: 0;
+    }
+    .hero-title .highlight::before {
+      content: "";
+      position: absolute;
+      inset: 0.56em -0.03em 0.04em;
+      z-index: -1;
+      background: linear-gradient(90deg, var(--gold), var(--gold-soft));
+      border-radius: 0.12em;
+      transform: rotate(-1.2deg);
+    }
+
+    .hero-copy {
+      max-width: 620px;
+      margin: 26px 0 0;
+      color: var(--ink-2);
+      font-size: clamp(20px, 2vw, 26px);
+      line-height: 1.22;
+      letter-spacing: -0.025em;
+    }
+    .hero-copy strong { color: var(--ink); font-weight: 800; }
+
+    .hero-copy .mark {
+      position: relative;
+      display: inline-block;
+      padding: 0 0.12em;
+      color: var(--ink);
+      font-weight: 800;
+      z-index: 0;
+      white-space: nowrap;
+    }
+    .hero-copy .mark::before {
+      content: "";
+      position: absolute;
+      inset: 0.48em -0.04em 0.04em;
+      z-index: -1;
+      border-radius: 0.14em;
+      transform: rotate(-1.3deg);
+      background: linear-gradient(90deg, rgba(73, 42, 232, 0.38), rgba(109, 84, 255, 0.42));
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .hero-visual { position: relative; min-width: 0; }
+
+    /* buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 14px 22px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      font-weight: 900;
+      letter-spacing: -0.01em;
+      transition: transform 170ms ease, box-shadow 170ms ease, background 170ms ease, border-color 170ms ease;
+    }
+    .btn:hover { transform: translateY(-2px); }
+    .btn svg { width: 18px; height: 18px; }
+    .btn-primary {
+      color: #fff;
+      background: var(--magenta);
+      box-shadow: 0 18px 35px rgba(73, 42, 232, 0.27);
+    }
+    .btn-primary:hover {
+      background: #351ec8;
+      box-shadow: 0 24px 48px rgba(73, 42, 232, 0.32);
+    }
+    .btn-secondary {
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.76);
+      border-color: rgba(30, 47, 85, 0.14);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-secondary:hover {
+      border-color: rgba(73, 42, 232, 0.32);
+      background: #fff;
+    }
+
+    /* demo card */
+    .demo-card {
+      overflow: hidden;
+      color: var(--code-fg);
+      background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), transparent 30%), var(--code-bg);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+    }
+    .demo-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.045);
+    }
+    .window-dots { display: flex; gap: 7px; }
+    .window-dots span {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.28);
+    }
+    .demo-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(244, 243, 238, 0.92);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+    .demo-title svg { width: 17px; height: 17px; color: var(--gold); }
+    .demo-body { padding: clamp(22px, 4vw, 32px); }
+    .demo-query {
+      margin: 0 0 22px;
+      white-space: pre-wrap;
+      color: rgba(244, 243, 238, 0.94);
+      font-size: clamp(13px, 1.4vw, 15px);
+      line-height: 1.7;
+    }
+    .demo-query .kw    { color: #c4b5fd; }
+    .demo-query .str   { color: #a9ffa6; }
+    .demo-query .num   { color: #fbbf24; }
+    .demo-query .muted { color: #7b7a92; }
+
+    .result-table {
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+    .result-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) 0.7fr 0.7fr;
+      gap: 12px;
+      align-items: center;
+      padding: 11px 14px;
+      color: rgba(244, 243, 238, 0.88);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    .result-row:first-child {
+      border-top: 0;
+      color: rgba(244, 243, 238, 0.62);
+      background: rgba(255, 255, 255, 0.04);
+      font-family: "League Spartan", system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .result-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .demo-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .metric {
+      padding: 13px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.045);
+    }
+    .metric strong {
+      display: block;
+      color: #fff;
+      font-size: 22px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .metric span {
+      display: block;
+      margin-top: 6px;
+      color: rgba(244, 243, 238, 0.64);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    /* sections */
+    .section {
+      padding: clamp(72px, 9vw, 116px) 0;
+      border-top: 1px solid rgba(229, 225, 215, 0.78);
+    }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.85fr) minmax(280px, 0.55fr);
+      gap: clamp(24px, 5vw, 64px);
+      align-items: end;
+      margin-bottom: clamp(30px, 5vw, 54px);
+    }
+    .section-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 14px;
+      color: var(--ink-2);
+      font-size: 15px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .section-kicker::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--magenta);
+      box-shadow: 0 0 0 4px rgba(73, 42, 232, 0.14);
+      flex: 0 0 auto;
+    }
+    .section-title {
+      margin: 0;
+      color: var(--ink);
+      font-size: clamp(40px, 5vw, 60px);
+      font-weight: 900;
+      line-height: 0.96;
+      letter-spacing: -0.055em;
+    }
+    .section-copy {
+      margin: 0;
+      color: var(--ink-3);
+      font-size: clamp(18px, 1.8vw, 21px);
+      line-height: 1.38;
+      letter-spacing: -0.015em;
+    }
+    .section-sub {
+      max-width: 760px;
+      margin: 20px 0 0;
+      color: var(--ink-2);
+      font-size: clamp(18px, 1.6vw, 22px);
+      line-height: 1.38;
+      letter-spacing: -0.015em;
+    }
+    .section-sub strong { color: var(--ink); font-weight: 800; }
+
+    /* feature grid */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .feature-card {
+      position: relative;
+      min-width: 0;
+      padding: clamp(24px, 3vw, 32px);
+      background: rgba(255, 255, 255, 0.74);
+      border: 1px solid rgba(30, 47, 85, 0.1);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(73, 42, 232, 0.30);
+      box-shadow: var(--shadow-md);
+    }
+    .feature-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 44px; height: 44px;
+      margin-bottom: 22px;
+      color: var(--surface);
+      background: var(--magenta);
+      border-radius: 14px;
+      box-shadow: 0 16px 28px rgba(73, 42, 232, 0.25);
+    }
+    .feature-icon svg { width: 22px; height: 22px; }
+    .feature-card h3 {
+      margin: 0 0 12px;
+      color: var(--ink);
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.035em;
+    }
+    .feature-card p {
+      margin: 0;
+      color: var(--ink-3);
+      font-size: 17px;
+      line-height: 1.48;
+      letter-spacing: -0.01em;
+    }
+
+    /* flow card */
+    .flow-card {
+      display: grid;
+      grid-template-columns: minmax(280px, 1.25fr) minmax(0, 1fr);
+      align-items: stretch;
+      overflow: hidden;
+      border: 1px solid rgba(30, 47, 85, 0.1);
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: var(--shadow-md);
+    }
+
+    .flow-visual {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(20px, 2.5vw, 32px);
+      border-right: 1px solid rgba(30, 47, 85, 0.08);
+      background:
+        linear-gradient(135deg, rgba(73, 42, 232, 0.08), transparent 45%),
+        linear-gradient(45deg, rgba(247, 204, 11, 0.16), transparent 48%),
+        var(--surface);
+    }
+    .flow-visual img {
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .flow-steps {
+      counter-reset: flow;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      gap: clamp(22px, 3vw, 30px);
+      margin: 0;
+      padding: clamp(36px, 5vw, 52px) clamp(28px, 4vw, 44px);
+      list-style: none;
+    }
+    .flow-steps::before {
+      content: "";
+      position: absolute;
+      left: calc(clamp(28px, 4vw, 44px) + 25px);
+      top: clamp(72px, 8vw, 96px);
+      bottom: clamp(72px, 8vw, 96px);
+      width: 2px;
+      background: var(--magenta);
+      opacity: 0.15;
+    }
+    .flow-step {
+      counter-increment: flow;
+      position: relative;
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr);
+      column-gap: 20px;
+      row-gap: 0;
+      align-items: start;
+    }
+    .flow-step::before {
+      content: counter(flow);
+      grid-column: 1;
+      grid-row: 1 / span 2;
+      display: grid;
+      place-items: center;
+      width: 52px;
+      height: 52px;
+      color: #fff;
+      background: var(--magenta);
+      border-radius: 50%;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      box-shadow: 0 12px 26px rgba(73, 42, 232, 0.28);
+    }
+    .flow-step strong {
+      grid-column: 2;
+      display: block;
+      margin: 6px 0 4px;
+      color: var(--ink);
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.035em;
+    }
+    .flow-step span {
+      grid-column: 2;
+      display: block;
+      color: var(--ink-3);
+      font-size: 16px;
+      line-height: 1.42;
+    }
+
+    /* language cards */
+    .lang-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .lang-card {
+      position: relative;
+      min-width: 0;
+      min-height: 178px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.74);
+      border: 1px solid rgba(30, 47, 85, 0.1);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+    .lang-card:hover {
+      transform: translateY(-4px);
+      background: #fff;
+      border-color: rgba(73, 42, 232, 0.32);
+      box-shadow: var(--shadow-md);
+    }
+    .lang-card::after {
+      content: "";
+      position: absolute;
+      right: -26px; top: -28px;
+      width: 108px; height: 108px;
+      border-radius: 50%;
+      background: rgba(73, 42, 232, 0.08);
+      transition: transform 180ms ease, background 180ms ease;
+    }
+    .lang-card:hover::after {
+      transform: scale(1.18);
+      background: rgba(73, 42, 232, 0.12);
+    }
+    .lang-top {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .lang-icon { width: 48px; height: 48px; color: var(--magenta); flex: 0 0 auto; }
+    .lang-arrow {
+      width: 18px; height: 18px;
+      color: var(--ink-4);
+      transition: transform 180ms ease, color 180ms ease;
+    }
+    .lang-card:hover .lang-arrow {
+      color: var(--magenta);
+      transform: translate(3px, -3px);
+    }
+    .lang-name {
+      position: relative;
+      z-index: 1;
+      display: block;
+      margin-top: 18px;
+      color: var(--ink);
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: -0.035em;
+    }
+    .lang-cmd {
+      position: relative;
+      z-index: 1;
+      display: block;
+      width: fit-content;
+      max-width: 100%;
+      margin-top: 9px;
+      padding: 8px 10px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--ink-3);
+      background: var(--surface-soft);
+      border-radius: 999px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    /* footer */
+    .site-footer {
+      padding: 64px 0 56px;
+      border-top: 1px solid rgba(229, 225, 215, 0.78);
+      background: rgba(255, 255, 255, 0.4);
+    }
+    .footer-top {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      align-items: start;
+      gap: clamp(28px, 5vw, 64px);
+      padding-bottom: 36px;
+      border-bottom: 1px solid rgba(229, 225, 215, 0.78);
+    }
+    .footer-brand-block {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 360px;
+    }
+    .footer-brand-block .brand {
+      font-size: 48px;
+      gap: 14px;
+    }
+    .footer-brand-block .brand img { width: 64px; height: 64px; }
+    .footer-tagline {
+      margin: 0;
+      color: var(--ink-3);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .footer-cols {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(140px, auto));
+      gap: 36px 56px;
+    }
+    .footer-col h4 {
+      margin: 0 0 14px;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .footer-col ul {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .footer-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ink-2);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      transition: color 160ms ease;
+    }
+    .footer-link:hover { color: var(--magenta); }
+    .footer-link svg { width: 13px; height: 13px; opacity: 0.6; }
+
+    .footer-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      padding-top: 28px;
+    }
+    .footer-by {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink-3);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.005em;
+    }
+    .footer-heart {
+      width: 16px;
+      height: 16px;
+      color: var(--magenta);
+      flex: 0 0 auto;
+      transform-origin: center;
+      animation: heartbeat 2.4s ease-in-out infinite;
+      transition: color 200ms ease;
+    }
+    .footer-by:hover .footer-heart { color: #e0245e; }
+    @keyframes heartbeat {
+      0%, 55%, 100% { transform: scale(1); }
+      10%          { transform: scale(1.22); }
+      20%          { transform: scale(1); }
+      30%          { transform: scale(1.14); }
+      40%          { transform: scale(1); }
+    }
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .footer-brand img { height: 22px; width: auto; }
+    .footer-brand:hover { opacity: 0.75; transform: translateY(-1px); }
+    .footer-meta {
+      color: var(--ink-4);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.005em;
+    }
+
+    /* responsive */
+    @media (max-width: 980px) {
+      :root { --nav-height: 88px; }
+      .nav {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px 0;
+      }
+      .nav-links { justify-content: flex-start; }
+      .hero-grid, .section-head { grid-template-columns: 1fr; }
+      .hero-visual { max-width: 680px; margin: 0 auto; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .lang-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .footer-top { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .flow-card { grid-template-columns: 1fr; }
+      .flow-visual {
+        border-right: 0;
+        border-bottom: 1px solid rgba(30, 47, 85, 0.08);
+        padding: clamp(24px, 5vw, 36px);
+      }
+      .flow-visual img { max-width: 280px; }
+    }
+
+    @media (max-width: 640px) {
+      :root { --nav-height: 164px; }
+      body { font-size: 17px; }
+      .container { width: min(100% - 32px, var(--container)); }
+      .nav-link { min-height: 34px; padding: 7px 9px; font-size: 14px; }
+      .nav-link.primary { display: none; }
+      .hero { padding-top: 54px; }
+      .hero-title { font-size: clamp(48px, 14vw, 72px); }
+      .hero-copy { font-size: 20px; }
+      .btn { width: 100%; }
+      .demo-card { border-radius: 22px; }
+      .demo-metrics, .lang-grid { grid-template-columns: 1fr; }
+      .result-row { grid-template-columns: 1fr 0.7fr; }
+      .result-row span:nth-child(3) { display: none; }
+      .section { padding: 64px 0; }
+      .section-title { font-size: clamp(36px, 12vw, 52px); }
+      .footer-cols { grid-template-columns: 1fr 1fr; gap: 28px 36px; }
+      .footer-bottom { justify-content: flex-start; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container nav" aria-label="Primary navigation">
+      <a class="brand" href="index.html" aria-label="cozip home">
+        <img src="images/cozip_logo.svg" alt="">
+        <span>cozip</span>
+      </a>
+
+      <nav class="nav-links" aria-label="Sections">
+        <a class="nav-link" href="docs/python.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Py</text></svg>
+          Python
+        </a>
+        <a class="nav-link" href="docs/r.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">R</text></svg>
+          R
+        </a>
+        <a class="nav-link" href="docs/julia.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Jl</text></svg>
+          Julia
+        </a>
+        <a class="nav-link" href="docs/c.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">C</text></svg>
+          C
+        </a>
+        <a class="nav-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">Spec</a>
+        <a class="nav-link primary" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+          GitHub
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="top" class="hero">
+      <div class="container hero-grid">
+        <div class="hero-content">
+          <h1 class="hero-title">Open a ZIP like a <span class="highlight">table</span>.</h1>
+          <p class="hero-copy">
+            Still a ZIP. Now <span class="mark">queryable</span>. Filter the manifest first, then fetch only the bytes you need.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="docs/python.html">
+              Get started
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+            </a>
+            <a class="btn btn-secondary" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">
+              Read the spec
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-label="Example query on a cozip archive">
+          <div class="demo-card">
+            <div class="demo-topbar">
+              <div class="window-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+              <div class="demo-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h10"></path></svg>
+                dataset.zip
+              </div>
+            </div>
+            <div class="demo-body">
+              <pre class="demo-query"><span class="muted">-- query the manifest before reading any file</span>
+<span class="kw">SELECT</span> name, offset, size
+<span class="kw">FROM</span> read_cozip(<span class="str">'s3://bucket/dataset.zip'</span>)
+<span class="kw">WHERE</span> name <span class="kw">LIKE</span> <span class="str">'tile_%'</span>
+<span class="kw">LIMIT</span> <span class="num">3</span>;</pre>
+              <div class="result-table" role="table" aria-label="Query result preview">
+                <div class="result-row" role="row"><span role="columnheader">name</span><span role="columnheader">offset</span><span role="columnheader">size</span></div>
+                <div class="result-row" role="row"><span role="cell">tile_0001.parquet</span><span role="cell">128 KB</span><span role="cell">8.2 MB</span></div>
+                <div class="result-row" role="row"><span role="cell">tile_0002.parquet</span><span role="cell">8.5 MB</span><span role="cell">8.4 MB</span></div>
+                <div class="result-row" role="row"><span role="cell">tile_0003.parquet</span><span role="cell">16.9 MB</span><span role="cell">8.1 MB</span></div>
+              </div>
+              <div class="demo-metrics" aria-label="cozip benefits">
+                <div class="metric"><strong>2</strong><span>reads to any file</span></div>
+                <div class="metric"><strong>0</strong><span>full ZIP downloads</span></div>
+                <div class="metric"><strong>100%</strong><span>ZIP compatible</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="why" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">Why cozip?</p>
+            <h2 class="section-title">Ship archives that read like datasets.</h2>
+            <p class="section-sub">
+              cozip adds a <strong>Parquet-powered table of contents</strong> to ordinary ZIP archives. Filter, query, and jump straight to the bytes you need with one byte-range request.
+            </p>
+          </div>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h10"></path></svg>
+            </div>
+            <h3>Reads like Parquet.</h3>
+            <p>cozip makes a ZIP behave like Parquet. Random access on every entry, queryable manifest, predicate pushdown, byte-range reads from S3 or GCS.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7 9 18l-5-5"></path></svg>
+            </div>
+            <h3>100% ZIP-spec compliant.</h3>
+            <p>cozip conforms to <a href="https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.10.TXT" target="_blank" rel="noopener noreferrer">APPNOTE 6.3.10</a>. Every existing ZIP tool opens it without changes. unzip, libarchive, your browser, your collaborators.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-10 14h9l-1 8 10-14h-9l1-8Z"></path></svg>
+            </div>
+            <h3>Built on DuckDB and libzip.</h3>
+            <p>Writers run on vendored libzip behind a stable C ABI. Readers run on a DuckDB C++ extension that speaks SQL on your ZIP. Python, R, and Julia bindings share the same core.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">How it works</p>
+            <h2 class="section-title">Two reads, then any file.</h2>
+          </div>
+          <p class="section-copy">A tiny binary index at byte zero points to a Parquet manifest. Load it, query it locally, then fetch just the bytes you need.</p>
+        </div>
+
+        <div class="flow-card">
+          <div class="flow-visual">
+            <img src="images/cozip_animation.svg" alt="How cozip reads work: first the cozip index at byte zero, then the Parquet manifest, then every file is a byte-range away.">
+          </div>
+          <ol class="flow-steps">
+            <li class="flow-step">
+              <strong>First read</strong>
+              <span>Fetch the cozip index at byte zero. It points to the Parquet manifest.</span>
+            </li>
+            <li class="flow-step">
+              <strong>Second read</strong>
+              <span>Load the manifest into memory. Query it locally with DuckDB.</span>
+            </li>
+            <li class="flow-step">
+              <strong>Fetch</strong>
+              <span>Pull only the byte ranges your query asked for.</span>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">Install</p>
+            <h2 class="section-title">Pick your language.</h2>
+          </div>
+          <p class="section-copy">Same archive on disk, four ways to write it. Each page is a focused quickstart.</p>
+        </div>
+
+        <div class="lang-grid">
+          <a class="lang-card" href="docs/python.html">
+            <span class="lang-top">
+              <svg class="lang-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Py</text></svg>
+              <svg class="lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+            </span>
+            <span>
+              <span class="lang-name">Python</span>
+              <code class="lang-cmd">pip install cozip</code>
+            </span>
+          </a>
+
+          <a class="lang-card" href="docs/r.html">
+            <span class="lang-top">
+              <svg class="lang-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">R</text></svg>
+              <svg class="lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+            </span>
+            <span>
+              <span class="lang-name">R</span>
+              <code class="lang-cmd">install.packages('cozip')</code>
+            </span>
+          </a>
+
+          <a class="lang-card" href="docs/julia.html">
+            <span class="lang-top">
+              <svg class="lang-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Jl</text></svg>
+              <svg class="lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+            </span>
+            <span>
+              <span class="lang-name">Julia</span>
+              <code class="lang-cmd">]add Cozip</code>
+            </span>
+          </a>
+
+          <a class="lang-card" href="docs/c.html">
+            <span class="lang-top">
+              <svg class="lang-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">C</text></svg>
+              <svg class="lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+            </span>
+            <span>
+              <span class="lang-name">C</span>
+              <code class="lang-cmd">make lib</code>
+            </span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand-block">
+          <a class="brand" href="index.html" aria-label="cozip home">
+            <img src="images/cozip_logo.svg" alt="">
+            <span>cozip</span>
+          </a>
+          <p class="footer-tagline">A Parquet table of contents at the heart of every ZIP. Random access, queryable manifest, 100% ZIP-spec compliant.</p>
+        </div>
+
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h4>Docs</h4>
+            <ul>
+              <li><a class="footer-link" href="docs/python.html">Python</a></li>
+              <li><a class="footer-link" href="docs/r.html">R</a></li>
+              <li><a class="footer-link" href="docs/julia.html">Julia</a></li>
+              <li><a class="footer-link" href="docs/c.html">C</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Project</h4>
+            <ul>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+                  GitHub
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">
+                  Spec
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/CHANGELOG" target="_blank" rel="noopener noreferrer">
+                  Changelog
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/LICENSE" target="_blank" rel="noopener noreferrer">
+                  License
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div class="footer-by">
+          <span>Made with</span>
+          <svg class="footer-heart" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+          <span>by</span>
+          <a class="footer-brand" href="https://asterisk.coop" target="_blank" rel="noopener noreferrer" aria-label="Asterisk Labs">
+            <img src="images/asterisk_logo.svg" alt="Asterisk Labs">
+          </a>
+        </div>
+        <div class="footer-meta">© 2026 Asterisk Labs</div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

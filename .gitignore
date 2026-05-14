@@ -1,0 +1,10 @@
+core/build/
+core/build-wasm/
+javascript/wasm/
+javascript/dist/
+javascript/node_modules/
+python/build/
+python/dist/
+python/*.egg-info/
+
+.DS_Store

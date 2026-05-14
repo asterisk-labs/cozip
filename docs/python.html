@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#492AE8">
+  <title>cozip · Python</title>
+  <link rel="icon" href="../images/cozip_logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    /* tokens */
+    :root {
+      color-scheme: light;
+      --bg: #fafaf7;
+      --surface: #ffffff;
+      --ink: #0a0a0a;
+      --ink-2: #353532;
+      --ink-3: #676762;
+      --ink-4: #8b8b83;
+      --line: #e5e1d7;
+      --magenta: #492ae8;
+      --code-bg: #0f0d1f;
+      --code-fg: #f4f3ee;
+      --container: 920px;
+      --nav-height: 92px;
+    }
+
+    @view-transition { navigation: auto; }
+
+    * { box-sizing: border-box; }
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: calc(var(--nav-height) + 28px);
+      text-size-adjust: 100%;
+    }
+
+    body {
+      min-width: 320px;
+      margin: 0;
+      font-family: "League Spartan", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 18px;
+      font-weight: 400;
+      line-height: 1.55;
+      color: var(--ink-2);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    svg, img { display: block; max-width: 100%; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    ::selection { color: var(--ink); background: rgba(247, 204, 11, 0.55); }
+    :focus-visible {
+      outline: 3px solid rgba(73, 42, 232, 0.36);
+      outline-offset: 4px;
+      border-radius: 10px;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: 14px; left: 14px;
+      z-index: 1000;
+      transform: translateY(-160%);
+      padding: 10px 14px;
+      color: var(--surface);
+      background: var(--ink);
+      border-radius: 999px;
+      transition: transform 160ms ease;
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .container {
+      width: min(100% - clamp(36px, 6vw, 72px), var(--container));
+      margin: 0 auto;
+    }
+
+    /* header */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(250, 250, 247, 0.82);
+      border-bottom: 1px solid rgba(229, 225, 215, 0.86);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .nav {
+      min-height: var(--nav-height);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ink);
+      font-size: 42px;
+      font-weight: 900;
+      letter-spacing: -0.05em;
+      white-space: nowrap;
+    }
+    .brand img {
+      width: 60px;
+      height: 60px;
+      flex: 0 0 auto;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .nav-lang,
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      color: var(--ink-2);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      transition: color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+    .nav-lang:hover,
+    .nav-link:hover {
+      color: var(--magenta);
+      background: rgba(73, 42, 232, 0.08);
+      transform: translateY(-1px);
+    }
+    .nav-lang svg,
+    .nav-link svg { width: 17px; height: 17px; }
+    .nav-lang.current {
+      color: var(--magenta);
+      background: rgba(73, 42, 232, 0.08);
+    }
+    .nav-link.primary {
+      color: var(--surface);
+      background: var(--ink);
+      box-shadow: 0 10px 24px rgba(10, 10, 10, 0.12);
+    }
+    .nav-link.primary:hover {
+      color: var(--surface);
+      background: var(--magenta);
+    }
+
+    main { isolation: isolate; }
+
+    /* page header */
+    .page-header { padding: clamp(56px, 8vw, 96px) 0 16px; }
+    .section-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 14px;
+      color: var(--ink-2);
+      font-size: 15px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .section-kicker::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--magenta);
+      box-shadow: 0 0 0 4px rgba(73, 42, 232, 0.14);
+      flex: 0 0 auto;
+    }
+    .page-title {
+      margin: 0 0 18px;
+      color: var(--ink);
+      font-size: clamp(44px, 6.5vw, 80px);
+      font-weight: 900;
+      line-height: 0.96;
+      letter-spacing: -0.06em;
+    }
+    .page-sub {
+      max-width: 640px;
+      margin: 0 0 28px;
+      color: var(--ink-3);
+      font-size: clamp(18px, 1.6vw, 21px);
+      line-height: 1.38;
+      letter-spacing: -0.015em;
+    }
+
+    .install-line {
+      display: inline-block;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    /* sections */
+    h2 {
+      font-family: "League Spartan", sans-serif;
+      font-size: clamp(28px, 3.4vw, 36px);
+      font-weight: 900;
+      color: var(--ink);
+      letter-spacing: -0.045em;
+      margin-top: clamp(56px, 7vw, 80px);
+      margin-bottom: 6px;
+    }
+
+    .lede {
+      color: var(--ink-3);
+      font-size: clamp(16px, 1.4vw, 18px);
+      line-height: 1.45;
+      max-width: 640px;
+      margin: 0;
+    }
+    .lede code {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 6px;
+      font-size: 0.9em;
+      color: var(--ink);
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      border-radius: 16px;
+      padding: 24px 28px;
+      overflow-x: auto;
+      max-width: 100%;
+      font-size: 13.5px;
+      line-height: 1.7;
+      margin-top: 20px;
+      margin-bottom: 0;
+      box-shadow: 0 12px 30px rgba(30, 47, 85, 0.08);
+    }
+
+    .tk-kw { color: #c4b5fd; }
+    .tk-str { color: #a9ffa6; }
+    .tk-num { color: #fbbf24; }
+    .tk-fn { color: #93c5fd; }
+    .tk-com { color: #7b7a92; font-style: italic; }
+    .tk-op { color: #f0abfc; }
+
+    /* footer */
+    .site-footer {
+      padding: 64px 0 56px;
+      margin-top: clamp(72px, 9vw, 116px);
+      border-top: 1px solid rgba(229, 225, 215, 0.78);
+      background: rgba(255, 255, 255, 0.4);
+    }
+    .footer-top {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      align-items: start;
+      gap: clamp(28px, 5vw, 64px);
+      padding-bottom: 36px;
+      border-bottom: 1px solid rgba(229, 225, 215, 0.78);
+    }
+    .footer-brand-block {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 360px;
+    }
+    .footer-brand-block .brand {
+      font-size: 48px;
+      gap: 14px;
+    }
+    .footer-brand-block .brand img { width: 64px; height: 64px; }
+    .footer-tagline {
+      margin: 0;
+      color: var(--ink-3);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .footer-cols {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(140px, auto));
+      gap: 36px 56px;
+    }
+    .footer-col h4 {
+      margin: 0 0 14px;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .footer-col ul {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .footer-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ink-2);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      transition: color 160ms ease;
+    }
+    .footer-link:hover { color: var(--magenta); }
+    .footer-link svg { width: 13px; height: 13px; opacity: 0.6; }
+
+    .footer-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      padding-top: 28px;
+    }
+    .footer-by {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink-3);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.005em;
+    }
+    .footer-heart {
+      width: 16px;
+      height: 16px;
+      color: var(--magenta);
+      flex: 0 0 auto;
+      transform-origin: center;
+      animation: heartbeat 2.4s ease-in-out infinite;
+      transition: color 200ms ease;
+    }
+    .footer-by:hover .footer-heart { color: #e0245e; }
+    @keyframes heartbeat {
+      0%, 55%, 100% { transform: scale(1); }
+      10%          { transform: scale(1.22); }
+      20%          { transform: scale(1); }
+      30%          { transform: scale(1.14); }
+      40%          { transform: scale(1); }
+    }
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .footer-brand img { height: 22px; width: auto; }
+    .footer-brand:hover { opacity: 0.75; transform: translateY(-1px); }
+    .footer-meta {
+      color: var(--ink-4);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.005em;
+    }
+
+    /* responsive */
+    @media (max-width: 980px) {
+      :root { --nav-height: 88px; }
+      .nav {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px 0;
+      }
+      .nav-links { justify-content: flex-start; }
+      .footer-top { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      :root { --nav-height: 164px; }
+      body { font-size: 17px; }
+      .brand { font-size: 32px; }
+      .brand img { width: 48px; height: 48px; }
+      .footer-brand-block .brand { font-size: 36px; }
+      .footer-brand-block .brand img { width: 52px; height: 52px; }
+      .nav-lang, .nav-link { min-height: 34px; padding: 7px 9px; font-size: 14px; }
+      .nav-link.primary { display: none; }
+      pre { padding: 18px 20px; font-size: 12.5px; border-radius: 12px; }
+      .footer-cols { grid-template-columns: 1fr 1fr; gap: 28px 36px; }
+      .footer-bottom { justify-content: flex-start; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container nav" aria-label="Primary navigation">
+      <a class="brand" href="../index.html" aria-label="cozip home">
+        <img src="../images/cozip_logo.svg" alt="">
+        <span>cozip</span>
+      </a>
+
+      <nav class="nav-links" aria-label="Sections">
+        <a class="nav-lang current" href="python.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Py</text></svg>
+          Python
+        </a>
+        <a class="nav-lang" href="r.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">R</text></svg>
+          R
+        </a>
+        <a class="nav-lang" href="julia.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Jl</text></svg>
+          Julia
+        </a>
+        <a class="nav-lang" href="c.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">C</text></svg>
+          C
+        </a>
+        <a class="nav-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">Spec</a>
+        <a class="nav-link primary" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+          GitHub
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container">
+      <header class="page-header">
+        <p class="section-kicker">Quickstart</p>
+        <h1 class="page-title">cozip in Python.</h1>
+        <p class="page-sub">Write archives, read them back, query them straight from DuckDB. Copy, paste, run.</p>
+        <span class="install-line">pip install cozip</span>
+      </header>
+      <h2>Write</h2>
+      <p class="lede"><code>cozip.create</code> takes an Arrow table with <code>name</code> and <code>path</code> columns. Anything else rides along as user-defined manifest columns.</p>
+<pre><span class="tk-kw">import</span> os
+<span class="tk-kw">import</span> tempfile
+<span class="tk-kw">import</span> pyarrow <span class="tk-kw">as</span> pa
+<span class="tk-kw">import</span> cozip
+
+tmp = tempfile.<span class="tk-fn">mkdtemp</span>()
+paths = []
+<span class="tk-kw">for</span> i <span class="tk-kw">in</span> <span class="tk-fn">range</span>(<span class="tk-num">3</span>):
+    p = os.path.<span class="tk-fn">join</span>(tmp, <span class="tk-fn">f</span><span class="tk-str">"file_{i:04d}.bin"</span>)
+    <span class="tk-kw">with</span> <span class="tk-fn">open</span>(p, <span class="tk-str">"wb"</span>) <span class="tk-kw">as</span> f:
+        f.<span class="tk-fn">write</span>(<span class="tk-str">b"hello cozip\n"</span> * <span class="tk-num">1000</span>)
+    paths.<span class="tk-fn">append</span>(p)
+
+table = pa.<span class="tk-fn">table</span>({
+    <span class="tk-str">"name"</span>: [os.path.<span class="tk-fn">basename</span>(p) <span class="tk-kw">for</span> p <span class="tk-kw">in</span> paths],
+    <span class="tk-str">"path"</span>: paths,
+})
+
+cozip.<span class="tk-fn">create</span>(<span class="tk-str">"dataset.zip"</span>, table)</pre>
+
+      <h2>Read</h2>
+      <p class="lede"><code>cozip.read</code> works on a local path or a remote URL with the same call. You get a pandas DataFrame plus an injected <code>cozip:gdal_vsi</code> column ready for rasterio or GDAL.</p>
+<pre><span class="tk-kw">import</span> cozip
+
+<span class="tk-com"># local archive</span>
+df = cozip.<span class="tk-fn">read</span>(<span class="tk-str">"dataset.zip"</span>)
+
+<span class="tk-com"># or remote, no full download, two range requests under the hood</span>
+df = cozip.<span class="tk-fn">read</span>(
+    <span class="tk-str">"https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/"</span>
+    <span class="tk-str">"resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip"</span>
+)
+
+<span class="tk-com"># hand the cozip:gdal_vsi path straight to rasterio</span>
+<span class="tk-kw">import</span> rasterio
+<span class="tk-kw">with</span> rasterio.<span class="tk-fn">open</span>(df[<span class="tk-str">"cozip:gdal_vsi"</span>].iloc[<span class="tk-num">0</span>]) <span class="tk-kw">as</span> src:
+    arr = src.<span class="tk-fn">read</span>(<span class="tk-num">1</span>)</pre>
+
+      <h2>Query with DuckDB</h2>
+      <p class="lede">The cozip community extension reads the same archive over SQL, on native and WebAssembly. One install, then any cozip URL works as a table.</p>
+<pre><span class="tk-com">-- one-time install</span>
+<span class="tk-kw">INSTALL</span> cozip <span class="tk-kw">FROM</span> community;
+<span class="tk-kw">LOAD</span> cozip;
+
+<span class="tk-com">-- hello world, first 10 entries of the manifest</span>
+<span class="tk-kw">SELECT</span> *
+<span class="tk-kw">FROM</span> <span class="tk-fn">read_cozip</span>(<span class="tk-str">'https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip'</span>)
+<span class="tk-kw">LIMIT</span> <span class="tk-num">10</span>;
+
+<span class="tk-com">-- raw manifest, without the injected /vsisubfile/ column</span>
+<span class="tk-kw">SELECT</span> *
+<span class="tk-kw">FROM</span> <span class="tk-fn">read_cozip</span>(
+    <span class="tk-str">'https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip'</span>,
+    gdal_vsi <span class="tk-op">:=</span> <span class="tk-kw">false</span>
+)
+<span class="tk-kw">LIMIT</span> <span class="tk-num">10</span>;
+
+<span class="tk-com">-- filter the manifest, keep the /vsisubfile/ paths for the biggest tifs</span>
+<span class="tk-kw">SELECT</span> name, <span class="tk-str">"cozip:gdal_vsi"</span>, size
+<span class="tk-kw">FROM</span> <span class="tk-fn">read_cozip</span>(<span class="tk-str">'https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip'</span>)
+<span class="tk-kw">WHERE</span> name <span class="tk-kw">LIKE</span> <span class="tk-str">'%.tif'</span>
+<span class="tk-kw">ORDER BY</span> size <span class="tk-kw">DESC</span>
+<span class="tk-kw">LIMIT</span> <span class="tk-num">5</span>;</pre>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand-block">
+          <a class="brand" href="../index.html" aria-label="cozip home">
+            <img src="../images/cozip_logo.svg" alt="">
+            <span>cozip</span>
+          </a>
+          <p class="footer-tagline">A Parquet table of contents at the heart of every ZIP. Random access, queryable manifest, 100% ZIP-spec compliant.</p>
+        </div>
+
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h4>Docs</h4>
+            <ul>
+              <li><a class="footer-link" href="python.html">Python</a></li>
+              <li><a class="footer-link" href="r.html">R</a></li>
+              <li><a class="footer-link" href="julia.html">Julia</a></li>
+              <li><a class="footer-link" href="c.html">C</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Project</h4>
+            <ul>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+                  GitHub
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">
+                  Spec
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/CHANGELOG" target="_blank" rel="noopener noreferrer">
+                  Changelog
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/LICENSE" target="_blank" rel="noopener noreferrer">
+                  License
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div class="footer-by">
+          <span>Made with</span>
+          <svg class="footer-heart" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+          <span>by</span>
+          <a class="footer-brand" href="https://asterisk.coop" target="_blank" rel="noopener noreferrer" aria-label="Asterisk Labs">
+            <img src="../images/asterisk_logo.svg" alt="Asterisk Labs">
+          </a>
+        </div>
+        <div class="footer-meta">© 2026 Asterisk Labs</div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
