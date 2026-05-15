@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook: keeps every binding's version in sync with cozip/VERSION.
+#
+# Triggered when `git commit` runs. If cozip/VERSION is part of the
+# staged changes (or any of the derived files is staged out of sync),
+# the hook runs tools/sync_version.sh, re-stages the touched files, and
+# lets the commit proceed. The commit therefore always contains a
+# coherent view of the version across all bindings.
+#
+# Install once per checkout with:
+#   git config core.hooksPath .githooks
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+SYNC="$ROOT/tools/sync_version.sh"
+
+[[ -x "$SYNC" ]] || exit 0   # nothing to do if the script is missing
+
+# Files the script touches. Keep this list in sync with sync_version.sh.
+DERIVED=(
+    "cozip/r/DESCRIPTION"
+    "cozip/python/pyproject.toml"
+)
+SOURCE="cozip/VERSION"
+
+# Did the version source or any derived file land in this commit?
+staged=$(git diff --cached --name-only)
+trigger=0
+for f in "$SOURCE" "${DERIVED[@]}"; do
+    if grep -qx "$f" <<< "$staged"; then
+        trigger=1
+        break
+    fi
+done
+
+[[ $trigger -eq 1 ]] || exit 0
+
+echo "[pre-commit] cozip/VERSION or a derived file is staged; syncing..."
+"$SYNC"
+
+# Re-stage anything the script changed. If nothing changed, this is a no-op.
+for f in "${DERIVED[@]}"; do
+    if [[ -f "$ROOT/$f" ]]; then
+        git add "$ROOT/$f"
+    fi
+done
+
+echo "[pre-commit] versions in sync."

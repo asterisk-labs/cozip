@@ -1,87 +1,93 @@
 <div align="center">
-  <img src="images/banner.svg" alt="cozip — DuckDB extension" width="700"/>
+  <img src="images/banner.svg" alt="cozip — Cloud Optimized ZIP" width="700"/>
 
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-EAB308?style=flat-square" alt="License MIT"/></a>
-    <a href="https://duckdb.org/community_extensions/extensions/cozip.html"><img src="https://img.shields.io/badge/duckdb-community--extension-FFF000?logo=duckdb&logoColor=black&style=flat-square" alt="DuckDB community extension"/></a>
-    <a href="https://shell.duckdb.org"><img src="https://img.shields.io/badge/try-shell.duckdb.org-654FF0?logo=webassembly&logoColor=white&style=flat-square" alt="Try in browser"/></a>
-    <a href="https://github.com/asterisk-labs/cozip/blob/main/SPEC.md"><img src="https://img.shields.io/badge/cozip-format--%26--spec-A8B9CC?style=flat-square" alt="cozip format"/></a>
+    <a href="https://pypi.org/project/cozip"><img src="https://img.shields.io/pypi/v/cozip?label=python&logo=python&logoColor=white&color=3776AB&style=flat-square" alt="PyPI"/></a>
+    <a href="https://asterisk-labs.r-universe.dev/cozip"><img src="https://img.shields.io/badge/r--universe-cozip-276DC3?logo=r&logoColor=white&style=flat-square" alt="R"/></a>
+    <a href="https://juliahub.com/ui/Packages/Cozip"><img src="https://img.shields.io/badge/julia-1.10%2B-9558B2?logo=julia&logoColor=white&style=flat-square" alt="Julia"/></a>
+    <a href="https://www.npmjs.com/package/cozip"><img src="https://img.shields.io/npm/v/cozip?label=npm&logo=npm&logoColor=white&color=CB3837&style=flat-square" alt="npm"/></a>
+    <a href="#wasm"><img src="https://img.shields.io/badge/wasm-browser--ready-654FF0?logo=webassembly&logoColor=white&style=flat-square" alt="WASM"/></a>
+    <a href="https://duckdb.org/community_extensions"><img src="https://img.shields.io/badge/duckdb-extension-FFF000?logo=duckdb&logoColor=black&style=flat-square" alt="DuckDB"/></a>
+    <a href="#core"><img src="https://img.shields.io/badge/C11-core-A8B9CC?logo=c&logoColor=white&style=flat-square" alt="C11"/></a>
   </p>
 </div>
 
 ---
 
-Query a [cozip](https://github.com/asterisk-labs/cozip) archive as a SQL table — locally, over HTTPS, S3, GCS, Azure, or HuggingFace — without downloading it. cozip places a Parquet manifest at byte 0 of the ZIP, so a multi-gigabyte archive becomes a queryable table with one or two HTTP range requests. No central-directory scan, no full download.
+## What is cozip?
 
-The archive is still a valid ZIP. `unzip`, `zipfile.ZipFile`, your OS file preview — all unchanged.
+A ZIP file you can open like a table — over the network, without downloading it.
+
+cozip puts a Parquet manifest called `__metadata__` at **byte 0** — one row per entry with name, offset, size, plus any columns you add (`split`, `label`, `class`...). DuckDB, Arrow, and Polars query it directly. Range requests fetch only the bytes you actually need.
+
+A 20 GB archive becomes a queryable table.
+
+**It's still a ZIP.** `unzip`, `zipfile.ZipFile`, your OS's preview window — all unchanged.
 
 ## Install
 
-```sql
-INSTALL cozip FROM community;
-LOAD cozip;
+```bash
+pip install cozip
 ```
 
-Works on every DuckDB target: Linux, macOS, Windows, and WebAssembly (try it on `shell.duckdb.org`).
+## Usage
 
-## Query
+Two functions: `write` and `read`.
 
-```sql
-SELECT *
-FROM read_cozip('https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip')
-LIMIT 10;
-```
-
-One row per entry inside the archive: `name`, `offset`, `size`, plus whatever columns the writer included in `__metadata__` (`split`, `label`, `geometry`, …). Filter, join, sample, then fetch only the payloads you actually need.
-
-```sql
--- Sample 32 training tiles from a remote archive without downloading it.
-SELECT name, "cozip:gdal_vsi"
-FROM read_cozip('s3://my-bucket/dataset.cozip')
-WHERE split = 'train'
-USING SAMPLE 32 ROWS;
-```
-
-## URL schemes
-
-| Scheme              | Backend  | Notes                                              |
-|---------------------|----------|----------------------------------------------------|
-| `/local/path`       | local FS | No extension required.                             |
-| `https://`          | `httpfs` | Autoloads. Supports Range requests.                |
-| `s3://`             | `httpfs` | S3-compatible (R2, MinIO) via `SET s3_*` settings. |
-| `gs://`, `gcs://`   | `httpfs` | Google Cloud Storage.                              |
-| `azure://`          | `azure`  | Autoloads.                                         |
-| `hf://datasets/...` | `hf`     | Autoloads.                                         |
-
-## The `cozip:gdal_vsi` column
-
-Every row includes a synthetic `cozip:gdal_vsi` column with a ready-made `/vsisubfile/<offset>_<size>,/vsi.../<url>` path. Hand it to GDAL, rasterio, or anything that speaks VSI to open the inner file without re-downloading the archive.
+### Write
 
 ```python
-import duckdb, rasterio
+import cozip
+import polars as pl
 
-rows = duckdb.sql("""
-    SELECT name, "cozip:gdal_vsi"
-    FROM read_cozip('https://.../dataset.zip')
-    WHERE split = 'val'
-    LIMIT 8
-""").fetchall()
+df = pl.DataFrame({
+    "path":  ["local/tile_001.tif", "local/tile_002.tif", "local/tile_003.tif"],
+    "name":  ["tile_001.tif", "tile_002.tif", "tile_003.tif"],
+    "split": ["train", "val", "train"],
+    "label": ["cloud", "water", "forest"],
+})
 
-for name, vsi in rows:
-    with rasterio.open(vsi) as src:
-        ...   # GDAL issues range requests against the archive
+cozip.write("dataset.zip", df)
 ```
 
-Skip it with `gdal_vsi := false`:
+Two reserved columns. `path` is where the file lives on disk — it's consumed at write time and dropped. `name` is how the entry is stored inside the archive and becomes part of `__metadata__`. Every other column rides along and becomes queryable on read.
 
-```sql
-SELECT name, offset, size
-FROM read_cozip('dataset.zip', gdal_vsi := false);
+### Read
+
+```python
+df = cozip.read("dataset.zip")
 ```
 
-## See also
+Local file or remote URL — same call. You get a DataFrame back with one row per entry, including `offset` and `size` resolved against the archive.
 
-- **[cozip](https://github.com/asterisk-labs/cozip)** — the format, the spec, and bindings for Python, R, Julia, JavaScript, and C.
+```python
+df = cozip.read("https://example.com/dataset.zip")
+
+# query the manifest like any DataFrame
+batch = df.filter(pl.col("split") == "train").sample(32)
+
+# batch.select(["name", "offset", "size"]) is everything you need
+# to range-request the payloads
+```
+
+## Bindings
+
+| Language     | Install                                                                       |
+|--------------|-------------------------------------------------------------------------------|
+| Python       | `pip install cozip`                                                           |
+| R            | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")`   |
+| Julia        | `Pkg.add("Cozip")`                                                            |
+| JavaScript   | `npm install cozip`                                                           |
+| WASM         | browser bundle, no Node required                                              |
+| DuckDB       | `INSTALL cozip FROM community; LOAD cozip;`                                   |
+| C            | vendored single-header `cozip.h`                                              |
+
+All bindings call into the same C11 core. Byte-exact behavior across runtimes.
+
+## Specification
+
+The on-disk format is defined in [SPEC.md](cozip/SPEC.md). Any conforming implementation reads any cozip ever written.
 
 ## License
 

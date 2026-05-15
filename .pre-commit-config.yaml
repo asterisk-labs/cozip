@@ -1,0 +1,18 @@
+# Pre-commit hooks for cozip.
+#
+# Install once per clone:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run manually against everything:
+#   pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      - id: cozip-sync
+        name: cozip sync (VERSION → R/Julia, core → r/src)
+        entry: make -C cozip sync
+        language: system
+        pass_filenames: false
+        always_run: true
