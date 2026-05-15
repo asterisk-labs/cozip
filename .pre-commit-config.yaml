@@ -11,8 +11,8 @@ repos:
   - repo: local
     hooks:
       - id: cozip-sync
-        name: cozip sync (VERSION → R/Julia, core → r/src)
-        entry: make -C cozip sync
+        name: cozip sync (VERSION → R/Julia/Python)
+        entry: make sync
         language: system
         pass_filenames: false
         always_run: true

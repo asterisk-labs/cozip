@@ -1,6 +1,6 @@
 name = "Cozip"
 uuid = "7c91d8e4-3f2a-4b6c-9d18-2e5f7a8b3c4d"
-version = "2026.5.13"
+version = "2026.5.15"
 authors = ["Cesar Aybar <cesar@asterisk.coop>"]
 
 [deps]

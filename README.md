@@ -1,101 +1,110 @@
 <div align="center">
-  <img src="images/banner.svg" alt="cozip — Cloud Optimized ZIP" width="700"/>
+  <img src="images/banner.svg" alt="cozip" width="700"/>
 
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-EAB308?style=flat-square" alt="License MIT"/></a>
     <a href="https://pypi.org/project/cozip"><img src="https://img.shields.io/pypi/v/cozip?label=python&logo=python&logoColor=white&color=3776AB&style=flat-square" alt="PyPI"/></a>
     <a href="https://asterisk-labs.r-universe.dev/cozip"><img src="https://img.shields.io/badge/r--universe-cozip-276DC3?logo=r&logoColor=white&style=flat-square" alt="R"/></a>
-    <a href="https://juliahub.com/ui/Packages/Cozip"><img src="https://img.shields.io/badge/julia-1.10%2B-9558B2?logo=julia&logoColor=white&style=flat-square" alt="Julia"/></a>
-    <a href="https://www.npmjs.com/package/cozip"><img src="https://img.shields.io/npm/v/cozip?label=npm&logo=npm&logoColor=white&color=CB3837&style=flat-square" alt="npm"/></a>
-    <a href="#wasm"><img src="https://img.shields.io/badge/wasm-browser--ready-654FF0?logo=webassembly&logoColor=white&style=flat-square" alt="WASM"/></a>
-    <a href="https://duckdb.org/community_extensions"><img src="https://img.shields.io/badge/duckdb-extension-FFF000?logo=duckdb&logoColor=black&style=flat-square" alt="DuckDB"/></a>
-    <a href="#core"><img src="https://img.shields.io/badge/C11-core-A8B9CC?logo=c&logoColor=white&style=flat-square" alt="C11"/></a>
+    <a href="https://github.com/asterisk-labs/AsteriskRegistry"><img src="https://img.shields.io/badge/julia-Cozip.jl-9558B2?logo=julia&logoColor=white&style=flat-square" alt="Julia"/></a>
+    <a href="SPEC.md"><img src="https://img.shields.io/badge/spec-stable-A8B9CC?style=flat-square" alt="Spec"/></a>
   </p>
 </div>
 
 ---
 
-## What is cozip?
+Open a ZIP like a table. Still a ZIP, now queryable.
 
-A ZIP file you can open like a table — over the network, without downloading it.
+cozip glues a Parquet manifest onto an ordinary ZIP. The manifest has one row per entry (`name`, `offset`, `size`, plus any columns you tag onto it). Fetch the index, fetch the manifest, query it locally, then range-request just the bytes you actually want. A 20 GB archive becomes a queryable dataset in two reads.
 
-cozip puts a Parquet manifest called `__metadata__` at **byte 0** — one row per entry with name, offset, size, plus any columns you add (`split`, `label`, `class`...). DuckDB, Arrow, and Polars query it directly. Range requests fetch only the bytes you actually need.
+<div align="center">
+  <img src="images/cozip_animation.svg" alt="how cozip works" width="500"/>
+</div>
 
-A 20 GB archive becomes a queryable table.
+It works because nothing about the ZIP changes. `unzip` works. `zipfile.ZipFile` works. Your OS preview pane works. The manifest is just the first entry, and any conforming ZIP reader walks right past it.
 
-**It's still a ZIP.** `unzip`, `zipfile.ZipFile`, your OS's preview window — all unchanged.
+## Two functions
 
-## Install
+`write` packs files plus metadata into a cozip. `read` returns the manifest. That is the whole surface area in every binding.
 
-```bash
-pip install cozip
-```
+The write manifest reserves two columns. `path` is where each file lives on disk, consumed at write time and dropped from the manifest. `name` is how it is stored inside the archive. `write` then adds two more columns to the manifest, `offset` and `size`, holding the byte offset and length of each file in the ZIP.
 
-## Usage
+Everything else rides along and is queryable on read. Local file or remote URL, same call.
 
-Two functions: `write` and `read`.
-
-### Write
+### Python
 
 ```python
 import cozip
-import polars as pl
+import pyarrow as pa
 
-df = pl.DataFrame({
+table = pa.table({
     "path":  ["local/tile_001.tif", "local/tile_002.tif", "local/tile_003.tif"],
     "name":  ["tile_001.tif", "tile_002.tif", "tile_003.tif"],
     "split": ["train", "val", "train"],
     "label": ["cloud", "water", "forest"],
 })
+cozip.write("dataset.zip", table)
 
-cozip.write("dataset.zip", df)
+manifest = cozip.read("https://example.com/dataset.zip")
+train = manifest.filter(pa.compute.equal(manifest["split"], "train"))
 ```
 
-Two reserved columns. `path` is where the file lives on disk — it's consumed at write time and dropped. `name` is how the entry is stored inside the archive and becomes part of `__metadata__`. Every other column rides along and becomes queryable on read.
+### R
 
-### Read
+```r
+library(cozip)
+library(arrow)
 
-```python
-df = cozip.read("dataset.zip")
+tbl <- arrow_table(
+  path  = c("local/tile_001.tif", "local/tile_002.tif", "local/tile_003.tif"),
+  name  = c("tile_001.tif", "tile_002.tif", "tile_003.tif"),
+  split = c("train", "val", "train"),
+  label = c("cloud", "water", "forest")
+)
+cozip_write("dataset.zip", tbl)
+
+manifest <- cozip_read("https://example.com/dataset.zip")
+train <- manifest |> dplyr::filter(split == "train")
 ```
 
-Local file or remote URL — same call. You get a DataFrame back with one row per entry, including `offset` and `size` resolved against the archive.
+### Julia
 
-```python
-df = cozip.read("https://example.com/dataset.zip")
+```julia
+using Cozip
+using DataFrames
 
-# query the manifest like any DataFrame
-batch = df.filter(pl.col("split") == "train").sample(32)
+df = DataFrame(
+    path  = ["local/tile_001.tif", "local/tile_002.tif", "local/tile_003.tif"],
+    name  = ["tile_001.tif", "tile_002.tif", "tile_003.tif"],
+    split = ["train", "val", "train"],
+    label = ["cloud", "water", "forest"],
+)
+Cozip.write("dataset.zip", df)
 
-# batch.select(["name", "offset", "size"]) is everything you need
-# to range-request the payloads
+manifest = Cozip.read("https://example.com/dataset.zip")
+train = filter(:split => ==("train"), manifest)
 ```
 
 ## Bindings
 
-| Language     | Install                                                                       |
-|--------------|-------------------------------------------------------------------------------|
-| Python       | `pip install cozip`                                                           |
-| R            | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")`   |
-| Julia        | `Pkg.add("Cozip")`                                                            |
-| JavaScript   | `npm install cozip`                                                           |
-| WASM         | browser bundle, no Node required                                              |
-| DuckDB       | `INSTALL cozip FROM community; LOAD cozip;`                                   |
-| C            | vendored single-header `cozip.h`                                              |
+| Language | Read | Write | Install |
+|----------|:----:|:-----:|---------|
+| Python   |  ✓   |   ✓   | `pip install cozip` |
+| R        |  ✓   |   ✓   | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` |
+| Julia    |  ✓   |   ✓   | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` |
 
-All bindings call into the same C11 core. Byte-exact behavior across runtimes.
+Every binding wraps the same C core, so a cozip written by R reads byte for byte identically in Julia, in Python, in C. The high-level API is uniform across runtimes. Python and R speak Apache Arrow tables; Julia speaks Tables.jl-compatible DataFrames.
 
-## Specification
+## Spec
 
-The on-disk format is defined in [SPEC.md](cozip/SPEC.md). Any conforming implementation reads any cozip ever written.
+See [SPEC.md](SPEC.md). The format is short and stable. Any conforming reader handles any conforming writer.
 
 ## License
 
-MIT
+MIT.
 
 <div align="center">
   <br>
-  Developed with ❤️ by
+  Made with ♥ by
   <br><br>
   <a href="https://asterisk.coop">
     <img src="images/asterisk_logo.svg" alt="Asterisk Labs" width="400"/>

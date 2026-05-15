@@ -8,3 +8,5 @@ python/dist/
 python/*.egg-info/
 
 .DS_Store
+
+python/cozip/_lib/cozip.dylib

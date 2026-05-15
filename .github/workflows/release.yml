@@ -19,13 +19,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: v
-        name: Tag must equal cozip/VERSION
+        name: Tag must equal VERSION
         run: |
-          VERSION_FILE=$(tr -d '[:space:]' < cozip/VERSION)
+          VERSION_FILE=$(tr -d '[:space:]' < VERSION)
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG_VERSION="${GITHUB_REF#refs/tags/v}"
             if [ "$VERSION_FILE" != "$TAG_VERSION" ]; then
-              echo "::error::Tag v$TAG_VERSION does not match cozip/VERSION ($VERSION_FILE)"
+              echo "::error::Tag v$TAG_VERSION does not match VERSION ($VERSION_FILE)"
               exit 1
             fi
             echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
@@ -91,7 +91,7 @@ jobs:
         # BUILD_SHARED_LIBS=ON applies only to cozip. Vendored libzip
         # and zlib stay STATIC and absorb into cozip with hidden visibility.
         run: >
-          cmake -B build -S cozip/core -G Ninja
+          cmake -B build -S core -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_INSTALL_PREFIX=install
           -DCMAKE_INSTALL_LIBDIR=lib
@@ -136,8 +136,8 @@ jobs:
           cp install/lib/cozip.${{ matrix.lib_ext }} staged/
           cp install/include/cozip.h                 staged/
           cp install/include/version.h               staged/
-          cp cozip/LICENSE   staged/
-          cp cozip/README.md staged/
+          cp LICENSE   staged/
+          cp README.md staged/
 
       - name: Stage artifact (Windows)
         if: runner.os == 'Windows'
@@ -146,8 +146,8 @@ jobs:
           Copy-Item install\bin\cozip.dll        staged\
           Copy-Item install\include\cozip.h      staged\
           Copy-Item install\include\version.h    staged\
-          Copy-Item cozip\LICENSE                staged\
-          Copy-Item cozip\README.md              staged\
+          Copy-Item LICENSE                      staged\
+          Copy-Item README.md                    staged\
 
       - uses: actions/upload-artifact@v4
         with:
@@ -182,14 +182,14 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: cozip/r
+          working-directory: r
           extra-packages: any::rcmdcheck
           needs: check
 
       # --no-manual: no LaTeX on most runners.
       - uses: r-lib/actions/check-r-package@v2
         with:
-          working-directory: cozip/r
+          working-directory: r
           args: 'c("--no-manual", "--as-cran")'
           error-on: '"warning"'
 
@@ -239,7 +239,7 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "COZIP_LIB_PATH=$p"
 
       - name: Test
-        run: julia --project=cozip/julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+        run: julia --project=julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
 
   build-wheels:
@@ -305,22 +305,22 @@ jobs:
           name: libcozip-${{ matrix.name }}
           path: libcozip-bin/
 
-      # Where _resolve_lib_path() in cozip/_core.py finds it at import time.
+      # Where _resolve_lib_path() in python/cozip/_core.py finds it at import time.
       - name: Bundle native lib (Unix)
         if: runner.os != 'Windows'
         run: |
-          mkdir -p cozip/python/cozip/_lib
-          cp libcozip-bin/cozip.${{ matrix.lib_ext }} cozip/python/cozip/_lib/
+          mkdir -p python/cozip/_lib
+          cp libcozip-bin/cozip.${{ matrix.lib_ext }} python/cozip/_lib/
 
       - name: Bundle native lib (Windows)
         if: runner.os == 'Windows'
         run: |
-          New-Item -ItemType Directory -Force -Path cozip\python\cozip\_lib | Out-Null
-          Copy-Item libcozip-bin\cozip.dll cozip\python\cozip\_lib\
+          New-Item -ItemType Directory -Force -Path python\cozip\_lib | Out-Null
+          Copy-Item libcozip-bin\cozip.dll python\cozip\_lib\
 
       - name: Build wheel
-        working-directory: cozip/python
-        run: python -m build --wheel --outdir ../../wheelhouse-raw
+        working-directory: python
+        run: python -m build --wheel --outdir ../wheelhouse-raw
 
       # Rewrite runtime loader paths so the wheel works without our build
       # env, then retag to py3-none (cffi/dlopen, no CPython ABI dep).
@@ -394,10 +394,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - working-directory: cozip/python
+      - working-directory: python
         run: |
           python -m pip install --upgrade pip build
-          python -m build --sdist --outdir ../../sdist-out
+          python -m build --sdist --outdir ../sdist-out
       - uses: actions/upload-artifact@v4
         with:
           name: sdist
@@ -487,9 +487,9 @@ jobs:
           version: '1'
 
       # Pass VERSION as ARG so the script doesn't depend on on-disk
-      # cozip/VERSION (already bumped on the tagged commit).
+      # VERSION (already bumped on the tagged commit).
       - name: Regenerate Artifacts.toml
-        working-directory: cozip/julia
+        working-directory: julia
         run: |
           set -euo pipefail
           julia make-artifacts-toml.jl "${{ needs.validate.outputs.version }}" > Artifacts.toml.new
@@ -503,7 +503,7 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add cozip/julia/Artifacts.toml
+          git add julia/Artifacts.toml
           if git diff --staged --quiet; then
             echo "Artifacts.toml unchanged, nothing to commit"
             exit 0
@@ -515,7 +515,7 @@ jobs:
 
 
   # PyPI Trusted Publisher (must match exactly):
-  #   owner: asterisk-labs   repo: taco
+  #   owner: asterisk-labs   repo: cozip
   #   workflow: release.yml   environment: pypi
   publish-pypi:
     name: Publish to PyPI
