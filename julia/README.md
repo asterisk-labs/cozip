@@ -1,28 +1,22 @@
 # Cozip.jl
 
-Julia binding for [libcozip](https://github.com/asterisk-labs/taco/tree/main/cozip) — pack files into a Cloud-Optimized ZIP archive readable over HTTP range requests.
+Julia binding for libcozip. Open a Cloud-Optimized ZIP archive like a table over HTTP range requests, or write one from a DataFrame.
 
-The native `libcozip` binary is fetched automatically via Julia Artifacts; no C toolchain required.
+The native `libcozip` binary is fetched automatically via Julia Artifacts, no C toolchain required.
 
 ## Install
 
-From the AsteriskRegistry (recommended):
+`Cozip.jl` lives in the AsteriskRegistry.
 
 ```julia
 using Pkg
-Pkg.Registry.add(RegistrySpec(url = "https://github.com/asterisk-labs/AsteriskRegistry"))
+Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry")
 Pkg.add("Cozip")
-```
-
-Or directly from the monorepo:
-
-```julia
-Pkg.add(url = "https://github.com/asterisk-labs/taco", subdir = "cozip/julia")
 ```
 
 ## Usage
 
-### Simple mode
+### Write
 
 ```julia
 using Cozip, DataFrames
@@ -32,26 +26,10 @@ table = DataFrame(
     path = ["/path/to/a.txt", "/path/to/b.bin"],
 )
 
-Cozip.create("out.cozip", table)
+Cozip.write("out.zip", table)
 ```
 
-### Two-step mode
-
-For inspecting or tuning the `__metadata__` parquet between steps:
-
-```julia
-# 1) materialize the __metadata__ parquet
-Cozip.metadata("meta.parquet", table; create_options = "COMPRESSION 'zstd'")
-
-# 2) pack the archive
-Cozip.create("out.cozip", "meta.parquet")
-```
-
-`create_options` is passed through to DuckDB's `COPY ... TO '...' (FORMAT parquet, <opts>)`, so anything DuckDB accepts works (e.g. `"COMPRESSION 'zstd', ROW_GROUP_SIZE 100000"`).
-
-### Extra columns
-
-Any additional columns in `table` are propagated into `__metadata__`:
+`name` is how each file appears inside the archive. `path` is where it lives on disk, consumed at write time and dropped from the manifest. Any additional columns ride along into `__metadata__` and become queryable on read.
 
 ```julia
 table = DataFrame(
@@ -60,24 +38,47 @@ table = DataFrame(
     cloud_pct = [12.3, 45.1],
 )
 
-Cozip.create("out.cozip", table)
+Cozip.write("out.zip", table)
 ```
 
-The optional `in_index` column (default `true`) controls whether each entry is recorded in the cozip index — entries with `in_index = false` go into the ZIP but aren't exposed as cozip-indexed entries.
-
-## Versioning
-
-`Cozip.jl` tracks the C library, which uses CalVer with 4 components (e.g. `2026.5.2.6`). The Julia package itself uses 3 components because Julia enforces strict SemVer; the fourth is exposed via:
+### Read
 
 ```julia
 using Cozip
-Cozip.LibCozip.cozip_version()  # → "2026.5.2.6"
+
+manifest = Cozip.read("https://example.com/dataset.zip")
+```
+
+`manifest` is a DataFrame with `name`, `offset`, `size`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads.
+
+Filter the manifest like any DataFrame, then use `offset` and `size` to range-request payloads.
+
+```julia
+using DataFrames, Downloads
+
+train = filter(:split => ==("train"), manifest)
+row = train[1, :]
+buf = IOBuffer()
+Downloads.download(
+    "https://example.com/dataset.zip", buf;
+    headers = ["Range" => "bytes=$(row.offset)-$(row.offset + row.size - 1)"],
+)
+payload = take!(buf)
+```
+
+## Versioning
+
+`Cozip.jl` tracks the C library. The C side uses 4-component CalVer (e.g. `2026.5.2.6`). The Julia side uses the first three because Julia enforces strict SemVer. The fourth component is exposed at runtime.
+
+```julia
+using Cozip
+Cozip.LibCozip.cozip_version()  # "2026.5.2.6"
 ```
 
 ## Spec
 
-See the [cozip spec](https://github.com/asterisk-labs/taco/tree/main/cozip) for the on-disk format.
+See [SPEC.md](https://github.com/asterisk-labs/cozip/blob/main/SPEC.md) for the on-disk format.
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+MIT. See [LICENSE](../LICENSE).

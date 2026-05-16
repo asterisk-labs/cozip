@@ -2,7 +2,7 @@ using Pkg.Artifacts
 using Downloads
 using SHA
 
-const REPO = "asterisk-labs/taco"
+const REPO = "asterisk-labs/cozip"
 const VERSION = if !isempty(ARGS)
     strip(ARGS[1])
 else
