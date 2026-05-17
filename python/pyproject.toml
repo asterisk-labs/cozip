@@ -5,8 +5,8 @@ build-backend = "hatchling.build"
 [project]
 name = "cozip"
 dynamic = ["version"]
-description = "Python bindings to libcozip, the reference writer for the Cloud-Optimized ZIP (cozip) format."
-readme = { file = "../README.md", content-type = "text/markdown" }
+description = "Python bindings to libcozip, the reference library for the Cloud-Optimized ZIP (cozip) format."
+readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "../LICENSE" }
 requires-python = ">=3.10"
 dependencies = [
@@ -63,7 +63,7 @@ packages = ["cozip"]
 artifacts = ["cozip/_lib/*.dylib", "cozip/_lib/*.so", "cozip/_lib/*.dll"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"../README.md" = "README.md"
+"README.md" = "README.md"
 "../LICENSE" = "LICENSE"
 
 [tool.hatch.build.targets.wheel.hooks.custom]
@@ -78,7 +78,7 @@ include = [
 
 [tool.hatch.build.targets.sdist.force-include]
 "../VERSION" = "VERSION"
-"../README.md" = "README.md"
+"README.md" = "README.md"
 "../LICENSE" = "LICENSE"
 
 [tool.pytest.ini_options]

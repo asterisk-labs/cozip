@@ -14,7 +14,7 @@
 
 Open a ZIP like a table. Still a ZIP, now queryable.
 
-cozip glues a Parquet manifest onto an ordinary ZIP. The manifest has one row per entry (`name`, `offset`, `size`, plus any columns you tag onto it). Fetch the index, fetch the manifest, query it locally, then range-request just the bytes you actually want. A 20 GB archive becomes a queryable dataset in two reads.
+cozip glues a Parquet manifest onto an ordinary ZIP and drops a tiny fixed index at byte 0 that points to it. Fetch the index, fetch the manifest, query it locally, then range-request just the bytes you actually want. A 20 GB archive becomes a queryable dataset in two reads.
 
 <div align="center">
   <img src="images/cozip_animation.svg" alt="how cozip works" width="500"/>
@@ -22,15 +22,7 @@ cozip glues a Parquet manifest onto an ordinary ZIP. The manifest has one row pe
 
 It works because nothing about the ZIP changes. `unzip` works. `zipfile.ZipFile` works. Your OS preview pane works. The manifest is just the first entry, and any conforming ZIP reader walks right past it.
 
-## Two functions
-
-`write` packs files plus metadata into a cozip. `read` returns the manifest. That is the whole surface area in every binding.
-
-The write manifest reserves two columns. `path` is where each file lives on disk, consumed at write time and dropped from the manifest. `name` is how it is stored inside the archive. `write` then adds two more columns to the manifest, `offset` and `size`, holding the byte offset and length of each file in the ZIP.
-
-Everything else rides along and is queryable on read. Local file or remote URL, same call.
-
-### Python
+## Example
 
 ```python
 import cozip
@@ -48,51 +40,17 @@ manifest = cozip.read("https://example.com/dataset.zip")
 train = manifest.filter(pa.compute.equal(manifest["split"], "train"))
 ```
 
-### R
-
-```r
-library(cozip)
-library(arrow)
-
-tbl <- arrow_table(
-  path  = c("local/tile_001.tif", "local/tile_002.tif", "local/tile_003.tif"),
-  name  = c("tile_001.tif", "tile_002.tif", "tile_003.tif"),
-  split = c("train", "val", "train"),
-  label = c("cloud", "water", "forest")
-)
-cozip_write("dataset.zip", tbl)
-
-manifest <- cozip_read("https://example.com/dataset.zip")
-train <- manifest |> dplyr::filter(split == "train")
-```
-
-### Julia
-
-```julia
-using Cozip
-using DataFrames
-
-df = DataFrame(
-    path  = ["local/tile_001.tif", "local/tile_002.tif", "local/tile_003.tif"],
-    name  = ["tile_001.tif", "tile_002.tif", "tile_003.tif"],
-    split = ["train", "val", "train"],
-    label = ["cloud", "water", "forest"],
-)
-Cozip.write("dataset.zip", df)
-
-manifest = Cozip.read("https://example.com/dataset.zip")
-train = filter(:split => ==("train"), manifest)
-```
+`path` says where each file lives on disk. `name` is how it shows up inside the archive. Everything else rides along into the manifest and becomes queryable on read. R and Julia have the same API, see their READMEs.
 
 ## Bindings
 
-| Language | Read | Write | Install |
-|----------|:----:|:-----:|---------|
-| Python   |  ✓   |   ✓   | `pip install cozip` |
-| R        |  ✓   |   ✓   | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` |
-| Julia    |  ✓   |   ✓   | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` |
+| Language | Install | Docs |
+|----------|---------|------|
+| Python   | `pip install cozip` | [python/](python/) |
+| R        | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` | [r/](r/) |
+| Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | [julia/](julia/) |
 
-Every binding wraps the same C core, so a cozip written by R reads byte for byte identically in Julia, in Python, in C. The high-level API is uniform across runtimes. Python and R speak Apache Arrow tables; Julia speaks Tables.jl-compatible DataFrames.
+Every binding wraps the same C core. A cozip written by R reads byte for byte identically in Julia, in Python, in C.
 
 ## Spec
 

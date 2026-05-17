@@ -7,7 +7,7 @@ Authors@R: c(
     person("Cesar", "Aybar", email = "cesar@asterisk.coop", role = c("aut", "cre")),
     person("Roy", "Yali", email = "ryali93@gmail.com", role = "aut"),
     person("Julio", "Contreras", email = "julio.contreras@uv.es", role = "aut"))
-Description: R bindings to libcozip, the reference writer for the
+Description: R bindings to libcozip, the reference library for the
     Cloud-Optimized ZIP (cozip) format.
 License: MIT + file LICENSE
 URL: https://github.com/asterisk-labs/cozip

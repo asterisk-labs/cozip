@@ -1,0 +1,95 @@
+# Releasing Cozip.jl
+
+A short guide for releasing a new version. Follow the steps in order. The Julia binding has more moving parts than the others, but it's mechanical once you know it.
+
+## The five steps
+
+### 1. Bump the version
+
+Edit `VERSION` at the repo root. Bump at least one of the four CalVer parts.
+
+```
+2026.5.16
+```
+
+### 2. Commit and tag
+
+```bash
+git add VERSION
+git commit -m "release 2026.5.16"
+git tag v2026.5.16
+git push origin main --tags
+```
+
+The tag is what triggers the release workflow.
+
+### 3. Wait for the workflow
+
+The workflow has to finish before you register the package. The job to watch is `regenerate-artifacts-toml`. It adds a follow-up commit to main with the new `julia/Artifacts.toml`, and you need that commit before step 5.
+
+The pipeline takes around ten minutes. Make tea.
+
+Watch it from the Actions tab on GitHub. When `regenerate-artifacts-toml` goes green, move on.
+
+### 4. Pull the bot commit
+
+```bash
+git pull origin main
+```
+
+This pulls down the commit the workflow just pushed. The message looks like `chore(julia): regenerate Artifacts.toml for v2026.5.16`.
+
+Skip this and step 5 will register a version that downloads outdated binaries. It won't error, it'll just be wrong. Pull.
+
+### 5. Register in AsteriskRegistry
+
+Run this from the repo root.
+
+```bash
+julia -e 'using Pkg; Pkg.Registry.update("AsteriskRegistry"); using LocalRegistry; register("./julia"; registry="AsteriskRegistry", push=true)'
+```
+
+This takes the tree hash of `julia/` at the current commit (the one you just pulled), adds the entry to AsteriskRegistry, and pushes.
+
+Done.
+
+## Verifying the release
+
+Try this in a fresh Julia session.
+
+```julia
+using Pkg
+Pkg.activate(; temp=true)
+Pkg.Registry.add(Pkg.RegistrySpec(url="https://github.com/asterisk-labs/AsteriskRegistry"))
+Pkg.add("Cozip")
+using Cozip
+Cozip.LibCozip.cozip_version()
+```
+
+The version it prints should match the `VERSION` file. If it doesn't, the package is loading binaries from an older release. The usual cause is that you skipped step 4.
+
+## Common errors
+
+### `ERROR: Unknown package julia`
+
+You wrote `register("julia"; ...)` instead of `register("./julia"; ...)`. LocalRegistry sees a plain string and looks for a package called "julia". Adding `./` makes it a path.
+
+### `ERROR: no path or url specified for registry`
+
+On Julia 1.12 and up, `Pkg.Registry.add` doesn't take URLs as plain strings anymore. Wrap the URL in a `RegistrySpec`, or hit `]` to enter package mode where URLs work directly.
+
+### `! [rejected] main -> main (fetch first)`
+
+Someone pushed to AsteriskRegistry between your local pull and your push. LocalRegistry resets your local clone for you, so nothing is broken. Just retry.
+
+### `Pkg.add("Cozip")` says nothing changed
+
+AsteriskRegistry isn't loaded in this depot. Add it first with `Pkg.Registry.add(Pkg.RegistrySpec(url="..."))`, then retry.
+
+## Why the order matters
+
+The tag points at the commit where you bumped `VERSION`. The workflow then adds one more commit on top, with the new `Artifacts.toml`. LocalRegistry reads whatever is in your working directory right now. If you register before pulling, you save a tree hash for a directory that still has the old `Artifacts.toml`.
+
+No error. The user just gets a package that downloads old binaries. The worst kind of bug, because it works.
+
+Pull before you register.

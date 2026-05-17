@@ -10,7 +10,7 @@ The native `libcozip` binary is fetched automatically via Julia Artifacts, no C 
 
 ```julia
 using Pkg
-Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry")
+Pkg.Registry.add(Pkg.RegistrySpec(url="https://github.com/asterisk-labs/AsteriskRegistry"))
 Pkg.add("Cozip")
 ```
 
@@ -29,7 +29,7 @@ table = DataFrame(
 Cozip.write("out.zip", table)
 ```
 
-`name` is how each file appears inside the archive. `path` is where it lives on disk, consumed at write time and dropped from the manifest. Any additional columns ride along into `__metadata__` and become queryable on read.
+`name` is how each file appears inside the archive. `path` is where it lives on disk, used at write time and dropped from the manifest. Any extra columns ride along into `__metadata__` and become queryable on read.
 
 ```julia
 table = DataFrame(
@@ -44,27 +44,13 @@ Cozip.write("out.zip", table)
 ### Read
 
 ```julia
-using Cozip
+using Cozip, DataFrames
 
 manifest = Cozip.read("https://example.com/dataset.zip")
-```
-
-`manifest` is a DataFrame with `name`, `offset`, `size`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads.
-
-Filter the manifest like any DataFrame, then use `offset` and `size` to range-request payloads.
-
-```julia
-using DataFrames, Downloads
-
 train = filter(:split => ==("train"), manifest)
-row = train[1, :]
-buf = IOBuffer()
-Downloads.download(
-    "https://example.com/dataset.zip", buf;
-    headers = ["Range" => "bytes=$(row.offset)-$(row.offset + row.size - 1)"],
-)
-payload = take!(buf)
 ```
+
+`manifest` is a DataFrame with `name`, `offset`, `size`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Filter it like any DataFrame, then use `offset` and `size` to range-request the payloads you actually want.
 
 ## Versioning
 
