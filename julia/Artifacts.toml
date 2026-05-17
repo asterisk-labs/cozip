@@ -2,51 +2,51 @@
 arch = "aarch64"
 os = "linux"
 libc = "glibc"
-git-tree-sha1 = "837879f85b306cdd81de7499ce5affcfd1cf0e68"
+git-tree-sha1 = "1ae427339161f4c4bb20f2873cfe7b14f85b474f"
 lazy = true
 
     [[cozip.download]]
-    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.16/libcozip-2026.5.16-linux-aarch64.tar.gz"
-    sha256 = "d2f1c99d860af8dfd2be3bbf869bd1782781ef435b323d6e1ff899acf84f9f55"
+    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.17/libcozip-2026.5.17-linux-aarch64.tar.gz"
+    sha256 = "f972d2e24bae04dbd1f1fed55492ebdd700982b603b16edec743662fbabf7029"
 
 [[cozip]]
 arch = "x86_64"
 os = "linux"
 libc = "glibc"
-git-tree-sha1 = "70ed368fc6793bbbf1316b92b41ec219a46dd90b"
+git-tree-sha1 = "ee5b0385bdf85abe27be1e7cffad177f8ff4a989"
 lazy = true
 
     [[cozip.download]]
-    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.16/libcozip-2026.5.16-linux-x86_64.tar.gz"
-    sha256 = "3cc713395595f816eb0441795333f106b36602a4014696bafb888d85ff9e7edc"
+    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.17/libcozip-2026.5.17-linux-x86_64.tar.gz"
+    sha256 = "0e645981acdca0bb94fa578dc3474871a8ac789c026bc071f2554416bc80c52e"
 
 [[cozip]]
 arch = "x86_64"
 os = "macos"
-git-tree-sha1 = "8b23674477ef265102003c1cd49627cf9a9b4723"
+git-tree-sha1 = "af3cf7722e819b9542cc9da00e65eecc15591e47"
 lazy = true
 
     [[cozip.download]]
-    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.16/libcozip-2026.5.16-macos-universal.tar.gz"
-    sha256 = "68a8cfced66e11af09d740a7b353f6bb3d3755a42c1eb9577fc18ebbb1bbf347"
+    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.17/libcozip-2026.5.17-macos-universal.tar.gz"
+    sha256 = "689652ff9681b900336acdd06a166c7c6e1e254def9eb7aff6d9825ef15d6325"
 
 [[cozip]]
 arch = "aarch64"
 os = "macos"
-git-tree-sha1 = "8b23674477ef265102003c1cd49627cf9a9b4723"
+git-tree-sha1 = "af3cf7722e819b9542cc9da00e65eecc15591e47"
 lazy = true
 
     [[cozip.download]]
-    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.16/libcozip-2026.5.16-macos-universal.tar.gz"
-    sha256 = "68a8cfced66e11af09d740a7b353f6bb3d3755a42c1eb9577fc18ebbb1bbf347"
+    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.17/libcozip-2026.5.17-macos-universal.tar.gz"
+    sha256 = "689652ff9681b900336acdd06a166c7c6e1e254def9eb7aff6d9825ef15d6325"
 
 [[cozip]]
 arch = "x86_64"
 os = "windows"
-git-tree-sha1 = "69162d010f5f58bcc774672e9819df5d2b2b96c5"
+git-tree-sha1 = "405e24084da9b86b0584d465368d841c5ba3570f"
 lazy = true
 
     [[cozip.download]]
-    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.16/libcozip-2026.5.16-windows-x86_64.tar.gz"
-    sha256 = "4262b21b7e95e1182443d42e83886a271569b5df66d552bb9ddefb9ec84860f7"
+    url = "https://github.com/asterisk-labs/cozip/releases/download/v2026.5.17/libcozip-2026.5.17-windows-x86_64.tar.gz"
+    sha256 = "eb9ea96bb7b0151ca3c924ee5cacbb0c3db995a5acf34c326fd78522bc73e17c"
 
