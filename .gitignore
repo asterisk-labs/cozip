@@ -11,3 +11,9 @@ python/*.egg-info/
 
 python/cozip/_lib/cozip.dylib
 julia/Manifest.toml
+dist/
+python/__pycache__/
+
+python/cozip/__pycache__/
+
+python/tests/__pycache__/

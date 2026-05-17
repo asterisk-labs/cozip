@@ -1,6 +1,6 @@
 # cozip
 
-R bindings for libcozip. Open a Cloud-Optimized ZIP archive like a table over HTTP range requests, or write one from an arrow Table.
+R bindings for libcozip. Read a Cloud-Optimized ZIP archive's manifest over HTTP range requests, or write one from an arrow Table.
 
 `libzip` and `zlib` are vendored under `src/`, so installation compiles everything from source. No system dependencies beyond a working C toolchain.
 
@@ -23,7 +23,7 @@ tbl <- arrow_table(
   path = c("/path/to/a.txt", "/path/to/b.bin")
 )
 
-cozip_write("out.zip", tbl)
+create("out.zip", tbl)
 ```
 
 `name` is how each file appears inside the archive. `path` is where it lives on disk, used at write time and dropped from the manifest. Any extra columns ride along into `__metadata__` and become queryable on read.
@@ -35,20 +35,19 @@ tbl <- arrow_table(
   cloud_pct = c(12.3, 45.1)
 )
 
-cozip_write("out.zip", tbl)
+create("out.zip", tbl)
 ```
 
 ### Read
 
 ```r
 library(cozip)
-library(dplyr)
 
-manifest <- cozip_read("https://example.com/dataset.zip")
-train <- manifest |> filter(split == "train")
+manifest <- read("https://example.com/dataset.zip")
+train <- manifest[manifest$split == "train", ]
 ```
 
-`manifest` is an arrow Table with `name`, `offset`, `size`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Filter it with dplyr or arrow verbs, then use `offset` and `size` to range-request the payloads you actually want.
+`manifest` is a tibble with `name`, `offset`, `size`, `cozip:gdal_vsi`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Pass `columns = c(...)` to bring only specific extras, `gdal_vsi = FALSE` to drop the VSI path column.
 
 ## Versioning
 

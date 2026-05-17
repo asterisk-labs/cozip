@@ -27,9 +27,8 @@ For NONE / TACO profiles or buffer sources, call
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://asterisk.coop/taco/cozip}
-  \item \url{https://github.com/asterisk-labs/taco}
-  \item Report bugs at \url{https://github.com/asterisk-labs/taco/issues}
+  \item \url{https://github.com/asterisk-labs/cozip}
+  \item Report bugs at \url{https://github.com/asterisk-labs/cozip/issues}
 }
 
 }

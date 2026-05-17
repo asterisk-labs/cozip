@@ -1,6 +1,6 @@
 # cozip
 
-Python bindings for libcozip. Open a Cloud-Optimized ZIP archive like a table over HTTP range requests, or write one from a pyarrow Table.
+Python bindings for libcozip. Read a Cloud-Optimized ZIP archive's manifest over HTTP range requests, or write one from a pyarrow Table.
 
 The native `libcozip` binary ships inside the wheel, no C toolchain required.
 
@@ -42,13 +42,12 @@ cozip.write("out.zip", table)
 
 ```python
 import cozip
-import pyarrow as pa
 
 manifest = cozip.read("https://example.com/dataset.zip")
-train = manifest.filter(pa.compute.equal(manifest["split"], "train"))
+train = manifest[manifest["split"] == "train"]
 ```
 
-`manifest` is a pyarrow Table with `name`, `offset`, `size`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Filter it like any pyarrow Table, then use `offset` and `size` to range-request the payloads you actually want.
+`manifest` is a pandas DataFrame with `name`, `offset`, `size`, `cozip:gdal_vsi`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Pass `columns=[...]` to bring only specific extras, `gdal_vsi=False` to drop the VSI path column.
 
 ## Versioning
 

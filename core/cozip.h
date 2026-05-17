@@ -130,7 +130,7 @@ COZIP_API const char *cozip_flat_metadata_name(void);  /* "__metadata__"      */
  *
  *   NONE: any priority files.
  *   FLAT: a single "__metadata__" Parquet manifest.
- *   TACO: "COLLECTION.json" plus every "METADATA/*.parquet", contiguous,
+ *   TACO: "COLLECTION.json" plus every "METADATA/<name>.parquet", contiguous,
  *         placed before the Central Directory.
  *
  * The C core does not enforce profile rules; bindings do.
