@@ -1,12 +1,12 @@
 <div align="center">
   <img src="images/banner.svg" alt="cozip" width="700"/>
-
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-EAB308?style=flat-square" alt="License MIT"/></a>
     <a href="https://pypi.org/project/cozip"><img src="https://img.shields.io/pypi/v/cozip?label=python&logo=python&logoColor=white&color=3776AB&style=flat-square" alt="PyPI"/></a>
     <a href="https://asterisk-labs.r-universe.dev/cozip"><img src="https://img.shields.io/badge/r--universe-cozip-276DC3?logo=r&logoColor=white&style=flat-square" alt="R"/></a>
     <a href="https://github.com/asterisk-labs/AsteriskRegistry"><img src="https://img.shields.io/badge/julia-Cozip.jl-9558B2?logo=julia&logoColor=white&style=flat-square" alt="Julia"/></a>
     <a href="SPEC.md"><img src="https://img.shields.io/badge/spec-stable-A8B9CC?style=flat-square" alt="Spec"/></a>
+    <a href="https://github.com/asterisk-labs/cozip_reader"><img src="https://img.shields.io/badge/duckdb-cozip__reader-FFF000?logo=duckdb&logoColor=black&style=flat-square" alt="DuckDB extension"/></a>
   </p>
 </div>
 
@@ -34,6 +34,7 @@ table = pa.table({
     "split": ["train", "val", "train"],
     "label": ["cloud", "water", "forest"],
 })
+
 cozip.write("dataset.zip", table)
 
 manifest = cozip.read("https://example.com/dataset.zip")
@@ -44,13 +45,15 @@ train = manifest.filter(pa.compute.equal(manifest["split"], "train"))
 
 ## Bindings
 
-| Language | Install | Docs |
-|----------|---------|------|
-| Python   | `pip install cozip` | [python/](python/) |
-| R        | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` | [r/](r/) |
-| Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | [julia/](julia/) |
+| Language | Install | Role | Docs |
+|----------|---------|------|------|
+| Python   | `pip install cozip` | read + write | [python/](python/) |
+| R        | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` | read + write | [r/](r/) |
+| Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | read + write | [julia/](julia/) |
+| C        | vendor [`core/`](core/) (libzip + zlib bundled, zero system deps) | **core writer** | [core/](core/) |
+| C++ / DuckDB | `INSTALL cozip FROM community; LOAD cozip;` | **reader** via `read_cozip()` | [asterisk-labs/cozip_reader ↗](https://github.com/asterisk-labs/cozip_reader) |
 
-Every binding wraps the same C core. A cozip written by R reads byte for byte identically in Julia, in Python, in C.
+The C library at [`core/`](core/) is the writer core — Python, R, and Julia all wrap it, so a cozip written in any of them is byte-for-byte identical. The C++ reader lives in a separate repo, [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader), built as a DuckDB community extension: it exposes `read_cozip(url)` to SQL, works native and in WebAssembly, and ranges files directly out of HTTPS/S3/HuggingFace. Both follow the same [SPEC.md](SPEC.md).
 
 ## Spec
 
