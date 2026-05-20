@@ -1,12 +1,14 @@
 # cozip top-level Makefile.
 
-VERSION    := $(shell tr -d '[:space:]' < VERSION)
-VERSION_JL := $(shell echo $(VERSION) | cut -d. -f1-3 | tr -d '[:space:]')
+VERSION     := $(shell tr -d '[:space:]' < VERSION)
+VERSION_JL  := $(shell echo $(VERSION) | cut -d. -f1-3 | tr -d '[:space:]')
+VERSION_NPM := $(VERSION_JL)
 
 CORE_DIR   := core
 PY_DIR     := python
 R_DIR      := r
 JL_DIR     := julia
+JS_DIR     := javascript
 BUILD_DIR  := $(CORE_DIR)/build
 PY_LIB_DIR := $(PY_DIR)/cozip/_lib
 DIST_DIR   := dist
@@ -23,13 +25,13 @@ ifeq ($(OS),Windows_NT)
     LIB_NAME := cozip.dll
 endif
 
-.PHONY: all lib sync python r julia clean help
+.PHONY: all lib sync python r julia javascript clean help
 
-all: sync lib python r julia
+all: sync lib python r julia javascript
 	@echo "cozip $(VERSION): all green"
 
 help:
-	@echo "make {all|sync|lib|python|r|julia|clean}"
+	@echo "make {all|sync|lib|python|r|julia|javascript|clean}"
 
 lib:
 	$(CMAKE) -B $(BUILD_DIR) -S $(CORE_DIR) -G Ninja
@@ -37,12 +39,14 @@ lib:
 	mkdir -p $(PY_LIB_DIR)
 	cp $(BUILD_DIR)/$(LIB_NAME) $(PY_LIB_DIR)/$(LIB_NAME)
 
-# 4-part CalVer in R, 3-part SemVer in Julia.
+# 4-part CalVer in R, 3-part SemVer in Julia and npm.
 sync:
 	@sed -i.bak -E 's/^Version:.*/Version: $(VERSION)/' $(R_DIR)/DESCRIPTION
 	@rm -f $(R_DIR)/DESCRIPTION.bak
 	@sed -i.bak -E 's/^version = ".*"/version = "$(VERSION_JL)"/' $(JL_DIR)/Project.toml
 	@rm -f $(JL_DIR)/Project.toml.bak
+	@sed -i.bak -E 's/("version": )"[^"]*"/\1"$(VERSION_NPM)"/' $(JS_DIR)/package.json
+	@rm -f $(JS_DIR)/package.json.bak
 	@rm -f $(R_DIR)/src/cozip.c $(R_DIR)/src/cozip.h
 	@cp $(CORE_DIR)/cozip.c $(R_DIR)/src/cozip.c
 	@cp $(CORE_DIR)/cozip.h $(R_DIR)/src/cozip.h
@@ -52,6 +56,8 @@ sync:
 	 [ "$$VFILE" = "$(VERSION)" ] || { echo "check: DESCRIPTION=$$VFILE != $(VERSION)"; exit 1; }
 	@VJL=$$(grep -E '^version = ' $(JL_DIR)/Project.toml | sed -E 's/version = "(.*)"/\1/'); \
 	 [ "$$VJL" = "$(VERSION_JL)" ] || { echo "check: Project.toml=$$VJL != $(VERSION_JL)"; exit 1; }
+	@VJS=$$(grep -E '"version":' $(JS_DIR)/package.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/'); \
+	 [ "$$VJS" = "$(VERSION_NPM)" ] || { echo "check: package.json=$$VJS != $(VERSION_NPM)"; exit 1; }
 	@diff -q $(CORE_DIR)/cozip.c $(R_DIR)/src/cozip.c >/dev/null || { echo "check: cozip.c drift"; exit 1; }
 	@diff -q $(CORE_DIR)/cozip.h $(R_DIR)/src/cozip.h >/dev/null || { echo "check: cozip.h drift"; exit 1; }
 	@diff -r -q $(CORE_DIR)/libzip $(R_DIR)/src/libzip >/dev/null || { echo "check: libzip/ drift"; exit 1; }
@@ -83,6 +89,15 @@ julia: lib
 	  'ENV["COZIP_LIB_PATH"] = "$(abspath $(PY_LIB_DIR)/$(LIB_NAME))"; \
 	   using Pkg; Pkg.instantiate(); Pkg.test()'
 
+# Pure-JS package: no native lib, but version sync is required.
+javascript: sync
+	@command -v npm >/dev/null || { echo "missing npm"; exit 1; }
+	cd $(JS_DIR) && npm install
+	cd $(JS_DIR) && npm run types
+	cd $(JS_DIR) && npm test
+	mkdir -p $(DIST_DIR)
+	cd $(JS_DIR) && npm pack --pack-destination ../$(DIST_DIR)
+
 clean:
 	rm -rf $(CORE_DIR)/build/ $(DIST_DIR)/
 	rm -f $(PY_LIB_DIR)/*.dylib $(PY_LIB_DIR)/*.so $(PY_LIB_DIR)/*.dll
@@ -91,4 +106,5 @@ clean:
 	@find $(R_DIR)/src -name '*.o' -delete
 	rm -f $(R_DIR)/src/.DS_Store
 	rm -rf $(PY_DIR)/dist $(PY_DIR)/build $(PY_DIR)/*.egg-info
+	rm -rf $(JS_DIR)/node_modules $(JS_DIR)/types
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

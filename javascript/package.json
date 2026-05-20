@@ -1,6 +1,6 @@
 {
-  "name": "@cozip/core",
-  "version": "0.1.0",
+  "name": "@asterisk-labs/cozip",
+  "version": "2026.5.17",
   "description": "Pure-JS reader for Cloud-Optimized ZIP (cozip) archives over HTTP.",
   "type": "module",
   "exports": {
@@ -16,10 +16,11 @@
   "publishConfig": { "access": "public" },
   "scripts": {
     "types": "tsc",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "prepublishOnly": "npm run types && npm test"
   },
   "devDependencies": { "typescript": "^5.6.0" },
+  "dependencies": { "hyparquet": "^1.25.0", "hyparquet-compressors": "^1.1.1"},
   "keywords": ["cozip", "zip", "cloud-optimized", "geospatial", "range-requests"],
   "repository": {
     "type": "git",
