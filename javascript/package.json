@@ -1,0 +1,32 @@
+{
+  "name": "@cozip/core",
+  "version": "0.1.0",
+  "description": "Pure-JS reader for Cloud-Optimized ZIP (cozip) archives over HTTP.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./types/index.d.ts",
+  "files": ["src", "types", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "types": "tsc",
+    "test": "node --test test/",
+    "prepublishOnly": "npm run types && npm test"
+  },
+  "devDependencies": { "typescript": "^5.6.0" },
+  "keywords": ["cozip", "zip", "cloud-optimized", "geospatial", "range-requests"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/asterisk-labs/cozip.git",
+    "directory": "javascript"
+  },
+  "homepage": "https://github.com/asterisk-labs/cozip/tree/main/javascript#readme",
+  "bugs": "https://github.com/asterisk-labs/cozip/issues",
+  "license": "MIT"
+}
