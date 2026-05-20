@@ -2,8 +2,7 @@ using DataFrames
 using DuckDB
 
 
-# Forward declaration: claims `read` as a name owned by Cozip, so
-# `Cozip.read` is independent of `Base.read` instead of extending it.
+# Forward declaration: claims `read` as a name owned by Cozip
 function read end
 
 
@@ -22,11 +21,12 @@ extras, `nothing` brings all.
 - `gdal_vsi`: include the `cozip:gdal_vsi` column.
 """
 function read(
-    source::AbstractString;
+    source;
     columns::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
     gdal_vsi::Bool = true,
 )::DataFrame
-    isempty(source) &&
+    src = string(source)
+    isempty(src) &&
         throw(ArgumentError("cozip: `source` must be a non-empty string"))
 
     if columns !== nothing && any(isempty, columns)
@@ -45,7 +45,7 @@ function read(
             "SELECT ", _build_select(columns, gdal_vsi),
             " FROM read_cozip(?, gdal_vsi := ", gdal_vsi ? "true" : "false", ")",
         )
-        return DataFrame(DBInterface.execute(con, sql, [String(source)]))
+        return DataFrame(DBInterface.execute(con, sql, [src]))
     finally
         DBInterface.close!(con)
         DBInterface.close!(db)

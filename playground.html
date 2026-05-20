@@ -177,7 +177,9 @@
   .heart {
     width: 12px; height: 12px; color: var(--magenta); flex-shrink: 0;
     animation: heartbeat 2.4s ease-in-out infinite;
+    transition: color 200ms ease;
   }
+  .attribution:hover .heart { color: #e0245e; }
   @keyframes heartbeat {
     0%, 55%, 100% { transform: scale(1); }
     10% { transform: scale(1.22); } 20% { transform: scale(1); }

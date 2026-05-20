@@ -33,8 +33,8 @@ function stage_metadata(table)
     df = _validate_input_table(table)
 
     n_users = nrow(df)
-    names_v = String.(df.name)
-    paths_v = String.(df.path)
+    names_v = string.(df.name)
+    paths_v = string.(df.path)
 
     entries, keepalive = _alloc_user_entries(names_v, paths_v, n_users + 1)
     err = cozip_error_t()
@@ -70,13 +70,13 @@ or modifies it.
 - `validate`: re-run the plan and check parquet matches.
 """
 function stage_create(
-    out_path::AbstractString,
+    out_path,
     paths,
-    metadata_parquet::AbstractString;
+    metadata_parquet;
     validate::Bool = true,
 )::String
-    out_path_str = abspath(String(out_path))
-    parquet_str  = abspath(String(metadata_parquet))
+    out_path_str = abspath(string(out_path))
+    parquet_str  = abspath(string(metadata_parquet))
 
     isfile(parquet_str) ||
         throw(SystemError("cozip: metadata parquet not found: $parquet_str"))
@@ -113,13 +113,13 @@ DuckDB defaults for the metadata parquet. For GeoParquet or custom
 options, call `stage_metadata` and `stage_create` directly.
 """
 function create(
-    out_path::AbstractString,
+    out_path,
     table;
     temp_dir = nothing,
 )::String
     metadata, paths = stage_metadata(table)
 
-    tmp_dir = something(temp_dir, tempdir())
+    tmp_dir = string(something(temp_dir, tempdir()))
     isdir(tmp_dir) || mkpath(tmp_dir)
     tmp_pq = joinpath(tmp_dir, "cozip_meta_$(getpid())_$(time_ns()).parquet")
 
@@ -158,7 +158,7 @@ function _validate_input_table(table)::DataFrame
     reserved = _reserved()
     seen = Set{String}()
     for (i, name) in enumerate(df.name)
-        s = String(name)
+        s = string(name)
         s in reserved &&
             throw(ArgumentError("cozip: row $i uses reserved name $(repr(s))"))
         s in seen &&
@@ -167,10 +167,10 @@ function _validate_input_table(table)::DataFrame
     end
 
     for (i, p) in enumerate(df.path)
-        ps = String(p)
+        ps = string(p)
         isfile(ps) ||
             throw(SystemError(
-                "cozip: row $i ($(repr(String(df.name[i])))): source not found: $ps"
+                "cozip: row $i ($(repr(string(df.name[i])))): source not found: $ps"
             ))
     end
 
@@ -182,8 +182,8 @@ function _validate_paths_arg(paths)::Tuple{Vector{String},Vector{String}}
     names_v = String[]
     paths_v = String[]
     for p in paths
-        push!(names_v, String(first(p)))
-        push!(paths_v, String(last(p)))
+        push!(names_v, string(first(p)))
+        push!(paths_v, string(last(p)))
     end
 
     isempty(names_v) &&

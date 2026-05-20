@@ -17,3 +17,15 @@ python/__pycache__/
 python/cozip/__pycache__/
 
 python/tests/__pycache__/
+
+.vscode/settings.json
+
+demo.py
+
+demo.R
+
+demo.jl
+
+Manifest.toml
+
+Project.toml

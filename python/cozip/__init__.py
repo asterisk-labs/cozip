@@ -4,6 +4,8 @@ from ._core import CozipError, ffi, lib
 from ._writer import create, stage_create, stage_metadata
 from ._reader import read
 
+write = create
+
 try:
     __version__ = version("cozip")
 except PackageNotFoundError:
@@ -12,6 +14,7 @@ except PackageNotFoundError:
 __all__ = [
     "CozipError",
     "create",
+    "write",
     "stage_metadata",
     "stage_create",
     "read",

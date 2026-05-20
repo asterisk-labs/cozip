@@ -242,6 +242,40 @@ jobs:
         run: julia --project=julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
 
+  # Pure JS, no native deps. Single Linux runner is enough; the runtime
+  # matrix (browser/Node/Deno/edge) is asserted by the package's own tests.
+  build-npm-package:
+    name: npm package
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - working-directory: javascript
+        run: npm ci
+
+      - working-directory: javascript
+        run: npm test
+
+      - working-directory: javascript
+        run: npm run build --if-present
+
+      # package.json version must equal the tagged release.
+      - if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: javascript
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$PKG_VERSION" != "${{ needs.validate.outputs.version }}" ]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match tag (${{ needs.validate.outputs.version }})"
+            exit 1
+          fi
+
+
   build-wheels:
     name: Wheel (${{ matrix.name }})
     needs: build-lib
@@ -519,7 +553,7 @@ jobs:
   #   workflow: release.yml   environment: pypi
   publish-pypi:
     name: Publish to PyPI
-    needs: [build-wheels, build-sdist, build-r-package, build-julia-package]
+    needs: [build-wheels, build-sdist, build-r-package, build-julia-package, build-npm-package]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
@@ -537,3 +571,30 @@ jobs:
           path: dist
       - run: ls -la dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-npm:
+    name: Publish to npm
+    needs: [build-wheels, build-sdist, build-r-package, build-julia-package, build-npm-package]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      id-token: write       # OIDC for trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm install -g npm@latest
+
+      - working-directory: javascript
+        run: |
+          npm ci
+          npm run build --if-present
+
+      - working-directory: javascript
+        run: npm publish --access public

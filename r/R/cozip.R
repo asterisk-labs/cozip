@@ -305,3 +305,8 @@ create <- function(out_path, table, temp_dir = NULL) {
   if (!dir.exists(temp_dir)) dir.create(temp_dir, recursive = TRUE)
   tempfile(tmpdir = temp_dir, fileext = ".parquet")
 }
+
+
+#' @rdname create
+#' @export
+write <- create

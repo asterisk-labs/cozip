@@ -15,34 +15,56 @@
 
 Open a ZIP like a table. Still a ZIP, now queryable.
 
-cozip glues a Parquet manifest onto an ordinary ZIP and drops a tiny fixed index at byte 0 that points to it. Fetch the index, fetch the manifest, query it locally, then range-request just the bytes you actually want. A 20 GB archive becomes a queryable dataset in two reads.
+cozip glues a Parquet manifest onto an ordinary ZIP and drops a tiny fixed index at byte 0 that points to it. Fetch the index, fetch the manifest, query it locally, then range-request just the bytes you actually want. A large ZIP archive becomes a queryable dataset!
 
 <div align="center">
   <img src="images/cozip_animation.svg" alt="how cozip works" width="500"/>
 </div>
 
-It works because nothing about the ZIP changes. `unzip` works. `zipfile.ZipFile` works. Your OS preview pane works. The manifest is just the first entry, and any conforming ZIP reader walks right past it.
+It works because nothing about the ZIP changes. A cozip is still a perfectly valid ZIP file. `unzip` works. `zipfile.ZipFile` works. Your OS preview pane works.
 
 ## Example
 
 ```python
-import cozip
+import tempfile
+from pathlib import Path
+
+import numpy as np
 import pyarrow as pa
+import rasterio
+import cozip
 
-table = pa.table({
-    "path":  ["local/tile_001.tif", "local/tile_002.tif", "local/tile_003.tif"],
-    "name":  ["tile_001.tif", "tile_002.tif", "tile_003.tif"],
+
+# 1. Three tiny GeoTIFFs: all-zeros, all-ones, all-twos. (your dataset)
+tmp = Path(tempfile.mkdtemp())
+labels = ["zeros", "ones", "twos"]
+paths = [tmp / f"{label}.tif" for label in labels]
+
+profile = dict(driver="GTiff", dtype="uint8", count=1, width=64, height=64,
+               crs="EPSG:4326", transform=rasterio.Affine.identity())
+for v, p in enumerate(paths):
+    with rasterio.open(p, "w", **profile) as dst:
+        dst.write(np.full((64, 64), v, "uint8"), 1)
+
+# 2. Pack with a table.
+archive = str(tmp / "dataset.zip")
+cozip.write(archive, pa.table({
+    "path":  [str(p) for p in paths],
+    "name":  [p.name for p in paths],
     "split": ["train", "val", "train"],
-    "label": ["cloud", "water", "forest"],
-})
+    "label": labels,
+}))
 
-cozip.write("dataset.zip", table)
-
-manifest = cozip.read("https://example.com/dataset.zip")
-train = manifest.filter(pa.compute.equal(manifest["split"], "train"))
+# 3. Read manifest
+manifest = cozip.read(archive)
+for _, row in manifest[manifest["split"] == "train"].iterrows():
+    with rasterio.open(row["cozip:gdal_vsi"]) as src:
+        print(row["name"], src.read(1).mean())
 ```
 
-`path` says where each file lives on disk. `name` is how it shows up inside the archive. Everything else rides along into the manifest and becomes queryable on read. R and Julia have the same API, see their READMEs.
+`path` says where each file lives on disk. `name` is how it shows up inside the archive. Only `path` and `name` are required.
+Everything else is optional metadata. The writer creates two special columns in the manifest: `offset` and `length` say where the file lives in the ZIP. The reader can create on-the-fly the `cozip:path` column that gives a [GDAL VSI](https://gdal.org/en/stable/user/virtual_file_systems.html) string.
+
 
 ## Bindings
 
@@ -53,13 +75,14 @@ train = manifest.filter(pa.compute.equal(manifest["split"], "train"))
 | Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | read + write | [julia/](julia/) |
 | JavaScript | `npm install @asterisk-labs/cozip` | **reader** | [javascript/](javascript/) |
 | C        | vendor [`core/`](core/) (libzip + zlib bundled, zero system deps) | **core writer** | [core/](core/) |
-| C++ / DuckDB | `INSTALL cozip FROM community; LOAD cozip;` | **reader** via `read_cozip()` | [asterisk-labs/cozip_reader ↗](https://github.com/asterisk-labs/cozip_reader) |
+| C++ / DuckDB | `INSTALL cozip FROM community; LOAD cozip;` | **reader** via `read_cozip()` | [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) |
 
-The C library at [`core/`](core/) is the writer core — Python, R, and Julia all wrap it, so a cozip written in any of them is byte-for-byte identical. Two readers live outside the C path: the DuckDB community extension at [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) exposes `read_cozip(url)` to SQL, works native and in WebAssembly, and ranges files directly out of HTTPS/S3/HuggingFace; the [`javascript/`](javascript/) package reads the manifest in two `fetch` calls for browser, Node, Deno, and edge runtimes. All follow the same [SPEC.md](SPEC.md).
+The C library at [`core/`](core/) is the writer core — Python, R, and Julia all wrap it, so a cozip written in any of them is
+byte-for-byte identical. Two readers live outside the C path. The DuckDB community extension at [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) exposes `read_cozip(url)` to SQL, runs native and in WebAssembly, and ranges files straight from HTTPS/S3/HuggingFace. The [`javascript/`](javascript/) package runs in browser, Node, Deno, and edge runtimes. All follow the same [SPEC.md](SPEC.md).
 
 ## Spec
 
-See [SPEC.md](SPEC.md). The format is short and stable. Any conforming reader handles any conforming writer.
+See [SPEC.md](SPEC.md). Any conforming reader handles any conforming writer.
 
 ## License
 

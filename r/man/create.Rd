@@ -2,9 +2,12 @@
 % Please edit documentation in R/cozip.R
 \name{create}
 \alias{create}
+\alias{write}
 \title{Write a cozip archive in one call}
 \usage{
 create(out_path, table, temp_dir = NULL)
+
+write(out_path, table, temp_dir = NULL)
 }
 \arguments{
 \item{out_path}{Destination archive path.}

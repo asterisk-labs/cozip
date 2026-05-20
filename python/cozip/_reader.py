@@ -5,6 +5,9 @@ read_cozip(), returns the result as a pandas.DataFrame. For filtering,
 joins, or any non-trivial query, use DuckDB directly.
 """
 
+import os
+from pathlib import Path
+
 import pandas as pd
 
 
@@ -35,7 +38,7 @@ def _build_select(columns: list[str] | None, gdal_vsi: bool) -> str:
 
 
 def read(
-    source: str,
+    source: str | os.PathLike[str],
     *,
     columns: list[str] | None = None,
     gdal_vsi: bool = True,
@@ -43,7 +46,8 @@ def read(
     """Read the manifest of a FLAT-profile cozip archive.
 
     Args:
-        source: local path or http(s)/s3/gcs/azure/hf URL to the .zip.
+        source: local path (str or pathlib.Path) or http(s)/s3/gcs/
+            azure/hf URL to the .zip.
         columns: extra columns to bring. `name`, `offset`, `size`
             (and `cozip:gdal_vsi` when gdal_vsi=True) are always
             included. None returns every column in the manifest.
@@ -63,6 +67,8 @@ def read(
                 [path]).df()
     """
     import duckdb
+
+    source = os.fspath(source)
 
     con = duckdb.connect()
     con.execute("INSTALL cozip FROM community; LOAD cozip;")
