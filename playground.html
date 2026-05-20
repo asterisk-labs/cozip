@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cozip viewer</title>
+<link rel="icon" href="https://asterisk.coop/cozip/images/cozip_logo.svg" type="image/svg+xml">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafaf7;
+    --surface: #ffffff;
+    --surface-soft: #f4f2ea;
+    --ink: #0a0a0a;
+    --ink-2: #353532;
+    --ink-3: #676762;
+    --ink-4: #8b8b83;
+    --line: #e5e1d7;
+    --line-2: #d6d0c3;
+    --gold: #f7cc0b;
+    --gold-soft: #fff0a5;
+    --magenta: #492ae8;
+    --magenta-2: #6d54ff;
+    --code-bg: #0f0d1f;
+    --code-fg: #f4f3ee;
+    --shadow-sm: 0 12px 30px rgba(30, 47, 85, 0.08);
+    --shadow-md: 0 22px 60px rgba(30, 47, 85, 0.14);
+    --shadow-lg: 0 36px 100px rgba(30, 47, 85, 0.22);
+    --radius-sm: 14px;
+    --radius-md: 20px;
+    --radius-lg: 28px;
+    --nav-height: 78px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    font-family: "League Spartan", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--ink-2);
+    background:
+      radial-gradient(circle at 78% 8%, rgba(73, 42, 232, 0.08), transparent 38rem),
+      var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(30, 47, 85, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(30, 47, 85, 0.03) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, black, transparent 82%);
+  }
+
+  /* ─── Header ──────────────────────────────────────────────────── */
+  .site-header {
+    position: relative; z-index: 100;
+    background: rgba(250, 250, 247, 0.86);
+    border-bottom: 1px solid rgba(229, 225, 215, 0.86);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  }
+  .nav {
+    min-height: var(--nav-height);
+    padding: 0 clamp(16px, 3vw, 28px);
+    display: flex; align-items: center; gap: 16px;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    color: var(--ink); font-size: 28px; font-weight: 900;
+    letter-spacing: -0.05em; white-space: nowrap; text-decoration: none;
+    flex-shrink: 0;
+  }
+  .brand-logo { width: 38px; height: 38px; flex: 0 0 auto; }
+  .brand-sub {
+    font-size: 12px; font-weight: 800; letter-spacing: 0.14em;
+    color: var(--ink-4); text-transform: uppercase;
+    border-left: 1px solid var(--line); padding-left: 10px; margin-left: 4px;
+  }
+
+  .nav-search {
+    flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center;
+    margin: 0 8px;
+  }
+  .nav-search input {
+    flex: 1; min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink); padding: 10px 14px; border-radius: 999px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px; font-weight: 500;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .nav-search input:focus {
+    outline: none; border-color: var(--magenta);
+    box-shadow: 0 0 0 4px rgba(73, 42, 232, 0.12);
+  }
+  .nav-search button {
+    background: var(--magenta); color: #fff;
+    border: none; padding: 10px 20px; border-radius: 999px;
+    font-family: inherit; font-size: 14px; font-weight: 800;
+    letter-spacing: -0.01em; cursor: pointer; white-space: nowrap;
+    box-shadow: 0 8px 20px rgba(73, 42, 232, 0.25);
+    transition: transform .15s, box-shadow .15s, background .15s;
+  }
+  .nav-search button:hover:not(:disabled) {
+    transform: translateY(-1px); background: #351ec8;
+    box-shadow: 0 12px 28px rgba(73, 42, 232, 0.32);
+  }
+  .nav-search button:disabled { opacity: 0.5; cursor: wait; }
+
+  .nav-links { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .nav-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 999px;
+    color: var(--ink-2); font-size: 14px; font-weight: 800;
+    letter-spacing: -0.01em; text-decoration: none;
+    transition: color .15s, background .15s, transform .15s;
+  }
+  .nav-link:hover {
+    color: var(--magenta); background: rgba(73, 42, 232, 0.08);
+    transform: translateY(-1px);
+  }
+  .nav-link.primary {
+    color: #fff; background: var(--ink);
+    box-shadow: 0 8px 20px rgba(10, 10, 10, 0.14);
+  }
+  .nav-link.primary:hover { color: #fff; background: var(--magenta); }
+  .nav-link svg { width: 14px; height: 14px; }
+
+  /* ─── Main viewport ──────────────────────────────────────────── */
+  .viewport {
+    position: relative;
+    height: calc(100vh - var(--nav-height));
+    overflow: hidden;
+  }
+  #map { position: absolute; inset: 0; z-index: 1; }
+  #map canvas { outline: none; }
+
+  /* ─── Stats (bottom-left) ───────────────────────────────────── */
+  .stats {
+    position: absolute; bottom: 1rem; left: 1rem; z-index: 10;
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    padding: 12px 18px;
+    display: none; gap: 24px; align-items: center;
+    box-shadow: var(--shadow-sm);
+  }
+  .stats.show { display: flex; }
+  .stat { display: flex; flex-direction: column; gap: 1px; }
+  .stat-label {
+    color: var(--ink-4); font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .stat-value {
+    color: var(--ink); font-size: 18px; font-weight: 900;
+    letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── Attribution (bottom-right) ────────────────────────────── */
+  .attribution {
+    position: absolute; bottom: 1rem; right: 1rem; z-index: 10;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line); border-radius: 999px;
+    color: var(--ink-3); font-size: 12px; font-weight: 700;
+    letter-spacing: -0.005em; text-decoration: none;
+    transition: color .15s, background .15s, transform .15s;
+  }
+  .attribution:hover {
+    color: var(--magenta); background: #fff; transform: translateY(-1px);
+  }
+  .heart {
+    width: 12px; height: 12px; color: var(--magenta); flex-shrink: 0;
+    animation: heartbeat 2.4s ease-in-out infinite;
+  }
+  @keyframes heartbeat {
+    0%, 55%, 100% { transform: scale(1); }
+    10% { transform: scale(1.22); } 20% { transform: scale(1); }
+    30% { transform: scale(1.14); } 40% { transform: scale(1); }
+  }
+
+  /* ─── Meta panel (right) ────────────────────────────────────── */
+  .meta-panel {
+    position: absolute; top: 1rem; right: 1rem; z-index: 11;
+    width: 380px; max-width: calc(100vw - 2rem);
+    max-height: calc(100% - 5rem);
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius-md);
+    overflow: hidden; display: flex; flex-direction: column;
+    transform: translateX(calc(100% + 2rem));
+    transition: transform .35s cubic-bezier(.32, .72, 0, 1);
+    box-shadow: var(--shadow-lg);
+  }
+  .meta-panel.open { transform: translateX(0); }
+  .meta-header {
+    position: relative; padding: 16px 18px;
+    border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  .meta-header::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 4px; background: var(--magenta);
+  }
+  .meta-title {
+    color: var(--ink); font-size: 16px; font-weight: 900;
+    letter-spacing: -0.03em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+  }
+  .meta-close {
+    background: var(--surface-soft); border: 1px solid var(--line);
+    color: var(--ink-2); cursor: pointer;
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    font-size: 16px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .meta-close:hover { background: var(--magenta); color: #fff; border-color: var(--magenta); }
+
+  .meta-body { overflow-y: auto; flex: 1; padding: 6px 0; }
+  .meta-row { padding: 10px 18px; }
+  .meta-row + .meta-row { border-top: 1px solid rgba(229, 225, 215, 0.6); }
+  .meta-key {
+    color: var(--ink-4); font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .meta-value {
+    color: var(--ink); font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px; font-weight: 500;
+    word-break: break-all; margin-top: 4px; line-height: 1.45;
+  }
+  .meta-value.binary { color: var(--ink-4); font-style: italic; font-size: 12px; }
+  .meta-value.vsi {
+    background: var(--code-bg); color: var(--code-fg);
+    padding: 10px 12px; border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .meta-footer {
+    padding: 14px; border-top: 1px solid var(--line);
+    background: var(--surface-soft);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .footer-secondary { display: flex; gap: 8px; }
+  .footer-secondary button {
+    flex: 1; padding: 9px 12px;
+    background: var(--surface); color: var(--ink-2);
+    border: 1px solid var(--line); border-radius: 999px;
+    font-family: inherit; font-size: 12px; font-weight: 800;
+    letter-spacing: -0.005em; cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .footer-secondary button:hover {
+    background: #fff; border-color: var(--magenta); color: var(--magenta);
+  }
+  .footer-secondary button.copied {
+    background: var(--gold-soft); border-color: var(--gold); color: var(--ink);
+  }
+  .download-btn {
+    width: 100%; padding: 13px 18px;
+    background: var(--magenta); color: #fff;
+    border: none; border-radius: 999px;
+    font-family: inherit; font-size: 14px; font-weight: 900;
+    letter-spacing: -0.01em; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 12px 28px rgba(73, 42, 232, 0.28);
+    transition: transform .15s, box-shadow .15s, background .15s;
+  }
+  .download-btn:hover:not(:disabled) {
+    transform: translateY(-1px); background: #351ec8;
+    box-shadow: 0 16px 36px rgba(73, 42, 232, 0.34);
+  }
+  .download-btn:disabled { opacity: 0.6; cursor: wait; }
+  .download-btn .dl-icon { width: 16px; height: 16px; flex-shrink: 0; }
+  .download-btn .filename {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; font-weight: 600; opacity: 0.8;
+    max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* ─── Loading ───────────────────────────────────────────────── */
+  .loading {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); z-index: 50;
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    padding: 18px 24px; display: none; align-items: center; gap: 12px;
+    font-size: 14px; font-weight: 700; color: var(--ink-2);
+    box-shadow: var(--shadow-md);
+  }
+  .loading.show { display: flex; }
+  .spinner {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2.5px solid rgba(73, 42, 232, 0.18);
+    border-top-color: var(--magenta);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Error ─────────────────────────────────────────────────── */
+  .error {
+    position: absolute; top: 1rem; left: 50%; transform: translateX(-50%);
+    z-index: 50; max-width: 90%;
+    background: #fee2e2; color: #991b1b;
+    border: 1px solid #fca5a5; padding: 10px 16px;
+    border-radius: 999px; font-size: 13px; font-weight: 700;
+    display: none; box-shadow: var(--shadow-sm);
+  }
+  .error.show { display: block; }
+
+  /* ─── MapLibre overrides (light theme) ──────────────────────── */
+  .maplibregl-ctrl-bottom-right { display: none; }
+  .maplibregl-ctrl-bottom-left { z-index: 5; }
+  .maplibregl-ctrl-attrib { display: none; }
+  .maplibregl-ctrl-group {
+    background: var(--surface) !important;
+    border: 1px solid var(--line) !important;
+    box-shadow: var(--shadow-sm) !important;
+    border-radius: var(--radius-sm) !important;
+    overflow: hidden;
+  }
+  .maplibregl-ctrl-group button { background: transparent !important; }
+
+  /* ─── Mobile ────────────────────────────────────────────────── */
+  @media (max-width: 880px) {
+    :root { --nav-height: 130px; }
+    .nav { flex-wrap: wrap; padding: 12px; }
+    .nav-search { order: 3; width: 100%; margin: 0; }
+    .brand-sub { display: none; }
+  }
+  @media (max-width: 640px) {
+    .meta-panel { top: auto; bottom: 1rem; right: 1rem; left: 1rem; width: auto; max-height: 65vh; }
+    .stats, .attribution { display: none !important; }
+    .nav-link:not(.primary) span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="nav">
+    <a class="brand" href="https://asterisk.coop/cozip" aria-label="cozip home">
+      <img class="brand-logo" src="https://asterisk.coop/cozip/images/cozip_logo.svg" alt="" aria-hidden="true">
+      <span>cozip</span>
+      <span class="brand-sub">viewer</span>
+    </a>
+
+    <div class="nav-search">
+      <input id="url" type="text"
+        value="https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip"
+        placeholder="https://...cozip archive URL"
+        spellcheck="false">
+      <button id="go">Load</button>
+    </div>
+
+    <div class="nav-links">
+      <a class="nav-link" href="https://asterisk.coop/cozip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+        </svg>
+        <span>cozip</span>
+      </a>
+      <a class="nav-link primary" href="https://github.com/asterisk-labs/cozip" target="_blank" rel="noopener">
+        <span>GitHub</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M7 17 17 7"/><path d="M8 7h9v9"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+</header>
+
+<div class="viewport">
+  <div id="map"></div>
+
+  <div class="stats" id="stats">
+    <div class="stat"><span class="stat-label">entries</span><span class="stat-value" id="stat-count">—</span></div>
+    <div class="stat"><span class="stat-label">load time</span><span class="stat-value" id="stat-time">—</span></div>
+    <div class="stat"><span class="stat-label">geometry</span><span class="stat-value" id="stat-geom">—</span></div>
+  </div>
+
+  <a class="attribution" href="https://asterisk.coop" target="_blank" rel="noopener">
+    <span>Made with</span>
+    <svg class="heart" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+    </svg>
+    <span>by Asterisk Labs</span>
+  </a>
+
+  <div class="meta-panel" id="meta-panel">
+    <div class="meta-header">
+      <div class="meta-title" id="meta-title">Sample</div>
+      <button class="meta-close" id="meta-close" aria-label="Close">×</button>
+    </div>
+    <div class="meta-body" id="meta-body"></div>
+    <div class="meta-footer">
+      <div class="footer-secondary">
+        <button id="copy-vsi" title="Copy GDAL VSI path">⎘ VSI</button>
+        <button id="copy-name" title="Copy entry name">⎘ name</button>
+      </div>
+      <button class="download-btn" id="download-tile">
+        <svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span>Download</span>
+        <span class="filename" id="download-filename"></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <span id="loading-text">Bootstrapping cozip index…</span>
+  </div>
+
+  <div class="error" id="error"></div>
+</div>
+
+<script type="module">
+import { read } from 'https://esm.sh/@asterisk-labs/cozip';
+
+// CRS assumption: all geometries are EPSG:4326 (lat/lon). GeoParquet 1.x default.
+
+const $url=document.getElementById('url'),$go=document.getElementById('go'),
+      $stats=document.getElementById('stats'),$statCount=document.getElementById('stat-count'),
+      $statTime=document.getElementById('stat-time'),$statGeom=document.getElementById('stat-geom'),
+      $panel=document.getElementById('meta-panel'),$title=document.getElementById('meta-title'),
+      $body=document.getElementById('meta-body'),$close=document.getElementById('meta-close'),
+      $loading=document.getElementById('loading'),$loadText=document.getElementById('loading-text'),
+      $error=document.getElementById('error'),$copyVsi=document.getElementById('copy-vsi'),
+      $copyName=document.getElementById('copy-name'),$download=document.getElementById('download-tile'),
+      $dlFilename=document.getElementById('download-filename');
+
+let currentRows=null, currentUrl=null, currentSelection=null;
+
+// ─── WKB parser (ISO WKB + EWKB) ──────────────────────────────────────────
+function parseWKB(bytes){
+  if(!bytes||bytes.length<5) return null;
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  let pos=0;
+  function readGeom(){
+    const le=view.getUint8(pos)===1; pos+=1;
+    const rawType=view.getUint32(pos,le); pos+=4;
+    let baseType,hasZ=false,hasM=false;
+    if((rawType&0xE0000000)!==0){
+      hasZ=(rawType&0x80000000)!==0;
+      hasM=(rawType&0x40000000)!==0;
+      if((rawType&0x20000000)!==0) pos+=4;
+      baseType=rawType&0xff;
+    } else if(rawType>=1000){
+      baseType=rawType%1000;
+      const d=Math.floor(rawType/1000);
+      hasZ=d===1||d===3; hasM=d===2||d===3;
+    } else { baseType=rawType; }
+    const skip=(hasZ?8:0)+(hasM?8:0);
+    function readPoint(){
+      const x=view.getFloat64(pos,le); pos+=8;
+      const y=view.getFloat64(pos,le); pos+=8;
+      pos+=skip; return [x,y];
+    }
+    function readN(n){ const a=new Array(n); for(let i=0;i<n;i++) a[i]=readPoint(); return a; }
+    function readRings(){
+      const n=view.getUint32(pos,le); pos+=4;
+      const rings=new Array(n);
+      for(let i=0;i<n;i++){ const np=view.getUint32(pos,le); pos+=4; rings[i]=readN(np); }
+      return rings;
+    }
+    switch(baseType){
+      case 1: return { type:'Point', coordinates:readPoint() };
+      case 2: { const n=view.getUint32(pos,le); pos+=4;
+        return { type:'LineString', coordinates:readN(n) }; }
+      case 3: return { type:'Polygon', coordinates:readRings() };
+      case 4: { const n=view.getUint32(pos,le); pos+=4;
+        const a=[]; for(let i=0;i<n;i++) a.push(readGeom().coordinates);
+        return { type:'MultiPoint', coordinates:a }; }
+      case 5: { const n=view.getUint32(pos,le); pos+=4;
+        const a=[]; for(let i=0;i<n;i++) a.push(readGeom().coordinates);
+        return { type:'MultiLineString', coordinates:a }; }
+      case 6: { const n=view.getUint32(pos,le); pos+=4;
+        const a=[]; for(let i=0;i<n;i++) a.push(readGeom().coordinates);
+        return { type:'MultiPolygon', coordinates:a }; }
+    }
+    return null;
+  }
+  try { return readGeom(); } catch { return null; }
+}
+
+// ─── WKT parser fallback ──────────────────────────────────────────────────
+function parseWKT(s){
+  if(typeof s!=='string') return null;
+  s=s.trim().replace(/^SRID=\d+;\s*/i,'');
+  const m=s.match(/^([A-Z]+)\s*(?:Z|M|ZM)?\s*\((.*)\)\s*$/i);
+  if(!m) return null;
+  const type=m[1].toUpperCase(), inner=m[2];
+  const pt=str=>str.trim().split(/\s+/).map(Number).slice(0,2);
+  const pts=str=>str.split(',').map(pt);
+  const groups=str=>{ const out=[]; let depth=0,start=-1;
+    for(let i=0;i<str.length;i++){ const c=str[i];
+      if(c==='('){ if(depth===0) start=i+1; depth++; }
+      else if(c===')'){ depth--; if(depth===0) out.push(str.substring(start,i)); }
+    } return out; };
+  switch(type){
+    case 'POINT': return { type:'Point', coordinates:pt(inner) };
+    case 'LINESTRING': return { type:'LineString', coordinates:pts(inner) };
+    case 'POLYGON': return { type:'Polygon', coordinates:groups(inner).map(pts) };
+    case 'MULTIPOINT': {
+      const g=groups(inner);
+      return { type:'MultiPoint', coordinates: g.length?g.map(pt):pts(inner) };
+    }
+    case 'MULTILINESTRING': return { type:'MultiLineString', coordinates:groups(inner).map(pts) };
+    case 'MULTIPOLYGON': {
+      const polys=groups(inner);
+      return { type:'MultiPolygon', coordinates: polys.map(p=>groups(p).map(pts)) };
+    }
+  }
+  return null;
+}
+
+function parseGeometryValue(v){
+  if(v==null) return null;
+  if(typeof v==='object' && !ArrayBuffer.isView(v) && !(v instanceof ArrayBuffer)
+     && v.type && 'coordinates' in v) return v;
+  if(typeof v==='string'){
+    const t=v.trim();
+    if(t.startsWith('{')){ try{ return JSON.parse(t); }catch{} }
+    return parseWKT(t);
+  }
+  if(v instanceof Uint8Array) return parseWKB(v);
+  if(ArrayBuffer.isView(v)) return parseWKB(new Uint8Array(v.buffer,v.byteOffset,v.byteLength));
+  if(v instanceof ArrayBuffer) return parseWKB(new Uint8Array(v));
+  return null;
+}
+
+// ─── Map setup (light Positron basemap) ───────────────────────────────────
+const map = new maplibregl.Map({
+  container:'map',
+  style:{
+    version:8,
+    sources:{
+      'carto-light':{
+        type:'raster',
+        tiles:['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+               'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+               'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'],
+        tileSize:256, attribution:'© OpenStreetMap © CARTO'
+      }
+    },
+    layers:[
+      { id:'bg', type:'background', paint:{ 'background-color':'#fafaf7' } },
+      { id:'carto', type:'raster', source:'carto-light' }
+    ]
+  },
+  center:[0,25], zoom:1.6, pitch:0, antialias:true
+});
+
+map.addControl(new maplibregl.NavigationControl({ visualizePitch:true }),'top-left');
+
+map.on('load', () => {
+  map.addSource('cozip', { type:'geojson', data:{type:'FeatureCollection',features:[]} });
+
+  // Polygon fill — magenta default, gold when selected
+  map.addLayer({
+    id:'cozip-fill', type:'fill', source:'cozip',
+    filter:['match',['geometry-type'],['Polygon','MultiPolygon'],true,false],
+    paint:{
+      'fill-color':[
+        'case',
+        ['boolean',['feature-state','selected'],false], '#f7cc0b',
+        ['boolean',['feature-state','hover'],false], '#6d54ff',
+        '#492ae8'
+      ],
+      'fill-opacity':[
+        'case',
+        ['boolean',['feature-state','selected'],false], .35,
+        ['boolean',['feature-state','hover'],false], .25,
+        .12
+      ]
+    }
+  });
+  map.addLayer({
+    id:'cozip-fill-outline', type:'line', source:'cozip',
+    filter:['match',['geometry-type'],['Polygon','MultiPolygon'],true,false],
+    paint:{
+      'line-color':[
+        'case',
+        ['boolean',['feature-state','selected'],false], '#b8910a',
+        '#492ae8'
+      ],
+      'line-width':[
+        'case',['boolean',['feature-state','selected'],false], 2.5, 1
+      ],
+      'line-opacity':.85
+    }
+  });
+  map.addLayer({
+    id:'cozip-line', type:'line', source:'cozip',
+    filter:['match',['geometry-type'],['LineString','MultiLineString'],true,false],
+    paint:{
+      'line-color':[
+        'case',
+        ['boolean',['feature-state','selected'],false], '#f7cc0b',
+        ['boolean',['feature-state','hover'],false], '#6d54ff',
+        '#492ae8'
+      ],
+      'line-width':[
+        'case',['boolean',['feature-state','selected'],false], 3.5, 1.8
+      ]
+    }
+  });
+  map.addLayer({
+    id:'cozip-circle-glow', type:'circle', source:'cozip',
+    filter:['match',['geometry-type'],['Point','MultiPoint'],true,false],
+    paint:{
+      'circle-radius':['interpolate',['linear'],['zoom'],1,10,6,28],
+      'circle-color':[
+        'case',['boolean',['feature-state','selected'],false], '#f7cc0b', '#492ae8'
+      ],
+      'circle-blur':1, 'circle-opacity':.22
+    }
+  });
+  map.addLayer({
+    id:'cozip-circle', type:'circle', source:'cozip',
+    filter:['match',['geometry-type'],['Point','MultiPoint'],true,false],
+    paint:{
+      'circle-radius':['interpolate',['linear'],['zoom'],1,4,6,8],
+      'circle-color':[
+        'case',
+        ['boolean',['feature-state','selected'],false], '#f7cc0b',
+        ['boolean',['feature-state','hover'],false], '#6d54ff',
+        '#492ae8'
+      ],
+      'circle-stroke-color':'#fff',
+      'circle-stroke-width':[
+        'case',['boolean',['feature-state','selected'],false], 2.5, 1.5
+      ]
+    }
+  });
+
+  let hoverId=null;
+  const layers=['cozip-fill','cozip-line','cozip-circle'];
+  for(const layer of layers){
+    map.on('mousemove', layer, e => {
+      map.getCanvas().style.cursor='pointer';
+      if(!e.features.length) return;
+      if(hoverId!==null) map.setFeatureState({source:'cozip',id:hoverId},{hover:false});
+      hoverId=e.features[0].id;
+      map.setFeatureState({source:'cozip',id:hoverId},{hover:true});
+    });
+    map.on('mouseleave', layer, () => {
+      map.getCanvas().style.cursor='';
+      if(hoverId!==null) map.setFeatureState({source:'cozip',id:hoverId},{hover:false});
+      hoverId=null;
+    });
+    map.on('click', layer, e => {
+      if(!e.features.length) return;
+      selectFeature(e.features[0].id, e.features[0].geometry);
+    });
+  }
+  map.on('click', e => {
+    const f=map.queryRenderedFeatures(e.point,{layers});
+    if(f.length===0) hidePanel();
+  });
+
+  loadCozip();
+});
+
+// ─── Detect geometry column ───────────────────────────────────────────────
+function detectGeometryKey(rows){
+  if(!rows||!rows.length) return null;
+  const sample=rows[0];
+  const keys=Object.keys(sample);
+  const candidates=keys.filter(k=>/^(geometry|geom|wkb|wkt|the_geom)$/i.test(k));
+  for(const k of candidates){ if(parseGeometryValue(sample[k])) return k; }
+  return null;
+}
+
+function rowsToGeoJSON(rows, geomKey){
+  const features=[];
+  let nFailed=0;
+  const typeCounts={};
+  for(let i=0;i<rows.length;i++){
+    const g=parseGeometryValue(rows[i][geomKey]);
+    if(!g){ nFailed++; continue; }
+    typeCounts[g.type]=(typeCounts[g.type]||0)+1;
+    features.push({ type:'Feature', id:i, geometry:g, properties:{_idx:i} });
+  }
+  return { fc:{ type:'FeatureCollection', features }, nFailed, typeCounts };
+}
+
+function geoJSONBounds(fc){
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  const visit=c=>{
+    if(typeof c[0]==='number'){
+      if(c[0]<minX) minX=c[0]; if(c[0]>maxX) maxX=c[0];
+      if(c[1]<minY) minY=c[1]; if(c[1]>maxY) maxY=c[1];
+    } else for(const x of c) visit(x);
+  };
+  for(const f of fc.features) visit(f.geometry.coordinates);
+  return isFinite(minX) ? [[minX,minY],[maxX,maxY]] : null;
+}
+
+// ─── Load ─────────────────────────────────────────────────────────────────
+async function loadCozip(){
+  const url=$url.value.trim();
+  if(!url) return;
+  currentUrl=url;
+  $go.disabled=true;
+  hidePanel(); showError(null);
+  $loadText.textContent='Bootstrapping cozip index…';
+  $loading.classList.add('show');
+  $stats.classList.remove('show');
+
+  const t0=performance.now();
+  try {
+    const rows=await read(url);
+    // Normalize INT64 BigInts → Number (safe ≤ 2^53 bytes).
+    for(const row of rows){
+      for(const k in row){
+        if(typeof row[k]==='bigint') row[k]=Number(row[k]);
+      }
+    }
+    const ms=performance.now()-t0;
+    currentRows=rows;
+
+    const geomKey=detectGeometryKey(rows);
+    if(!geomKey){
+      const cols=Object.keys(rows[0]||{}).filter(k=>!k.startsWith('cozip:')).join(', ');
+      showError(`No geometry column detected. Columns: ${cols}`);
+      map.getSource('cozip').setData({type:'FeatureCollection',features:[]});
+      $statCount.textContent=rows.length.toLocaleString();
+      $statTime.textContent=ms<1000?`${ms.toFixed(0)} ms`:`${(ms/1000).toFixed(2)} s`;
+      $statGeom.textContent='none';
+      $stats.classList.add('show');
+      return;
+    }
+
+    const { fc, nFailed, typeCounts } = rowsToGeoJSON(rows, geomKey);
+    map.getSource('cozip').setData(fc);
+
+    $statCount.textContent = rows.length.toLocaleString();
+    $statTime.textContent  = ms<1000?`${ms.toFixed(0)} ms`:`${(ms/1000).toFixed(2)} s`;
+    const typeSummary = Object.entries(typeCounts).map(([t,c])=>`${c} ${t}`).join(', ');
+    $statGeom.textContent  = typeSummary + (nFailed?` (${nFailed} failed)`:'');
+    $stats.classList.add('show');
+
+    const b=geoJSONBounds(fc);
+    if(b) map.fitBounds(b,{padding:80,duration:1500,maxZoom:8});
+  } catch (e) {
+    console.error(e);
+    showError(e.message||String(e));
+  } finally {
+    $loading.classList.remove('show');
+    $go.disabled=false;
+  }
+}
+
+// ─── Selection ────────────────────────────────────────────────────────────
+function selectFeature(id, geometry){
+  if(currentSelection!==null) map.setFeatureState({source:'cozip',id:currentSelection},{selected:false});
+  currentSelection=id;
+  map.setFeatureState({source:'cozip',id},{selected:true});
+  const row=currentRows[id];
+  $title.textContent=row.name??`entry ${id}`;
+  $dlFilename.textContent=row.name??`entry_${id}`;
+  renderMeta(row);
+  flyToGeometry(geometry);
+  $panel.classList.add('open');
+}
+
+function flyToGeometry(geometry){
+  const pts=[];
+  const visit=c=>{
+    if(typeof c[0]==='number') pts.push(c);
+    else for(const x of c) visit(x);
+  };
+  visit(geometry.coordinates);
+  if(!pts.length) return;
+  let sx=0,sy=0; for(const [x,y] of pts){ sx+=x; sy+=y; }
+  const center=[sx/pts.length, sy/pts.length];
+  map.flyTo({ center, zoom:Math.max(map.getZoom(),4), duration:800, essential:true });
+}
+
+function renderMeta(row){
+  const keys=Object.keys(row);
+  const priority=['name','size','offset'];
+  const last=['cozip:gdal_vsi'];
+  const skip=['geometry','geom','wkb','wkt','the_geom'];
+  const rest=keys.filter(k=>!priority.includes(k)&&!last.includes(k)&&!skip.includes(k.toLowerCase())).sort();
+  const ordered=[...priority.filter(k=>k in row), ...rest, ...last.filter(k=>k in row)];
+
+  const html=ordered.map(k=>{
+    const v=row[k];
+    const isVsi=k==='cozip:gdal_vsi';
+    let cls='meta-value', display;
+    if(v===null||v===undefined) display='<em style="color:var(--ink-4)">null</em>';
+    else if(v instanceof Uint8Array||ArrayBuffer.isView(v)){
+      cls='meta-value binary';
+      display=`&lt;binary ${v.byteLength} bytes&gt;`;
+    }
+    else if(typeof v==='object') display=esc(JSON.stringify(v));
+    else if(typeof v==='number'&&k==='size')
+      display=`${esc(v.toLocaleString())} <span style="color:var(--ink-4)">B (${humanBytes(v)})</span>`;
+    else display=esc(String(v));
+    if(isVsi) cls='meta-value vsi';
+    return `<div class="meta-row"><div class="meta-key">${esc(k)}</div><div class="${cls}">${display}</div></div>`;
+  }).join('');
+  const geomKey=detectGeometryKey([row]);
+  let geomNote='';
+  if(geomKey){
+    const g=parseGeometryValue(row[geomKey]);
+    if(g) geomNote=`<div class="meta-row"><div class="meta-key">${esc(geomKey)}</div><div class="meta-value binary">${esc(g.type)} (parsed)</div></div>`;
+  }
+  $body.innerHTML=html+geomNote;
+}
+
+function humanBytes(n){
+  if(n<1024) return n+' B';
+  if(n<1024**2) return (n/1024).toFixed(1)+' KiB';
+  if(n<1024**3) return (n/1024**2).toFixed(2)+' MiB';
+  return (n/1024**3).toFixed(2)+' GiB';
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function hidePanel(){
+  if(currentSelection!==null) map.setFeatureState({source:'cozip',id:currentSelection},{selected:false});
+  currentSelection=null;
+  $panel.classList.remove('open');
+}
+function showError(msg){
+  if(!msg){ $error.classList.remove('show'); return; }
+  $error.textContent=msg; $error.classList.add('show');
+}
+
+// ─── Copy & download ──────────────────────────────────────────────────────
+async function copyTo(text,btn){
+  try {
+    await navigator.clipboard.writeText(text);
+    const orig=btn.textContent;
+    btn.classList.add('copied'); btn.textContent='✓ copied';
+    setTimeout(()=>{ btn.textContent=orig; btn.classList.remove('copied'); }, 1200);
+  } catch (e) { showError('Clipboard: '+e.message); }
+}
+
+$copyVsi.addEventListener('click', () => {
+  if(currentSelection===null) return;
+  const row=currentRows[currentSelection];
+  if(row['cozip:gdal_vsi']) copyTo(row['cozip:gdal_vsi'], $copyVsi);
+});
+$copyName.addEventListener('click', () => {
+  if(currentSelection===null) return;
+  copyTo(currentRows[currentSelection].name||'', $copyName);
+});
+
+$download.addEventListener('click', async () => {
+  if(currentSelection===null) return;
+  const row=currentRows[currentSelection];
+  if(typeof row.offset!=='number'||typeof row.size!=='number'){
+    showError('Missing offset/size for range request'); return;
+  }
+  $download.disabled=true;
+  const label=$download.querySelector('span:not(.filename)');
+  const orig=label.textContent;
+  label.textContent='Fetching…';
+  try {
+    const res=await fetch(currentUrl, {
+      headers: { Range: `bytes=${row.offset}-${row.offset + row.size - 1}` }
+    });
+    if(!res.ok && res.status!==206) throw new Error(`HTTP ${res.status}`);
+    const blob=await res.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=row.name||`entry_${currentSelection}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    label.textContent='✓ Saved';
+    setTimeout(()=>{ label.textContent=orig; },1400);
+  } catch (e) {
+    showError('Download failed: '+e.message);
+    label.textContent=orig;
+  } finally {
+    $download.disabled=false;
+  }
+});
+
+$go.addEventListener('click', loadCozip);
+$url.addEventListener('keydown', e => { if(e.key==='Enter') loadCozip(); });
+$close.addEventListener('click', hidePanel);
+</script>
+</body>
+</html>

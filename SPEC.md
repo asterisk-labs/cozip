@@ -1,9 +1,9 @@
 # Cloud Optimized ZIP Format Specification
 
-**Version** 1.0.1
+**Version** 1.0.2
 **Binary format version** 1  
 **Status** Stable  
-**Date** 2026-05-09  
+**Date** 2026-05-20  
 **License** CC BY 4.0
 
 ---
@@ -358,6 +358,16 @@ The `offset` and `size` values are computed by the writer at archive-creation ti
 
 A Flat-profile cozip uses the file extension `.zip`. The MIME type is `application/zip`.
 
+### 13.5 GeoParquet metadata (informative)
+
+Because the Flat profile permits additional columns in `__metadata__` (§13.3), a producer **MAY** encode `__metadata__` as a [GeoParquet] file by attaching a geometry column and the required `geo` key in the Parquet file-level metadata. The reserved `name`, `offset`, and `size` columns and the one-row-per-entry semantics of §13.3 apply unchanged.
+
+A GeoParquet `__metadata__` is still a conforming Flat-profile manifest: readers that recognise GeoParquet can spatially filter the manifest before fetching any data entry; readers that do not still see a valid Flat manifest and ignore the geometry column.
+
+See the GeoParquet specification, version 1.1.0 or later, for the geometry encoding (WKB or, in 2.0, the native Parquet `GEOMETRY` / `GEOGRAPHY` logical types), CRS conventions, and the `geo` metadata schema.
+
+[GeoParquet]: https://geoparquet.org/
+
 ## 14. TACO profile
 
 The TACO profile describes a cozip whose priority files form the ZIP-mode access contract of a TACO dataset.
@@ -425,6 +435,7 @@ When serving `.zip` over HTTP, servers must preserve byte-exact object bytes for
 | 1.0-draft.5  | 2026-04-29 | Relaxed §5.1.8 and §8.5 step 1.ii to require GP bit 11 (UTF-8) only when the filename contains bytes ≥ 0x80. Aligns the spec with common ZIP writer behavior and unblocks libzip builds that omit the flag for ASCII-only names. |
 | 1.0          | 2026-05-03 | First stable release. Some redundant normative statements were removed during the draft phase, but no technical changes were made between 1.0-draft.5 and 1.0. |
 | 1.0.1        | 2026-05-09 | Reserved the name `__cozip_padding__` in §5.3.7 as a writer-side mechanism for satisfying the §5.1.12 minimum archive size, and added an informative note in §6 documenting the recommended use. Excluded `__cozip_padding__` from the Flat-profile `__metadata__` row set (§13.3), and clarified its placement under the TACO profile (§14.3). No on-disk format change; archives produced under 1.0 remain valid under 1.0.1 without modification. |
+| 1.0.2        | 2026-05-20 | Added informative §13.5 pointing to GeoParquet as a valid encoding for a Flat-profile `__metadata__`. Added the GeoParquet specification to Appendix C. Editorial only; no on-disk format or normative change. Archives produced under 1.0.1 remain valid under 1.0.2 without modification. |
 
 
 ## Appendix C. References
@@ -437,3 +448,4 @@ When serving `.zip` over HTTP, servers must preserve byte-exact object bytes for
 6. Fowler, G., Noll, L. C., Vo, K. P. **FNV Hash**, non-cryptographic hash function. http://www.isthe.com/chongo/tech/comp/fnv/
 7. Apache Software Foundation. **Apache Parquet Format**. https://parquet.apache.org/
 8. Asterisk Labs. **The TACO Specification**, version 3.0.0, released 2026-04-13. https://asterisk.coop/taco/spec/
+9. Open Geospatial Consortium. **GeoParquet Specification**, version 1.1.0, 2024. https://geoparquet.org/releases/v1.1.0/
