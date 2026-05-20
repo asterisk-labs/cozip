@@ -50,6 +50,7 @@ train = manifest.filter(pa.compute.equal(manifest["split"], "train"))
 | Python   | `pip install cozip` | read + write | [python/](python/) |
 | R        | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` | read + write | [r/](r/) |
 | Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | read + write | [julia/](julia/) |
+| Javascript | `npm install @asterisk-labs/cozip` | read + write | [javascript/](javascript/) |
 | C        | vendor [`core/`](core/) (libzip + zlib bundled, zero system deps) | **core writer** | [core/](core/) |
 | C++ / DuckDB | `INSTALL cozip FROM community; LOAD cozip;` | **reader** via `read_cozip()` | [asterisk-labs/cozip_reader ↗](https://github.com/asterisk-labs/cozip_reader) |
 
