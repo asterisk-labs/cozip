@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#492AE8">
-  <title>cozip · Python</title>
+  <title>cozip · JavaScript</title>
   <link rel="icon" href="../images/cozip_logo.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -271,9 +271,7 @@
       position: relative;
       margin-top: 20px;
     }
-    .code-block pre {
-      margin-top: 0;
-    }
+    .code-block pre { margin-top: 0; }
 
     pre {
       background: var(--code-bg);
@@ -503,7 +501,7 @@
       </a>
 
       <nav class="nav-links" aria-label="Sections">
-        <a class="nav-lang current" href="python.html">
+        <a class="nav-lang" href="python.html">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Py</text></svg>
           Python
         </a>
@@ -515,7 +513,7 @@
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Jl</text></svg>
           Julia
         </a>
-        <a class="nav-lang" href="javascript.html">
+        <a class="nav-lang current" href="javascript.html">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Js</text></svg>
           JavaScript
         </a>
@@ -540,113 +538,35 @@
     <div class="container">
       <header class="page-header">
         <p class="section-kicker">Quickstart</p>
-        <h1 class="page-title">cozip in Python.</h1>
-        <p class="page-sub">Pack three files with whatever metadata you want into one cozip archive, read it back, publish it, and open it in the browser.</p>
-        <span class="install-line">pip install cozip shapely</span>
+        <h1 class="page-title">cozip in JavaScript.</h1>
+        <p class="page-sub">The pure-JS reader. Read a cozip archive's manifest over HTTP, filter it, and fetch only the files you need.</p>
+        <span class="install-line">npm install @asterisk-labs/cozip</span>
       </header>
 
-      <h2>Write</h2>
-      <p class="lede">Drop three files in a temp directory, build a <code>pa.Table</code> with <code>name</code>, <code>path</code>, and any extras you want to ride along (here <code>split</code>, <code>label</code>, and a GeoParquet <code>geometry</code> column), hand it to <code>cozip.write</code>.</p>
-      <div class="code-block">
-        <button class="code-copy" type="button" aria-label="Copy code">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-          <span class="code-copy-label">Copy</span>
-        </button>
-<pre><span class="tk-kw">import</span> json
-<span class="tk-kw">import</span> tempfile
-<span class="tk-kw">from</span> pathlib <span class="tk-kw">import</span> Path
-
-<span class="tk-kw">import</span> pyarrow <span class="tk-kw">as</span> pa
-<span class="tk-kw">import</span> shapely
-<span class="tk-kw">from</span> shapely.geometry <span class="tk-kw">import</span> box
-
-<span class="tk-kw">import</span> cozip
-
-<span class="tk-com"># three tmp files with anything inside</span>
-tmp = Path(tempfile.<span class="tk-fn">mkdtemp</span>())
-paths = []
-<span class="tk-kw">for</span> i <span class="tk-kw">in</span> <span class="tk-fn">range</span>(<span class="tk-num">3</span>):
-    p = tmp / <span class="tk-fn">f</span><span class="tk-str">"file_{i}.bin"</span>
-    p.<span class="tk-fn">write_bytes</span>(<span class="tk-fn">f</span><span class="tk-str">"file {i} contents\n"</span>.<span class="tk-fn">encode</span>() * <span class="tk-num">100</span>)
-    paths.<span class="tk-fn">append</span>(p)
-
-<span class="tk-com"># GeoParquet metadata so viewers recognize the geometry column</span>
-geo = {
-    <span class="tk-str">"version"</span>: <span class="tk-str">"1.1.0"</span>,
-    <span class="tk-str">"primary_column"</span>: <span class="tk-str">"geometry"</span>,
-    <span class="tk-str">"columns"</span>: {<span class="tk-str">"geometry"</span>: {<span class="tk-str">"encoding"</span>: <span class="tk-str">"WKB"</span>, <span class="tk-str">"geometry_types"</span>: [<span class="tk-str">"Polygon"</span>]}},
-}
-
-table = pa.<span class="tk-fn">table</span>({
-    <span class="tk-str">"name"</span>:     [p.name <span class="tk-kw">for</span> p <span class="tk-kw">in</span> paths],
-    <span class="tk-str">"path"</span>:     [<span class="tk-fn">str</span>(p) <span class="tk-kw">for</span> p <span class="tk-kw">in</span> paths],
-    <span class="tk-str">"split"</span>:    [<span class="tk-str">"train"</span>, <span class="tk-str">"val"</span>, <span class="tk-str">"train"</span>],
-    <span class="tk-str">"label"</span>:    [<span class="tk-str">"zeros"</span>, <span class="tk-str">"ones"</span>, <span class="tk-str">"twos"</span>],
-    <span class="tk-str">"geometry"</span>: [
-        shapely.<span class="tk-fn">to_wkb</span>(<span class="tk-fn">box</span>(-<span class="tk-num">77.0</span>, -<span class="tk-num">12.1</span>, -<span class="tk-num">76.9</span>, -<span class="tk-num">12.0</span>)),
-        shapely.<span class="tk-fn">to_wkb</span>(<span class="tk-fn">box</span>(-<span class="tk-num">76.9</span>, -<span class="tk-num">12.1</span>, -<span class="tk-num">76.8</span>, -<span class="tk-num">12.0</span>)),
-        shapely.<span class="tk-fn">to_wkb</span>(<span class="tk-fn">box</span>(-<span class="tk-num">76.8</span>, -<span class="tk-num">12.1</span>, -<span class="tk-num">76.7</span>, -<span class="tk-num">12.0</span>)),
-    ],
-}).<span class="tk-fn">replace_schema_metadata</span>({<span class="tk-str">"geo"</span>: json.<span class="tk-fn">dumps</span>(geo)})
-
-archive = <span class="tk-fn">str</span>(tmp / <span class="tk-str">"dataset.zip"</span>)
-cozip.<span class="tk-fn">write</span>(archive, table)</pre>
-      </div>
-
       <h2>Read</h2>
-      <p class="lede"><code>cozip.read</code> returns the manifest as a pandas DataFrame, your custom columns included. Filter however you like, then open the matching files in place with <code>seek</code> and <code>read</code> using the <code>offset</code> and <code>size</code> the writer added.</p>
+      <p class="lede"><code>read(url)</code> returns the manifest as an array of plain row objects, your custom columns included. Filter however you like, then range-fetch the matching files using the <code>offset</code> and <code>size</code> the writer added.</p>
       <div class="code-block">
         <button class="code-copy" type="button" aria-label="Copy code">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           <span class="code-copy-label">Copy</span>
         </button>
-<pre><span class="tk-kw">import</span> cozip
+<pre><span class="tk-com">// run anywhere: from esm.sh in the browser, or "@asterisk-labs/cozip" after npm install</span>
+<span class="tk-kw">import</span> { read } <span class="tk-kw">from</span> <span class="tk-str">"https://esm.sh/@asterisk-labs/cozip"</span>;
 
-df = cozip.<span class="tk-fn">read</span>(archive)
-<span class="tk-fn">print</span>(df)
+<span class="tk-kw">const</span> url = <span class="tk-str">"https://data.source.coop/asterisk-labs/cozip/dataset.zip"</span>;
+<span class="tk-kw">const</span> manifest = <span class="tk-kw">await</span> <span class="tk-fn">read</span>(url);
+console.<span class="tk-fn">log</span>(manifest);
 
-<span class="tk-com"># filter on your own columns, then read the matching files in place</span>
-trains = df[df[<span class="tk-str">"split"</span>] == <span class="tk-str">"train"</span>]
-<span class="tk-kw">with</span> <span class="tk-fn">open</span>(archive, <span class="tk-str">"rb"</span>) <span class="tk-kw">as</span> f:
-    <span class="tk-kw">for</span> _, row <span class="tk-kw">in</span> trains.<span class="tk-fn">iterrows</span>():
-        f.<span class="tk-fn">seek</span>(<span class="tk-fn">int</span>(row[<span class="tk-str">"offset"</span>]))
-        data = f.<span class="tk-fn">read</span>(<span class="tk-fn">int</span>(row[<span class="tk-str">"size"</span>]))
-        <span class="tk-fn">print</span>(row[<span class="tk-str">"name"</span>], <span class="tk-fn">len</span>(data), <span class="tk-str">"bytes"</span>)</pre>
+<span class="tk-com">// filter on your own columns, then range-fetch the matching files</span>
+<span class="tk-kw">const</span> trains = manifest.<span class="tk-fn">filter</span>((row) =&gt; row.split === <span class="tk-str">"train"</span>);
+<span class="tk-kw">for</span> (<span class="tk-kw">const</span> row <span class="tk-kw">of</span> trains) {
+  <span class="tk-kw">const</span> res = <span class="tk-kw">await</span> <span class="tk-fn">fetch</span>(url, {
+    headers: { Range: <span class="tk-str">`bytes=${row.offset}-${row.offset + row.size - 1}`</span> },
+  });
+  <span class="tk-kw">const</span> bytes = <span class="tk-kw">new</span> <span class="tk-fn">Uint8Array</span>(<span class="tk-kw">await</span> res.<span class="tk-fn">arrayBuffer</span>());
+  console.<span class="tk-fn">log</span>(row.name, bytes.length, <span class="tk-str">"bytes"</span>);
+}</pre>
       </div>
-
-      <h2>Publish</h2>
-      <p class="lede">The archive is a plain ZIP so any S3-compatible bucket works. The example below uses <a href="https://source.coop/asterisk-labs/cozip" target="_blank" rel="noopener noreferrer" style="color: var(--magenta); font-weight: 700; text-decoration: underline; text-decoration-thickness: 0.08em; text-underline-offset: 0.18em;">asterisk-labs/cozip</a> on Source Cooperative.</p>
-      <div class="code-block">
-        <button class="code-copy" type="button" aria-label="Copy code">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-          <span class="code-copy-label">Copy</span>
-        </button>
-<pre><span class="tk-kw">import</span> boto3
-<span class="tk-kw">import</span> cozip
-
-<span class="tk-com"># Source Cooperative is a regular S3 bucket. Swap bucket and creds for HuggingFace, R2, MinIO, etc.</span>
-s3 = boto3.<span class="tk-fn">client</span>(
-    <span class="tk-str">"s3"</span>,
-    region_name=<span class="tk-str">"us-west-2"</span>,
-    aws_access_key_id=<span class="tk-str">"&lt;your-key&gt;"</span>,
-    aws_secret_access_key=<span class="tk-str">"&lt;your-secret&gt;"</span>,
-    aws_session_token=<span class="tk-str">"&lt;your-session-token&gt;"</span>,  <span class="tk-com"># Source Coop creds are temporary STS</span>
-)
-s3.<span class="tk-fn">upload_file</span>(
-    archive,
-    <span class="tk-str">"us-west-2.opendata.source.coop"</span>,
-    <span class="tk-str">"asterisk-labs/cozip/dataset.zip"</span>,
-)
-
-<span class="tk-com"># same read flow, just a URL instead of a path</span>
-url = <span class="tk-str">"https://data.source.coop/asterisk-labs/cozip/dataset.zip"</span>
-<span class="tk-fn">print</span>(cozip.<span class="tk-fn">read</span>(url))</pre>
-      </div>
-
-      <h2>Explore in the playground</h2>
-      <p class="lede">Once the archive is public the cozip playground reads it from the browser. No Python, no install, no download. The manifest renders as a table, and any file is one click from a copyable URL.</p>
-      <p class="body-p">Open <a href="../playground.html">the playground</a> and paste the URL below into the input.</p>
-      <span class="install-line">https://data.source.coop/asterisk-labs/cozip/dataset.zip</span>
     </div>
   </main>
 

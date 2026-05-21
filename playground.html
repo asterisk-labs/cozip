@@ -285,6 +285,73 @@
     max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
+  /* ─── Manifest view (no-geometry fallback) ──────────────────── */
+  .manifest-view {
+    position: absolute; inset: 0; z-index: 5;
+    background: var(--bg);
+    overflow-y: auto;
+    display: none;
+    padding: 24px clamp(20px, 4vw, 48px) 80px;
+  }
+  .manifest-view.show { display: block; }
+  .manifest-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 16px; padding-bottom: 16px; margin-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .manifest-title {
+    margin: 0;
+    color: var(--ink); font-size: clamp(22px, 2.4vw, 28px); font-weight: 900;
+    letter-spacing: -0.04em;
+  }
+  .manifest-sub {
+    margin: 4px 0 0;
+    color: var(--ink-3); font-size: 13px; font-weight: 600;
+    line-height: 1.45; max-width: 720px;
+  }
+  .manifest-sub code {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+    padding: 0 5px; font-size: 0.9em; color: var(--ink);
+  }
+  .manifest-meta {
+    color: var(--ink-4); font-size: 12px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap;
+  }
+  .manifest-table-wrap {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .manifest-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 13px;
+  }
+  .manifest-table th, .manifest-table td {
+    text-align: left; padding: 10px 14px;
+    border-bottom: 1px solid rgba(229, 225, 215, 0.5);
+  }
+  .manifest-table tbody tr:last-child td { border-bottom: none; }
+  .manifest-table th {
+    background: var(--surface-soft);
+    color: var(--ink-4); font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    position: sticky; top: 0; z-index: 1;
+  }
+  .manifest-table tbody tr {
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .manifest-table tbody tr:hover { background: rgba(73, 42, 232, 0.05); }
+  .manifest-table tbody tr.selected { background: rgba(247, 204, 11, 0.18); }
+  .manifest-table td {
+    color: var(--ink-2);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .manifest-table td.name-cell { color: var(--ink); font-weight: 600; word-break: break-all; }
+  .manifest-table td.num { text-align: right; }
+  .manifest-table td .b-unit { color: var(--ink-4); margin-left: 4px; }
+
   /* ─── Loading ───────────────────────────────────────────────── */
   .loading {
     position: absolute; top: 50%; left: 50%;
@@ -304,16 +371,29 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ─── Error ─────────────────────────────────────────────────── */
-  .error {
+  /* ─── Error and Info banners ────────────────────────────────── */
+  .banner {
     position: absolute; top: 1rem; left: 50%; transform: translateX(-50%);
-    z-index: 50; max-width: 90%;
-    background: #fee2e2; color: #991b1b;
-    border: 1px solid #fca5a5; padding: 10px 16px;
-    border-radius: 999px; font-size: 13px; font-weight: 700;
+    z-index: 60; max-width: min(720px, 92%);
+    padding: 10px 16px;
+    border-radius: 16px; font-size: 13px; font-weight: 600;
     display: none; box-shadow: var(--shadow-sm);
+    line-height: 1.45;
   }
-  .error.show { display: block; }
+  .banner.show { display: block; }
+  .error {
+    background: #fee2e2; color: #991b1b;
+    border: 1px solid #fca5a5;
+  }
+  .info {
+    background: #fef9c3; color: #713f12;
+    border: 1px solid #fde68a;
+  }
+  .info code, .error code {
+    background: rgba(0,0,0,0.06); border-radius: 3px;
+    padding: 0 4px; font-size: 0.92em;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
 
   /* ─── MapLibre overrides (light theme) ──────────────────────── */
   .maplibregl-ctrl-bottom-right { display: none; }
@@ -339,6 +419,7 @@
     .meta-panel { top: auto; bottom: 1rem; right: 1rem; left: 1rem; width: auto; max-height: 65vh; }
     .stats, .attribution { display: none !important; }
     .nav-link:not(.primary) span { display: none; }
+    .manifest-table th, .manifest-table td { padding: 8px 10px; font-size: 12px; }
   }
 </style>
 </head>
@@ -380,6 +461,27 @@
 <div class="viewport">
   <div id="map"></div>
 
+  <!-- Fallback view shown when the cozip has no geometry column -->
+  <div class="manifest-view" id="manifest-view">
+    <div class="manifest-header">
+      <div>
+        <h2 class="manifest-title">Manifest</h2>
+        <p class="manifest-sub" id="manifest-sub">
+          This cozip has no GeoParquet geometry, so the map view is empty. Click any row to inspect.
+        </p>
+      </div>
+      <div class="manifest-meta"><span id="manifest-count">—</span> entries</div>
+    </div>
+    <div class="manifest-table-wrap">
+      <table class="manifest-table">
+        <thead>
+          <tr><th>name</th><th class="num">size</th><th class="num">offset</th></tr>
+        </thead>
+        <tbody id="manifest-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="stats" id="stats">
     <div class="stat"><span class="stat-label">entries</span><span class="stat-value" id="stat-count">—</span></div>
     <div class="stat"><span class="stat-label">load time</span><span class="stat-value" id="stat-time">—</span></div>
@@ -420,7 +522,8 @@
     <span id="loading-text">Bootstrapping cozip index…</span>
   </div>
 
-  <div class="error" id="error"></div>
+  <div class="banner info" id="info"></div>
+  <div class="banner error" id="error"></div>
 </div>
 
 <script type="module">
@@ -434,9 +537,14 @@ const $url=document.getElementById('url'),$go=document.getElementById('go'),
       $panel=document.getElementById('meta-panel'),$title=document.getElementById('meta-title'),
       $body=document.getElementById('meta-body'),$close=document.getElementById('meta-close'),
       $loading=document.getElementById('loading'),$loadText=document.getElementById('loading-text'),
-      $error=document.getElementById('error'),$copyVsi=document.getElementById('copy-vsi'),
+      $error=document.getElementById('error'),$info=document.getElementById('info'),
+      $copyVsi=document.getElementById('copy-vsi'),
       $copyName=document.getElementById('copy-name'),$download=document.getElementById('download-tile'),
-      $dlFilename=document.getElementById('download-filename');
+      $dlFilename=document.getElementById('download-filename'),
+      $manifestView=document.getElementById('manifest-view'),
+      $manifestTbody=document.getElementById('manifest-tbody'),
+      $manifestCount=document.getElementById('manifest-count'),
+      $manifestSub=document.getElementById('manifest-sub');
 
 let currentRows=null, currentUrl=null, currentSelection=null;
 
@@ -563,7 +671,16 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl({ visualizePitch:true }),'top-left');
 
 map.on('load', () => {
-  map.addSource('cozip', { type:'geojson', data:{type:'FeatureCollection',features:[]} });
+  // Source tuning: tolerance + maxzoom + buffer reduce the re-tiling cost
+  // after fitBounds, which is what causes the "everything reloads" flash on
+  // large global feature sets.
+  map.addSource('cozip', {
+    type:'geojson',
+    data:{type:'FeatureCollection',features:[]},
+    tolerance: 0.5,
+    buffer: 0,
+    maxzoom: 8
+  });
 
   // Polygon fill — magenta default, gold when selected
   map.addLayer({
@@ -706,13 +823,60 @@ function geoJSONBounds(fc){
   return isFinite(minX) ? [[minX,minY],[maxX,maxY]] : null;
 }
 
+// ─── Manifest table (no-geometry fallback) ────────────────────────────────
+function renderManifestTable(rows, foundCols){
+  $manifestCount.textContent = rows.length.toLocaleString();
+  const colList = foundCols.length
+    ? `Found columns: <code>${foundCols.map(esc).join('</code> <code>')}</code>.`
+    : '';
+  $manifestSub.innerHTML =
+    `This cozip has no GeoParquet geometry, so the map view is empty. ` +
+    `The viewer expects <code>__metadata__</code> with a <code>geometry</code> column (WKB) ` +
+    `and the GeoParquet <code>geo</code> key in file-level metadata. ` +
+    colList + ` Click any row to inspect.`;
+
+  const html = rows.map((row, i) => {
+    const name = esc(row.name ?? `entry ${i}`);
+    const size = typeof row.size === 'number'
+      ? `${row.size.toLocaleString()}<span class="b-unit">B · ${humanBytes(row.size)}</span>`
+      : '<span style="color:var(--ink-4)">—</span>';
+    const offset = typeof row.offset === 'number'
+      ? row.offset.toLocaleString()
+      : '<span style="color:var(--ink-4)">—</span>';
+    return `<tr data-idx="${i}"><td class="name-cell">${name}</td><td class="num">${size}</td><td class="num">${offset}</td></tr>`;
+  }).join('');
+  $manifestTbody.innerHTML = html;
+  $manifestView.classList.add('show');
+}
+
+function hideManifest(){ $manifestView.classList.remove('show'); }
+
+$manifestTbody.addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-idx]');
+  if(!tr) return;
+  const idx = +tr.dataset.idx;
+  $manifestTbody.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
+  tr.classList.add('selected');
+  selectRow(idx);
+});
+
+function selectRow(idx){
+  const row = currentRows[idx];
+  currentSelection = idx;
+  $title.textContent = row.name ?? `entry ${idx}`;
+  $dlFilename.textContent = row.name ?? `entry_${idx}`;
+  renderMeta(row);
+  $panel.classList.add('open');
+}
+
 // ─── Load ─────────────────────────────────────────────────────────────────
 async function loadCozip(){
   const url=$url.value.trim();
   if(!url) return;
   currentUrl=url;
   $go.disabled=true;
-  hidePanel(); showError(null);
+  hidePanel(); hideManifest();
+  showError(null); showInfo(null);
   $loadText.textContent='Bootstrapping cozip index…';
   $loading.classList.add('show');
   $stats.classList.remove('show');
@@ -731,9 +895,14 @@ async function loadCozip(){
 
     const geomKey=detectGeometryKey(rows);
     if(!geomKey){
-      const cols=Object.keys(rows[0]||{}).filter(k=>!k.startsWith('cozip:')).join(', ');
-      showError(`No geometry column detected. Columns: ${cols}`);
+      const cols=Object.keys(rows[0]||{}).filter(k=>!k.startsWith('cozip:'));
+      // Empty the map and fall back to the manifest table
       map.getSource('cozip').setData({type:'FeatureCollection',features:[]});
+      showInfo(
+        `No GeoParquet geometry detected. The viewer expects a <code>geometry</code> column (WKB) ` +
+        `plus the GeoParquet <code>geo</code> key in file-level metadata. Showing the flat manifest instead.`
+      );
+      renderManifestTable(rows, cols);
       $statCount.textContent=rows.length.toLocaleString();
       $statTime.textContent=ms<1000?`${ms.toFixed(0)} ms`:`${(ms/1000).toFixed(2)} s`;
       $statGeom.textContent='none';
@@ -830,13 +999,20 @@ function esc(s){
   return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function hidePanel(){
-  if(currentSelection!==null) map.setFeatureState({source:'cozip',id:currentSelection},{selected:false});
+  if(currentSelection!==null && map.getSource('cozip')){
+    map.setFeatureState({source:'cozip',id:currentSelection},{selected:false});
+  }
+  $manifestTbody.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
   currentSelection=null;
   $panel.classList.remove('open');
 }
 function showError(msg){
   if(!msg){ $error.classList.remove('show'); return; }
-  $error.textContent=msg; $error.classList.add('show');
+  $error.innerHTML=esc(msg); $error.classList.add('show');
+}
+function showInfo(html){
+  if(!html){ $info.classList.remove('show'); return; }
+  $info.innerHTML=html; $info.classList.add('show');
 }
 
 // ─── Copy & download ──────────────────────────────────────────────────────

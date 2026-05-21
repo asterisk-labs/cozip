@@ -23,7 +23,7 @@
       --magenta: #492ae8;
       --code-bg: #0f0d1f;
       --code-fg: #f4f3ee;
-      --container: 920px;
+      --container: 1160px;
       --nav-height: 92px;
     }
 
@@ -47,6 +47,19 @@
       background: var(--bg);
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(30, 47, 85, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 47, 85, 0.03) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 82%);
     }
 
     a { color: inherit; text-decoration: none; }
@@ -189,7 +202,7 @@
       letter-spacing: -0.06em;
     }
     .page-sub {
-      max-width: 640px;
+      max-width: 720px;
       margin: 0 0 28px;
       color: var(--ink-3);
       font-size: clamp(18px, 1.6vw, 21px);
@@ -211,6 +224,12 @@
       white-space: pre;
       overflow-x: auto;
     }
+    .install-line.compact {
+      padding: 10px 16px;
+      font-size: 14px;
+      white-space: normal;
+      word-break: break-all;
+    }
 
     /* sections */
     h2 {
@@ -227,10 +246,11 @@
       color: var(--ink-3);
       font-size: clamp(16px, 1.4vw, 18px);
       line-height: 1.45;
-      max-width: 640px;
+      max-width: 720px;
       margin: 0;
     }
-    .lede code {
+    .lede code,
+    .body-p code {
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 5px;
@@ -238,6 +258,28 @@
       font-size: 0.9em;
       color: var(--ink);
     }
+
+    .body-p {
+      color: var(--ink-2);
+      font-size: 16px;
+      line-height: 1.55;
+      max-width: 720px;
+      margin: 18px 0 0;
+    }
+    .body-p a {
+      color: var(--magenta);
+      font-weight: 700;
+      text-decoration: underline;
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    /* code block with copy button */
+    .code-block {
+      position: relative;
+      margin-top: 20px;
+    }
+    .code-block pre { margin-top: 0; }
 
     pre {
       background: var(--code-bg);
@@ -251,6 +293,48 @@
       margin-top: 20px;
       margin-bottom: 0;
       box-shadow: 0 12px 30px rgba(30, 47, 85, 0.08);
+    }
+
+    .code-copy {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      color: rgba(244, 243, 238, 0.7);
+      font-family: "League Spartan", system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+      -webkit-appearance: none;
+      appearance: none;
+      z-index: 1;
+    }
+    .code-copy:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.24);
+    }
+    .code-copy:focus-visible {
+      outline: 2px solid rgba(247, 204, 11, 0.6);
+      outline-offset: 2px;
+    }
+    .code-copy svg {
+      width: 14px;
+      height: 14px;
+      flex: 0 0 auto;
+    }
+    .code-copy.copied {
+      background: rgba(169, 255, 166, 0.15);
+      border-color: rgba(169, 255, 166, 0.32);
+      color: #a9ffa6;
     }
 
     .tk-kw { color: #c4b5fd; }
@@ -388,8 +472,9 @@
     }
 
     @media (max-width: 640px) {
-      :root { --nav-height: 164px; }
+      :root { --nav-height: 180px; }
       body { font-size: 17px; }
+      .container { width: min(100% - 32px, var(--container)); }
       .brand { font-size: 32px; }
       .brand img { width: 48px; height: 48px; }
       .footer-brand-block .brand { font-size: 36px; }
@@ -397,6 +482,8 @@
       .nav-lang, .nav-link { min-height: 34px; padding: 7px 9px; font-size: 14px; }
       .nav-link.primary { display: none; }
       pre { padding: 18px 20px; font-size: 12.5px; border-radius: 12px; }
+      .code-copy { top: 10px; right: 10px; padding: 5px 8px; font-size: 11px; }
+      .code-copy svg { width: 12px; height: 12px; }
       .footer-cols { grid-template-columns: 1fr 1fr; gap: 28px 36px; }
       .footer-bottom { justify-content: flex-start; }
     }
@@ -434,12 +521,20 @@
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Jl</text></svg>
           Julia
         </a>
+        <a class="nav-lang" href="javascript.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Js</text></svg>
+          JavaScript
+        </a>
         <a class="nav-lang" href="c.html">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">C</text></svg>
           C
         </a>
-        <a class="nav-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">Spec</a>
-        <a class="nav-link primary" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+        <a class="nav-link" href="https://github.com/asterisk-labs/cozip/blob/main/SPEC.md" target="_blank" rel="noopener noreferrer">Spec</a>
+        <a class="nav-link" href="../playground.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+          Playground
+        </a>
+        <a class="nav-link primary" href="https://github.com/asterisk-labs/cozip" target="_blank" rel="noopener noreferrer">
           GitHub
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
         </a>
@@ -452,75 +547,118 @@
       <header class="page-header">
         <p class="section-kicker">Quickstart</p>
         <h1 class="page-title">cozip in Julia.</h1>
-        <p class="page-sub">Write archives, read them back, query them straight from DuckDB. Copy, paste, run.</p>
-        <span class="install-line">using Pkg
-Pkg.Registry.add(Pkg.RegistrySpec(url="https://github.com/asterisk-labs/AsteriskRegistry"))
-Pkg.activate(; temp=true)
-Pkg.add("Cozip")</span>
+        <p class="page-sub">Pack three files with whatever metadata you want into one cozip archive, read it back, publish it, and open it in the browser.</p>
+        <span class="install-line">]registry add https://github.com/asterisk-labs/AsteriskRegistry
+]add Cozip DataFrames JSON3 ArchGDAL</span>
       </header>
 
       <h2>Write</h2>
-      <p class="lede"><code>Cozip.create</code> takes a <code>DataFrame</code> (or <code>Arrow.Table</code>) with <code>name</code> and <code>path</code> columns. Anything else rides along as user-defined manifest columns.</p>
-<pre><span class="tk-kw">using</span> Cozip
-<span class="tk-kw">using</span> DataFrames
+      <p class="lede">Drop three files in a temp directory, build a <code>DataFrame</code> with <code>name</code>, <code>path</code>, and any extras you want to ride along (here <code>split</code>, <code>label</code>, and a GeoParquet <code>geometry</code> column), hand it to <code>Cozip.create</code>.</p>
+      <div class="code-block">
+        <button class="code-copy" type="button" aria-label="Copy code">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="code-copy-label">Copy</span>
+        </button>
+<pre><span class="tk-kw">using</span> DataFrames
+<span class="tk-kw">using</span> JSON3
+<span class="tk-kw">using</span> ArchGDAL
+<span class="tk-kw">using</span> Cozip
+<span class="tk-kw">const</span> AG <span class="tk-op">=</span> ArchGDAL
 
-tmp = <span class="tk-fn">mktempdir</span>()
-paths = String[]
+<span class="tk-com"># three tmp files with anything inside</span>
+tmp <span class="tk-op">=</span> <span class="tk-fn">mktempdir</span>()
+paths <span class="tk-op">=</span> String[]
 <span class="tk-kw">for</span> i <span class="tk-kw">in</span> <span class="tk-num">0</span>:<span class="tk-num">2</span>
-    p = <span class="tk-fn">joinpath</span>(tmp, <span class="tk-str">"file_$(lpad(i, 4, '0')).bin"</span>)
-    <span class="tk-fn">write</span>(p, <span class="tk-fn">repeat</span>(<span class="tk-str">"hello cozip\n"</span>, <span class="tk-num">1000</span>))
+    p <span class="tk-op">=</span> <span class="tk-fn">joinpath</span>(tmp, <span class="tk-str">"file_$(i).bin"</span>)
+    <span class="tk-fn">write</span>(p, <span class="tk-fn">repeat</span>(<span class="tk-str">"file $i contents\n"</span>, <span class="tk-num">100</span>))
     <span class="tk-fn">push!</span>(paths, p)
 <span class="tk-kw">end</span>
 
-tbl = <span class="tk-fn">DataFrame</span>(
-    name = <span class="tk-fn">basename</span>.(paths),
-    path = paths,
+<span class="tk-com"># GeoParquet metadata so viewers recognize the geometry column</span>
+geo <span class="tk-op">=</span> <span class="tk-fn">Dict</span>(
+    <span class="tk-str">"version"</span>        <span class="tk-op">=&gt;</span> <span class="tk-str">"1.1.0"</span>,
+    <span class="tk-str">"primary_column"</span> <span class="tk-op">=&gt;</span> <span class="tk-str">"geometry"</span>,
+    <span class="tk-str">"columns"</span>        <span class="tk-op">=&gt;</span> <span class="tk-fn">Dict</span>(<span class="tk-str">"geometry"</span> <span class="tk-op">=&gt;</span> <span class="tk-fn">Dict</span>(<span class="tk-str">"encoding"</span> <span class="tk-op">=&gt;</span> <span class="tk-str">"WKB"</span>, <span class="tk-str">"geometry_types"</span> <span class="tk-op">=&gt;</span> [<span class="tk-str">"Polygon"</span>])),
 )
 
-Cozip.<span class="tk-fn">create</span>(<span class="tk-str">"dataset.zip"</span>, tbl)</pre>
+<span class="tk-com"># bounding box polygon as WKB</span>
+<span class="tk-kw">function</span> <span class="tk-fn">bbox_wkb</span>(xmin, ymin, xmax, ymax)
+    poly <span class="tk-op">=</span> AG.<span class="tk-fn">createpolygon</span>([(xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax), (xmin, ymin)])
+    AG.<span class="tk-fn">toWKB</span>(poly)
+<span class="tk-kw">end</span>
+
+df <span class="tk-op">=</span> <span class="tk-fn">DataFrame</span>(
+    name     <span class="tk-op">=</span> <span class="tk-fn">basename</span>.(paths),
+    path     <span class="tk-op">=</span> paths,
+    split    <span class="tk-op">=</span> [<span class="tk-str">"train"</span>, <span class="tk-str">"val"</span>, <span class="tk-str">"train"</span>],
+    label    <span class="tk-op">=</span> [<span class="tk-str">"zeros"</span>, <span class="tk-str">"ones"</span>, <span class="tk-str">"twos"</span>],
+    geometry <span class="tk-op">=</span> [
+        <span class="tk-fn">bbox_wkb</span>(-<span class="tk-num">77.0</span>, -<span class="tk-num">12.1</span>, -<span class="tk-num">76.9</span>, -<span class="tk-num">12.0</span>),
+        <span class="tk-fn">bbox_wkb</span>(-<span class="tk-num">76.9</span>, -<span class="tk-num">12.1</span>, -<span class="tk-num">76.8</span>, -<span class="tk-num">12.0</span>),
+        <span class="tk-fn">bbox_wkb</span>(-<span class="tk-num">76.8</span>, -<span class="tk-num">12.1</span>, -<span class="tk-num">76.7</span>, -<span class="tk-num">12.0</span>),
+    ],
+)
+<span class="tk-fn">metadata!</span>(df, <span class="tk-str">"geo"</span>, JSON3.<span class="tk-fn">write</span>(geo); style<span class="tk-op">=</span>:note)
+
+archive <span class="tk-op">=</span> <span class="tk-fn">joinpath</span>(tmp, <span class="tk-str">"dataset.zip"</span>)
+Cozip.<span class="tk-fn">create</span>(archive, df)</pre>
+      </div>
 
       <h2>Read</h2>
-      <p class="lede"><code>Cozip.read</code> works on a local path or a remote URL with the same call. You get a <code>DataFrame</code> plus an injected <code>cozip:gdal_vsi</code> column ready for ArchGDAL or Rasters.jl.</p>
+      <p class="lede"><code>Cozip.read</code> returns the manifest as a <code>DataFrame</code>, your custom columns included. Filter however you like, then open the matching files in place with <code>seek</code> and <code>read</code> using the <code>offset</code> and <code>size</code> the writer added.</p>
+      <div class="code-block">
+        <button class="code-copy" type="button" aria-label="Copy code">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="code-copy-label">Copy</span>
+        </button>
 <pre><span class="tk-kw">using</span> Cozip
 
-<span class="tk-com"># local archive</span>
-df = Cozip.<span class="tk-fn">read</span>(<span class="tk-str">"dataset.zip"</span>)
+df <span class="tk-op">=</span> Cozip.<span class="tk-fn">read</span>(archive)
+<span class="tk-fn">println</span>(df)
 
-<span class="tk-com"># or remote, no full download, two range requests under the hood</span>
-df = Cozip.<span class="tk-fn">read</span>(
-    <span class="tk-str">"https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/"</span> <span class="tk-op">*</span>
-    <span class="tk-str">"resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip"</span>
-)
+<span class="tk-com"># filter on your own columns, then read the matching files in place</span>
+trains <span class="tk-op">=</span> df[df.split .<span class="tk-op">==</span> <span class="tk-str">"train"</span>, :]
+<span class="tk-fn">open</span>(archive, <span class="tk-str">"r"</span>) <span class="tk-kw">do</span> f
+    <span class="tk-kw">for</span> row <span class="tk-kw">in</span> <span class="tk-fn">eachrow</span>(trains)
+        <span class="tk-fn">seek</span>(f, row.offset)
+        data <span class="tk-op">=</span> <span class="tk-fn">read</span>(f, row.size)
+        <span class="tk-fn">println</span>(row.name, <span class="tk-str">" "</span>, <span class="tk-fn">length</span>(data), <span class="tk-str">" bytes"</span>)
+    <span class="tk-kw">end</span>
+<span class="tk-kw">end</span></pre>
+      </div>
 
-<span class="tk-com"># hand the cozip:gdal_vsi path straight to ArchGDAL</span>
-<span class="tk-kw">using</span> ArchGDAL
-dataset = ArchGDAL.<span class="tk-fn">read</span>(df[<span class="tk-num">1</span>, <span class="tk-str">"cozip:gdal_vsi"</span>])</pre>
+      <h2>Publish</h2>
+      <p class="lede">The archive is a plain ZIP so any S3-compatible bucket works. The example below uses <a href="https://source.coop/asterisk-labs/cozip" target="_blank" rel="noopener noreferrer" style="color: var(--magenta); font-weight: 700; text-decoration: underline; text-decoration-thickness: 0.08em; text-underline-offset: 0.18em;">asterisk-labs/cozip</a> on Source Cooperative.</p>
+      <div class="code-block">
+        <button class="code-copy" type="button" aria-label="Copy code">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="code-copy-label">Copy</span>
+        </button>
+<pre><span class="tk-com"># Source Coop creds are temporary STS. Export them in your shell, then upload.</span>
+<span class="tk-kw">export</span> AWS_ACCESS_KEY_ID<span class="tk-op">=</span><span class="tk-str">"&lt;your-key&gt;"</span>
+<span class="tk-kw">export</span> AWS_SECRET_ACCESS_KEY<span class="tk-op">=</span><span class="tk-str">"&lt;your-secret&gt;"</span>
+<span class="tk-kw">export</span> AWS_SESSION_TOKEN<span class="tk-op">=</span><span class="tk-str">"&lt;your-session-token&gt;"</span>
 
-      <h2>Query with DuckDB</h2>
-      <p class="lede">The cozip community extension reads the same archive over SQL. Pair it with the <code>DuckDB.jl</code> package, or run it straight from the DuckDB CLI.</p>
-<pre><span class="tk-com">-- one-time install</span>
-<span class="tk-kw">INSTALL</span> cozip <span class="tk-kw">FROM</span> community;
-<span class="tk-kw">LOAD</span> cozip;
+<span class="tk-fn">aws</span> s3 cp dataset.zip \
+    s3://us-west-2.opendata.source.coop/asterisk-labs/cozip/dataset.zip \
+    --region us-west-2</pre>
+      </div>
+      <p class="body-p">Back in Julia, the read flow is the same with a URL in place of the path.</p>
+      <div class="code-block">
+        <button class="code-copy" type="button" aria-label="Copy code">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="code-copy-label">Copy</span>
+        </button>
+<pre><span class="tk-kw">using</span> Cozip
 
-<span class="tk-com">-- hello world, first 10 entries of the manifest</span>
-<span class="tk-kw">SELECT</span> *
-<span class="tk-kw">FROM</span> <span class="tk-fn">read_cozip</span>(<span class="tk-str">'https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip'</span>)
-<span class="tk-kw">LIMIT</span> <span class="tk-num">10</span>;
+url <span class="tk-op">=</span> <span class="tk-str">"https://data.source.coop/asterisk-labs/cozip/dataset.zip"</span>
+<span class="tk-fn">println</span>(Cozip.<span class="tk-fn">read</span>(url))</pre>
+      </div>
 
-<span class="tk-com">-- raw manifest, without the injected /vsisubfile/ column</span>
-<span class="tk-kw">SELECT</span> *
-<span class="tk-kw">FROM</span> <span class="tk-fn">read_cozip</span>(
-    <span class="tk-str">'https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip'</span>,
-    gdal_vsi <span class="tk-op">:=</span> <span class="tk-kw">false</span>
-)
-<span class="tk-kw">LIMIT</span> <span class="tk-num">10</span>;
-
-<span class="tk-com">-- filter the manifest, keep the /vsisubfile/ paths for the biggest tifs</span>
-<span class="tk-kw">SELECT</span> name, <span class="tk-str">"cozip:gdal_vsi"</span>, size
-<span class="tk-kw">FROM</span> <span class="tk-fn">read_cozip</span>(<span class="tk-str">'https://huggingface.co/datasets/Major-TOM/Core-VIIRS-Nighttime-Light/resolve/main/2024/MAJORTOM-VIIRS-NTL_2024_median_000.zip'</span>)
-<span class="tk-kw">WHERE</span> name <span class="tk-kw">LIKE</span> <span class="tk-str">'%.tif'</span>
-<span class="tk-kw">ORDER BY</span> size <span class="tk-kw">DESC</span>
-<span class="tk-kw">LIMIT</span> <span class="tk-num">5</span>;</pre>
+      <h2>Explore in the playground</h2>
+      <p class="lede">Once the archive is public the cozip playground reads it from the browser. No Julia, no install, no download. The manifest renders as a table, and any file is one click from a copyable URL.</p>
+      <p class="body-p">Open <a href="../playground.html">the playground</a> and paste the URL below into the input.</p>
+      <span class="install-line compact">https://data.source.coop/asterisk-labs/cozip/dataset.zip</span>
     </div>
   </main>
 
@@ -542,32 +680,34 @@ dataset = ArchGDAL.<span class="tk-fn">read</span>(df[<span class="tk-num">1</sp
               <li><a class="footer-link" href="python.html">Python</a></li>
               <li><a class="footer-link" href="r.html">R</a></li>
               <li><a class="footer-link" href="julia.html">Julia</a></li>
+              <li><a class="footer-link" href="javascript.html">JavaScript</a></li>
               <li><a class="footer-link" href="c.html">C</a></li>
             </ul>
           </div>
           <div class="footer-col">
             <h4>Project</h4>
             <ul>
+              <li><a class="footer-link" href="../playground.html">Playground</a></li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip" target="_blank" rel="noopener noreferrer">
                   GitHub
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
               </li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip/blob/main/SPEC.md" target="_blank" rel="noopener noreferrer">
                   Spec
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
               </li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/CHANGELOG" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip/blob/main/CHANGELOG" target="_blank" rel="noopener noreferrer">
                   Changelog
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
               </li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/LICENSE" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">
                   License
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
@@ -592,5 +732,28 @@ dataset = ArchGDAL.<span class="tk-fn">read</span>(df[<span class="tk-num">1</sp
       </div>
     </div>
   </footer>
+
+  <script>
+    document.querySelectorAll('.code-copy').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var pre = btn.parentElement.querySelector('pre');
+        if (!pre) return;
+        var text = pre.textContent || '';
+        navigator.clipboard.writeText(text).then(function () {
+          var label = btn.querySelector('.code-copy-label');
+          if (!label) return;
+          var orig = label.textContent;
+          label.textContent = 'Copied!';
+          btn.classList.add('copied');
+          setTimeout(function () {
+            label.textContent = orig;
+            btn.classList.remove('copied');
+          }, 1500);
+        }).catch(function (e) {
+          console.error('Copy failed:', e);
+        });
+      });
+    });
+  </script>
 </body>
 </html>

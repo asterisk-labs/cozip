@@ -1,4 +1,5 @@
 using DataFrames
+using Dates
 using DuckDB
 using Tables
 
@@ -48,6 +49,11 @@ function stage_metadata(table)
     out.size   = sizes
     rest = setdiff(names(out), ["name", "offset", "size"])
     metadata = select(out, ["name", "offset", "size", rest...])
+
+    for k in DataFrames.metadatakeys(df)
+        v, style = DataFrames.metadata(df, k, style=true)
+        DataFrames.metadata!(metadata, k, v; style=style)
+    end
 
     paths = collect(zip(names_v, paths_v))
     return (metadata = metadata, paths = paths)
@@ -108,9 +114,10 @@ end
 """
     create(out_path, table; temp_dir=nothing) -> String
 
-All-in-one: stage_metadata + write parquet + stage_create. Uses
-DuckDB defaults for the metadata parquet. For GeoParquet or custom
-options, call `stage_metadata` and `stage_create` directly.
+All-in-one: stage_metadata + write parquet + stage_create. Binary
+columns and table-level metadata (e.g. GeoParquet `geo`) survive the
+round-trip. For full control, call `stage_metadata` and
+`stage_create` directly.
 """
 function create(
     out_path,
@@ -124,7 +131,7 @@ function create(
     tmp_pq = joinpath(tmp_dir, "cozip_meta_$(getpid())_$(time_ns()).parquet")
 
     try
-        _duckdb_write_parquet(metadata, tmp_pq)
+        _write_metadata_parquet(metadata, tmp_pq)
         return stage_create(out_path, paths, tmp_pq; validate=false)
     finally
         rm(tmp_pq; force=true)
@@ -298,45 +305,109 @@ function _alloc_user_entries(
 end
 
 
-function _read_parquet_columns(path::String)::Vector{String}
-    db = DuckDB.DB()
-    con = DBInterface.connect(db)
-    try
-        result = DBInterface.execute(con,
-            "SELECT * FROM read_parquet('$(_sql_escape(path))') LIMIT 0")
-        return names(DataFrame(result))
-    finally
-        DBInterface.close!(con)
-        DBInterface.close!(db)
+# Cached: short-lived connections trigger Windows heap corruption (duckdb#10787).
+const _DUCKDB_DB  = Ref{Any}(nothing)
+const _DUCKDB_CON = Ref{Any}(nothing)
+
+function _duckdb_con()
+    if _DUCKDB_CON[] === nothing
+        _DUCKDB_DB[]  = DuckDB.DB()
+        _DUCKDB_CON[] = DBInterface.connect(_DUCKDB_DB[])
     end
+    return _DUCKDB_CON[]
+end
+
+
+function _read_parquet_columns(path::String)::Vector{String}
+    result = DBInterface.execute(_duckdb_con(),
+        "SELECT * FROM read_parquet('$(_sql_escape(path))') LIMIT 0")
+    return names(DataFrame(result))
 end
 
 function _read_parquet_subset(path::String, columns::Vector{String})::DataFrame
-    db = DuckDB.DB()
-    con = DBInterface.connect(db)
-    try
-        # `offset` and `size` are reserved in DuckDB SQL.
-        cols_sql = join(["\"$c\"" for c in columns], ", ")
-        result = DBInterface.execute(con,
-            "SELECT $cols_sql FROM read_parquet('$(_sql_escape(path))')")
-        return DataFrame(result)
-    finally
-        DBInterface.close!(con)
-        DBInterface.close!(db)
-    end
+    # `offset` and `size` are reserved in DuckDB SQL.
+    cols_sql = join(["\"$c\"" for c in columns], ", ")
+    result = DBInterface.execute(_duckdb_con(),
+        "SELECT $cols_sql FROM read_parquet('$(_sql_escape(path))')")
+    return DataFrame(result)
 end
 
-function _duckdb_write_parquet(df::DataFrame, out_path::AbstractString)
-    db = DuckDB.DB()
-    con = DBInterface.connect(db)
-    try
-        DuckDB.register_data_frame(con, df, "tmp_cozip")
-        DBInterface.execute(con,
-            "COPY tmp_cozip TO '$(_sql_escape(String(out_path)))' (FORMAT parquet)")
-    finally
-        DBInterface.close!(con)
-        DBInterface.close!(db)
+
+function _table_metadata(df::DataFrame)::Dict{String,String}
+    out = Dict{String,String}()
+    for k in DataFrames.metadatakeys(df)
+        out[string(k)] = string(DataFrames.metadata(df, k))
     end
+    return out
 end
+
+
+function _julia_to_duckdb_type(T::Type)::String
+    if T isa Union && Missing <: T
+        return _julia_to_duckdb_type(Base.nonmissingtype(T))
+    end
+    T == Bool     && return "BOOLEAN"
+    T == Int8     && return "TINYINT"
+    T == Int16    && return "SMALLINT"
+    T == Int32    && return "INTEGER"
+    T == Int64    && return "BIGINT"
+    T == UInt8    && return "UTINYINT"
+    T == UInt16   && return "USMALLINT"
+    T == UInt32   && return "UINTEGER"
+    T == UInt64   && return "UBIGINT"
+    T == Float32  && return "REAL"
+    T == Float64  && return "DOUBLE"
+    T == String   && return "VARCHAR"
+    T == Date     && return "DATE"
+    T == DateTime && return "TIMESTAMP"
+    T <: AbstractVector{UInt8} && return "BLOB"
+    return "VARCHAR"
+end
+
+
+function _kv_metadata_sql(md::Dict{String,String})::String
+    isempty(md) && return ""
+    parts = ["'$(_sql_escape(k))': '$(_sql_escape(v))'" for (k, v) in md]
+    return ", KV_METADATA { " * join(parts, ", ") * " }"
+end
+
+
+# unhex(): DuckDB's `'\xNN'::BLOB` only consumes 2 hex chars per escape.
+function _sql_literal(v)::String
+    v === missing  && return "NULL"
+    v === nothing  && return "NULL"
+    v isa Bool     && return v ? "TRUE" : "FALSE"
+    v isa AbstractVector{UInt8} && return "unhex('" * bytes2hex(v) * "')"
+    v isa AbstractString && return "'" * _sql_escape(string(v)) * "'"
+    v isa Date     && return "DATE '" * string(v) * "'"
+    v isa DateTime && return "TIMESTAMP '" * replace(string(v), 'T' => ' ') * "'"
+    v isa Integer || v isa AbstractFloat && return string(v)
+    return "'" * _sql_escape(string(v)) * "'"
+end
+
+
+function _write_metadata_parquet(df::DataFrame, out_path::AbstractString)
+    cols      = names(df)
+    col_types = [string("\"", c, "\" ", _julia_to_duckdb_type(eltype(df[!, c])))
+                 for c in cols]
+    tbl = "tmp_cozip_$(getpid())_$(time_ns())"
+    con = _duckdb_con()
+
+    try
+        DBInterface.execute(con,
+            "CREATE TABLE $tbl ($(join(col_types, ", ")))")
+        for i in 1:nrow(df)
+            vals = join((_sql_literal(df[i, c]) for c in cols), ", ")
+            DBInterface.execute(con, "INSERT INTO $tbl VALUES ($vals)")
+        end
+        kv_sql = _kv_metadata_sql(_table_metadata(df))
+        DBInterface.execute(con,
+            "COPY $tbl TO '$(_sql_escape(String(out_path)))' (FORMAT parquet$kv_sql)")
+    finally
+        DBInterface.execute(con, "DROP TABLE IF EXISTS $tbl")
+    end
+    return nothing
+end
+
 
 _sql_escape(s::AbstractString) = replace(String(s), "'" => "''")

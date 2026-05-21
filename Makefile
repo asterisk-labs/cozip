@@ -87,7 +87,7 @@ r: sync
 julia: lib
 	cd $(JL_DIR) && julia --project=. -e \
 	  'ENV["COZIP_LIB_PATH"] = "$(abspath $(PY_LIB_DIR)/$(LIB_NAME))"; \
-	   using Pkg; Pkg.instantiate(); Pkg.test()'
+	   using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.test()'
 
 # Pure-JS package: no native lib, but version sync is required.
 javascript: sync

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="cozip adds a Parquet-powered table of contents to ordinary ZIP archives. Filter, query, and jump straight to the bytes you need with one byte-range request.">
+  <meta name="description" content="cozip adds a Parquet-powered table of contents to ordinary ZIP archives. Query the manifest in place, then fetch each file with a single byte-range request.">
   <meta name="theme-color" content="#492AE8">
   <meta property="og:title" content="cozip — Open a ZIP like a table">
   <meta property="og:description" content="A Parquet table of contents at the heart of every ZIP. Random access, queryable manifest, 100% ZIP-spec compliant.">
@@ -606,7 +606,7 @@
     /* language cards */
     .lang-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 14px;
     }
     .lang-card {
@@ -883,6 +883,10 @@
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Jl</text></svg>
           Julia
         </a>
+        <a class="nav-link" href="docs/javascript.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Js</text></svg>
+          JavaScript
+        </a>
         <a class="nav-link" href="docs/c.html">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">C</text></svg>
           C
@@ -946,7 +950,7 @@
                 <div class="result-row" role="row"><span role="cell">tile_0003.parquet</span><span role="cell">16.9 MB</span><span role="cell">8.1 MB</span></div>
               </div>
               <div class="demo-metrics" aria-label="cozip benefits">
-                <div class="metric"><strong>2</strong><span>reads to any file</span></div>
+                <div class="metric"><strong>O(1)</strong><span>reads per file</span></div>
                 <div class="metric"><strong>0</strong><span>full ZIP downloads</span></div>
                 <div class="metric"><strong>100%</strong><span>ZIP compatible</span></div>
               </div>
@@ -963,7 +967,7 @@
             <p class="section-kicker">Why cozip?</p>
             <h2 class="section-title">Ship archives that read like datasets.</h2>
             <p class="section-sub">
-              cozip adds a <strong>Parquet-powered table of contents</strong> to ordinary ZIP archives. Filter, query, and jump straight to the bytes you need with one byte-range request.
+              cozip adds a <strong>Parquet-powered table of contents</strong> to ordinary ZIP archives. Query it in place, then fetch each file with a single byte-range request.
             </p>
           </div>
         </div>
@@ -990,7 +994,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-10 14h9l-1 8 10-14h-9l1-8Z"></path></svg>
             </div>
             <h3>Built on DuckDB and libzip.</h3>
-            <p>Writers run on vendored libzip behind a stable C ABI. Readers run on a DuckDB C++ extension that speaks SQL on your ZIP. Python, R, and Julia bindings share the same core.</p>
+            <p>Writers run on vendored libzip behind a stable C ABI. Readers run on a DuckDB extension for Python, R, Julia, and SQL — plus a standalone JavaScript package for the browser and Node.</p>
           </article>
         </div>
       </div>
@@ -1001,9 +1005,9 @@
         <div class="section-head">
           <div>
             <p class="section-kicker">How it works</p>
-            <h2 class="section-title">Two reads, then any file.</h2>
+            <h2 class="section-title">Bootstrap, query, fetch.</h2>
           </div>
-          <p class="section-copy">A tiny binary index at byte zero points to a Parquet manifest. Load it, query it locally, then fetch just the bytes you need.</p>
+          <p class="section-copy">A tiny binary index at byte zero points to a Parquet manifest. Query it in place, then fetch only the files you need.</p>
         </div>
 
         <div class="flow-card">
@@ -1012,16 +1016,16 @@
           </div>
           <ol class="flow-steps">
             <li class="flow-step">
-              <strong>First read</strong>
+              <strong>Bootstrap</strong>
               <span>Fetch the cozip index at byte zero. It points to the Parquet manifest.</span>
             </li>
             <li class="flow-step">
-              <strong>Second read</strong>
-              <span>Load the manifest into memory. Query it locally with DuckDB.</span>
+              <strong>Query</strong>
+              <span>Query the Parquet manifest in place. Only the chunks your query touches are fetched.</span>
             </li>
             <li class="flow-step">
               <strong>Fetch</strong>
-              <span>Pull only the byte ranges your query asked for.</span>
+              <span>Pull only the files your query selected. One range request per file.</span>
             </li>
           </ol>
         </div>
@@ -1035,7 +1039,7 @@
             <p class="section-kicker">Install</p>
             <h2 class="section-title">Pick your language.</h2>
           </div>
-          <p class="section-copy">Same archive on disk, four ways to write it. Each page is a focused quickstart.</p>
+          <p class="section-copy">Same archive on disk, five ways to read or write it. Each page is a focused quickstart.</p>
         </div>
 
         <div class="lang-grid">
@@ -1057,7 +1061,7 @@
             </span>
             <span>
               <span class="lang-name">R</span>
-              <code class="lang-cmd">install.packages('cozip')</code>
+              <code class="lang-cmd">install.packages('cozip', repos = 'https://asterisk-labs.r-universe.dev')</code>
             </span>
           </a>
 
@@ -1068,7 +1072,18 @@
             </span>
             <span>
               <span class="lang-name">Julia</span>
-              <code class="lang-cmd">]add Cozip</code>
+              <code class="lang-cmd">]registry add https://github.com/asterisk-labs/AsteriskRegistry; add Cozip</code>
+            </span>
+          </a>
+
+          <a class="lang-card" href="docs/javascript.html">
+            <span class="lang-top">
+              <svg class="lang-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Js</text></svg>
+              <svg class="lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
+            </span>
+            <span>
+              <span class="lang-name">JavaScript</span>
+              <code class="lang-cmd">npm install @asterisk-labs/cozip</code>
             </span>
           </a>
 
@@ -1105,6 +1120,7 @@
               <li><a class="footer-link" href="docs/python.html">Python</a></li>
               <li><a class="footer-link" href="docs/r.html">R</a></li>
               <li><a class="footer-link" href="docs/julia.html">Julia</a></li>
+              <li><a class="footer-link" href="docs/javascript.html">JavaScript</a></li>
               <li><a class="footer-link" href="docs/c.html">C</a></li>
             </ul>
           </div>

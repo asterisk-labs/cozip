@@ -8,6 +8,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 
 
+## 2026.5.22
+
+### Fixed
+
+- Julia: `Cozip.create` now round-trips DataFrames with binary columns
+  (`Vector{UInt8}`) and table-level metadata. The internal parquet writer
+  was rebuilt to skip DuckDB.jl's broken `register_data_frame` and
+  Appender BLOB paths (upstream duckdb/duckdb#18808, #11312) and instead
+  builds a typed table via SQL literals with `unhex()` for binary, then
+  emits the parquet with `KV_METADATA` so GeoParquet `geo` and similar
+  notes survive the trip.
+- Julia: `stage_metadata` now propagates `DataFrames.metadata!` entries
+  from the input table to the output, so `create` can embed them.
+
+### Added
+
+- Julia: `Cozip.write` as an alias for `Cozip.create`, matching the
+  Python and R binding names.
+
+### Internal
+
+- Julia: dropped the implicit DuckDB schema inference path. The metadata
+  parquet is now written with an explicit schema (`UBIGINT` for offsets
+  and sizes, `BLOB` for binary columns, etc.) so the cozip DuckDB
+  extension's strict type checks pass on read.
+
 
 ## [2026.5.10] — 2026-05-10
 

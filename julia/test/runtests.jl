@@ -576,4 +576,23 @@ end
             @test GI.y(recovered.geometry[2]) ==  48.86
         end
     end
+
+
+    @testset "create + read round-trip with binary column" begin
+        fix = make_fixtures()
+        tbl = make_input_table(fix)
+        tbl.geometry = [
+            UInt8[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x40, 0x59, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x28, 0xC0],  # WKB Point (-100, -12)
+            UInt8[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0xF0, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40],  # WKB Point (1, 2)
+        ]
+        out = joinpath(fix.tmp, "out.zip")
+        Cozip.create(out, tbl)
+        df = Cozip.read(out)
+        @test df.name == ["a.txt", "b.bin"]
+        @test df.geometry[1] == tbl.geometry[1]
+        @test df.geometry[2] == tbl.geometry[2]
+    end
 end
+

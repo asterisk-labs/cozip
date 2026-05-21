@@ -23,7 +23,7 @@
       --magenta: #492ae8;
       --code-bg: #0f0d1f;
       --code-fg: #f4f3ee;
-      --container: 920px;
+      --container: 1160px;
       --nav-height: 92px;
     }
 
@@ -47,6 +47,19 @@
       background: var(--bg);
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(30, 47, 85, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 47, 85, 0.03) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 82%);
     }
 
     a { color: inherit; text-decoration: none; }
@@ -189,7 +202,7 @@
       letter-spacing: -0.06em;
     }
     .page-sub {
-      max-width: 640px;
+      max-width: 720px;
       margin: 0 0 28px;
       color: var(--ink-3);
       font-size: clamp(18px, 1.6vw, 21px);
@@ -227,10 +240,11 @@
       color: var(--ink-3);
       font-size: clamp(16px, 1.4vw, 18px);
       line-height: 1.45;
-      max-width: 640px;
+      max-width: 720px;
       margin: 0;
     }
-    .lede code {
+    .lede code,
+    .body-p code {
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 5px;
@@ -238,13 +252,28 @@
       font-size: 0.9em;
       color: var(--ink);
     }
-    .lede a {
+
+    .body-p {
+      color: var(--ink-2);
+      font-size: 16px;
+      line-height: 1.55;
+      max-width: 720px;
+      margin: 18px 0 0;
+    }
+    .body-p a {
       color: var(--magenta);
+      font-weight: 700;
       text-decoration: underline;
       text-decoration-thickness: 0.08em;
       text-underline-offset: 0.18em;
     }
-    .lede a:hover { opacity: 0.7; }
+
+    /* code block with copy button */
+    .code-block {
+      position: relative;
+      margin-top: 20px;
+    }
+    .code-block pre { margin-top: 0; }
 
     pre {
       background: var(--code-bg);
@@ -258,6 +287,48 @@
       margin-top: 20px;
       margin-bottom: 0;
       box-shadow: 0 12px 30px rgba(30, 47, 85, 0.08);
+    }
+
+    .code-copy {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      color: rgba(244, 243, 238, 0.7);
+      font-family: "League Spartan", system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+      -webkit-appearance: none;
+      appearance: none;
+      z-index: 1;
+    }
+    .code-copy:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.24);
+    }
+    .code-copy:focus-visible {
+      outline: 2px solid rgba(247, 204, 11, 0.6);
+      outline-offset: 2px;
+    }
+    .code-copy svg {
+      width: 14px;
+      height: 14px;
+      flex: 0 0 auto;
+    }
+    .code-copy.copied {
+      background: rgba(169, 255, 166, 0.15);
+      border-color: rgba(169, 255, 166, 0.32);
+      color: #a9ffa6;
     }
 
     .tk-kw { color: #c4b5fd; }
@@ -396,8 +467,9 @@
     }
 
     @media (max-width: 640px) {
-      :root { --nav-height: 164px; }
+      :root { --nav-height: 180px; }
       body { font-size: 17px; }
+      .container { width: min(100% - 32px, var(--container)); }
       .brand { font-size: 32px; }
       .brand img { width: 48px; height: 48px; }
       .footer-brand-block .brand { font-size: 36px; }
@@ -405,6 +477,8 @@
       .nav-lang, .nav-link { min-height: 34px; padding: 7px 9px; font-size: 14px; }
       .nav-link.primary { display: none; }
       pre { padding: 18px 20px; font-size: 12.5px; border-radius: 12px; }
+      .code-copy { top: 10px; right: 10px; padding: 5px 8px; font-size: 11px; }
+      .code-copy svg { width: 12px; height: 12px; }
       .footer-cols { grid-template-columns: 1fr 1fr; gap: 28px 36px; }
       .footer-bottom { justify-content: flex-start; }
     }
@@ -442,12 +516,20 @@
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Jl</text></svg>
           Julia
         </a>
+        <a class="nav-lang" href="javascript.html">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="16" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="11" font-weight="900" fill="currentColor">Js</text></svg>
+          JavaScript
+        </a>
         <a class="nav-lang current" href="c.html">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"></rect><text x="12" y="17" text-anchor="middle" font-family="League Spartan, sans-serif" font-size="14" font-weight="900" fill="currentColor">C</text></svg>
           C
         </a>
-        <a class="nav-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">Spec</a>
-        <a class="nav-link primary" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+        <a class="nav-link" href="https://github.com/asterisk-labs/cozip/blob/main/SPEC.md" target="_blank" rel="noopener noreferrer">Spec</a>
+        <a class="nav-link" href="../playground.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+          Playground
+        </a>
+        <a class="nav-link primary" href="https://github.com/asterisk-labs/cozip" target="_blank" rel="noopener noreferrer">
           GitHub
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
         </a>
@@ -460,41 +542,69 @@
       <header class="page-header">
         <p class="section-kicker">Quickstart</p>
         <h1 class="page-title">cozip in C.</h1>
-        <p class="page-sub">The reference writer. The same ABI that Python, R, and Julia wrap.</p>
-        <span class="install-line">git clone https://github.com/asterisk-labs/taco
-cd taco/cozip
+        <p class="page-sub">The reference writer. Python, R, and Julia all wrap this C ABI, so a cozip written in any of them is byte-for-byte identical.</p>
+        <span class="install-line">git clone https://github.com/asterisk-labs/cozip
+cd cozip
 make lib</span>
       </header>
 
       <h2>Write</h2>
-      <p class="lede">Build a <code>cozip_file_t[]</code> with names and source paths, plan the FLAT layout, then write. Pass <code>NULL</code> for the metadata if you do not need a manifest.</p>
+      <p class="lede">Fill a <code>cozip_entry_t[]</code> with arc names, payload sizes, and source paths, mark each one <code>in_index = true</code> so it lands in the cozip index, then hand the array to <code>cozip_finalize</code>. Capacity must be <code>n_entries + 1</code> to leave room for the optional padding entry.</p>
+      <div class="code-block">
+        <button class="code-copy" type="button" aria-label="Copy code">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="code-copy-label">Copy</span>
+        </button>
 <pre><span class="tk-pre">#include</span> <span class="tk-str">&lt;cozip.h&gt;</span>
+<span class="tk-pre">#include</span> <span class="tk-str">&lt;stdio.h&gt;</span>
 
 <span class="tk-kw">int</span> <span class="tk-fn">main</span>(<span class="tk-kw">void</span>) {
-    <span class="tk-kw">const char</span> *names[] = {<span class="tk-str">"file_0001.bin"</span>, <span class="tk-str">"file_0002.bin"</span>, <span class="tk-str">"file_0003.bin"</span>};
-    <span class="tk-kw">const char</span> *paths[] = {<span class="tk-str">"/tmp/file_0001.bin"</span>, <span class="tk-str">"/tmp/file_0002.bin"</span>, <span class="tk-str">"/tmp/file_0003.bin"</span>};
+    <span class="tk-kw">const char</span> *names[] = {<span class="tk-str">"file_0.bin"</span>, <span class="tk-str">"file_1.bin"</span>, <span class="tk-str">"file_2.bin"</span>};
+    <span class="tk-kw">const char</span> *paths[] = {<span class="tk-str">"/tmp/file_0.bin"</span>, <span class="tk-str">"/tmp/file_1.bin"</span>, <span class="tk-str">"/tmp/file_2.bin"</span>};
+    uint64_t sizes[<span class="tk-num">3</span>];
 
-    cozip_file_t files[<span class="tk-num">3</span>];
+    <span class="tk-com">/* three tmp files with anything inside */</span>
     <span class="tk-kw">for</span> (<span class="tk-kw">int</span> i = <span class="tk-num">0</span>; i &lt; <span class="tk-num">3</span>; i++) {
-        files[i].name = names[i];
-        files[i].path = paths[i];
+        FILE *f = <span class="tk-fn">fopen</span>(paths[i], <span class="tk-str">"wb"</span>);
+        <span class="tk-kw">for</span> (<span class="tk-kw">int</span> j = <span class="tk-num">0</span>; j &lt; <span class="tk-num">100</span>; j++) <span class="tk-fn">fprintf</span>(f, <span class="tk-str">"file %d contents\n"</span>, i);
+        sizes[i] = (uint64_t)<span class="tk-fn">ftell</span>(f);
+        <span class="tk-fn">fclose</span>(f);
     }
 
-    cozip_plan plan;
-    <span class="tk-fn">cozip_plan_flat</span>(files, <span class="tk-num">3</span>, &amp;plan);
-    <span class="tk-fn">cozip_write_flat</span>(<span class="tk-str">"dataset.zip"</span>, &amp;plan, files, <span class="tk-num">3</span>, <span class="tk-kw">NULL</span>, <span class="tk-num">0</span>);
-    <span class="tk-fn">cozip_plan_free</span>(&amp;plan);
+    <span class="tk-com">/* one entry per file, all marked priority so the cozip index lists them.
+       capacity = n_entries + 1, the extra slot is for the optional padding entry. */</span>
+    cozip_entry_t entries[<span class="tk-num">4</span>] = {<span class="tk-num">0</span>};
+    <span class="tk-kw">for</span> (<span class="tk-kw">int</span> i = <span class="tk-num">0</span>; i &lt; <span class="tk-num">3</span>; i++) {
+        entries[i].arc_name      = names[i];
+        entries[i].payload_size  = sizes[i];
+        entries[i].in_index      = <span class="tk-kw">true</span>;
+        entries[i].source.kind   = COZIP_SOURCE_PATH;
+        entries[i].source.u.path = paths[i];
+    }
+
+    cozip_error_t err;
+    cozip_status_t s = <span class="tk-fn">cozip_finalize</span>(
+        <span class="tk-str">"dataset.zip"</span>, entries, <span class="tk-num">3</span>, <span class="tk-num">4</span>, COZIP_PROFILE_NONE, &amp;err);
+
+    <span class="tk-kw">if</span> (s != COZIP_OK) {
+        <span class="tk-fn">fprintf</span>(stderr, <span class="tk-str">"cozip_finalize failed: %s\n"</span>, err.message);
+        <span class="tk-kw">return</span> <span class="tk-num">1</span>;
+    }
     <span class="tk-kw">return</span> <span class="tk-num">0</span>;
 }</pre>
+      </div>
 
       <h2>Build and run</h2>
-      <p class="lede">Link against <code>libcozip</code> after running <code>make lib</code> at the repo root.</p>
+      <p class="lede">Link against <code>libcozip</code> from <code>./build</code> after running <code>make lib</code>.</p>
+      <div class="code-block">
+        <button class="code-copy" type="button" aria-label="Copy code">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="code-copy-label">Copy</span>
+        </button>
 <pre><span class="tk-com"># headers under ./include, library under ./build</span>
 cc -o write write.c -I./include -L./build -lcozip
 ./write</pre>
-
-      <h2>Read</h2>
-      <p class="lede">The C library is write-only. To read a cozip archive, use the <a href="https://github.com/asterisk-labs/cozip_reader" target="_blank" rel="noopener noreferrer">DuckDB extension</a> or one of the language bindings (<a href="python.html">Python</a>, <a href="r.html">R</a>, <a href="julia.html">Julia</a>).</p>
+      </div>
     </div>
   </main>
 
@@ -516,32 +626,34 @@ cc -o write write.c -I./include -L./build -lcozip
               <li><a class="footer-link" href="python.html">Python</a></li>
               <li><a class="footer-link" href="r.html">R</a></li>
               <li><a class="footer-link" href="julia.html">Julia</a></li>
+              <li><a class="footer-link" href="javascript.html">JavaScript</a></li>
               <li><a class="footer-link" href="c.html">C</a></li>
             </ul>
           </div>
           <div class="footer-col">
             <h4>Project</h4>
             <ul>
+              <li><a class="footer-link" href="../playground.html">Playground</a></li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/tree/main/cozip" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip" target="_blank" rel="noopener noreferrer">
                   GitHub
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
               </li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/SPEC.md" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip/blob/main/SPEC.md" target="_blank" rel="noopener noreferrer">
                   Spec
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
               </li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/CHANGELOG" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip/blob/main/CHANGELOG" target="_blank" rel="noopener noreferrer">
                   Changelog
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
               </li>
               <li>
-                <a class="footer-link" href="https://github.com/asterisk-labs/taco/blob/main/cozip/LICENSE" target="_blank" rel="noopener noreferrer">
+                <a class="footer-link" href="https://github.com/asterisk-labs/cozip/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">
                   License
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"></path><path d="M8 7h9v9"></path></svg>
                 </a>
@@ -556,7 +668,7 @@ cc -o write write.c -I./include -L./build -lcozip
           <span>Made with</span>
           <svg class="footer-heart" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-        </svg>
+          </svg>
           <span>by</span>
           <a class="footer-brand" href="https://asterisk.coop" target="_blank" rel="noopener noreferrer" aria-label="Asterisk Labs">
             <img src="../images/asterisk_logo.svg" alt="Asterisk Labs">
@@ -566,5 +678,28 @@ cc -o write write.c -I./include -L./build -lcozip
       </div>
     </div>
   </footer>
+
+  <script>
+    document.querySelectorAll('.code-copy').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var pre = btn.parentElement.querySelector('pre');
+        if (!pre) return;
+        var text = pre.textContent || '';
+        navigator.clipboard.writeText(text).then(function () {
+          var label = btn.querySelector('.code-copy-label');
+          if (!label) return;
+          var orig = label.textContent;
+          label.textContent = 'Copied!';
+          btn.classList.add('copied');
+          setTimeout(function () {
+            label.textContent = orig;
+            btn.classList.remove('copied');
+          }, 1500);
+        }).catch(function (e) {
+          console.error('Copy failed:', e);
+        });
+      });
+    });
+  </script>
 </body>
 </html>
