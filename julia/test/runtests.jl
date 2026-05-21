@@ -203,15 +203,22 @@ function write_meta(tmp, tbl)
     return pq
 end
 
+
+# Reuse Cozip's persistent connection. _duckdb_con and _DUCKDB_LOCK
+# are module-internal but stable enough for tests.
 function _write_parquet(df::DataFrame, pq_path::AbstractString)
-    db  = DuckDB.DB()
-    con = DBInterface.connect(db)
-    try
-        DuckDB.register_data_frame(con, df, "tmp_df")
-        DBInterface.execute(con, "COPY tmp_df TO '$pq_path' (FORMAT parquet)")
-    finally
-        DBInterface.close!(con)
-        DBInterface.close!(db)
+    con = Cozip._duckdb_con()
+    lock(Cozip._DUCKDB_LOCK) do
+        DuckDB.register_data_frame(con, df, "tmp_test_df")
+        try
+            DBInterface.execute(con,
+                "COPY tmp_test_df TO '$pq_path' (FORMAT parquet)")
+        finally
+            try
+                DuckDB.unregister_data_frame(con, "tmp_test_df")
+            catch
+            end
+        end
     end
 end
 
@@ -484,33 +491,36 @@ end
             tbl = make_input_table(fix)
             md  = stage_metadata(tbl).metadata
 
-            # Custom KV under "asterisk:geo" rather than "geo" because
-            # DuckDB's spatial extension auto-validates files with the
-            # canonical "geo" key and rejects ones referencing columns
-            # the file does not have. The Python test uses "geo" because
-            # pyarrow has no such validation.
+            # "asterisk:geo" rather than "geo" because DuckDB's spatial
+            # extension auto-validates files with the canonical "geo"
+            # key and rejects ones referencing columns the file does
+            # not have. The Python test uses "geo" because pyarrow
+            # has no such validation.
             geo_value = string(
                 "{\"version\":\"1.0.0\",\"primary_column\":\"geometry\",",
                 "\"columns\":{\"geometry\":{\"encoding\":\"WKB\",\"crs\":null}}}",
             )
 
             pq  = joinpath(fix.tmp, "meta.parquet")
-            db  = DuckDB.DB()
-            con = DBInterface.connect(db)
-            try
+            con = Cozip._duckdb_con()
+            lock(Cozip._DUCKDB_LOCK) do
                 DuckDB.register_data_frame(con, md, "tmp_md")
-                sql = string(
-                    "COPY tmp_md TO '$pq' (",
-                    "FORMAT PARQUET, ",
-                    "KV_METADATA {",
-                    "'asterisk:geo': '$geo_value', ",
-                    "'asterisk:tag': 'cozip-conformance'",
-                    "})",
-                )
-                DBInterface.execute(con, sql)
-            finally
-                DBInterface.close!(con)
-                DBInterface.close!(db)
+                try
+                    sql = string(
+                        "COPY tmp_md TO '$pq' (",
+                        "FORMAT PARQUET, ",
+                        "KV_METADATA {",
+                        "'asterisk:geo': '$geo_value', ",
+                        "'asterisk:tag': 'cozip-conformance'",
+                        "})",
+                    )
+                    DBInterface.execute(con, sql)
+                finally
+                    try
+                        DuckDB.unregister_data_frame(con, "tmp_md")
+                    catch
+                    end
+                end
             end
 
             out = joinpath(fix.tmp, "out.zip")
@@ -520,9 +530,7 @@ end
             rec_pq   = joinpath(fix.tmp, "rec.parquet")
             write(rec_pq, embedded)
 
-            db  = DuckDB.DB()
-            con = DBInterface.connect(db)
-            try
+            lock(Cozip._DUCKDB_LOCK) do
                 result = DBInterface.execute(con, string(
                     "SELECT decode(key) AS k, decode(value) AS v ",
                     "FROM parquet_kv_metadata('$rec_pq')",
@@ -533,9 +541,6 @@ end
                 kv_dict = Dict(zip(ks, vs))
                 @test get(kv_dict, "asterisk:geo", nothing) == geo_value
                 @test get(kv_dict, "asterisk:tag", nothing) == "cozip-conformance"
-            finally
-                DBInterface.close!(con)
-                DBInterface.close!(db)
             end
         end
     end
@@ -578,21 +583,29 @@ end
     end
 
 
-    @testset "create + read round-trip with binary column" begin
-        fix = make_fixtures()
-        tbl = make_input_table(fix)
-        tbl.geometry = [
-            UInt8[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x40, 0x59, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x28, 0xC0],  # WKB Point (-100, -12)
-            UInt8[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0xF0, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40],  # WKB Point (1, 2)
-        ]
-        out = joinpath(fix.tmp, "out.zip")
-        Cozip.create(out, tbl)
-        df = Cozip.read(out)
-        @test df.name == ["a.txt", "b.bin"]
-        @test df.geometry[1] == tbl.geometry[1]
-        @test df.geometry[2] == tbl.geometry[2]
+    # Reader depends on the cozip DuckDB extension, which crashes on
+    # Windows (DuckDB.jl bug, not ours). On Windows we only check the
+    # guard fires; elsewhere we run the full round-trip.
+    if Sys.iswindows()
+        @testset "Cozip.read is unsupported on Windows" begin
+            @test_throws ErrorException Cozip.read("does-not-matter.zip")
+        end
+    else
+        @testset "create + read round-trip with binary column" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            tbl.geometry = [
+                UInt8[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x40, 0x59, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x28, 0xC0],  # WKB Point (-100, -12)
+                UInt8[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0xF0, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40],  # WKB Point (1, 2)
+            ]
+            out = joinpath(fix.tmp, "out.zip")
+            Cozip.create(out, tbl)
+            df = Cozip.read(out)
+            @test df.name == ["a.txt", "b.bin"]
+            @test df.geometry[1] == tbl.geometry[1]
+            @test df.geometry[2] == tbl.geometry[2]
+        end
     end
 end
-

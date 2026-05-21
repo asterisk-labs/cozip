@@ -18,6 +18,47 @@ const _RESERVED_INPUT_COLUMNS    = Set(["offset", "size"])
 const _REQUIRED_METADATA_COLUMNS = Set(["name", "offset", "size"])
 
 
+# Shared DuckDB connection. Lifecycle owned by Cozip.__init__.
+const _DUCKDB_DB   = Ref{Union{Nothing,DuckDB.DB}}(nothing)
+const _DUCKDB_CON  = Ref{Union{Nothing,DuckDB.Connection}}(nothing)
+const _DUCKDB_LOCK = ReentrantLock()
+
+
+function _init_duckdb!()
+    _DUCKDB_CON[] === nothing || return nothing
+    _DUCKDB_DB[]  = DuckDB.DB()
+    _DUCKDB_CON[] = DBInterface.connect(_DUCKDB_DB[])
+    return nothing
+end
+
+
+function _close_duckdb!()
+    if _DUCKDB_CON[] !== nothing
+        try
+            DBInterface.close!(_DUCKDB_CON[])
+        catch
+        end
+        _DUCKDB_CON[] = nothing
+    end
+    if _DUCKDB_DB[] !== nothing
+        try
+            DBInterface.close!(_DUCKDB_DB[])
+        catch
+        end
+        _DUCKDB_DB[] = nothing
+    end
+    return nothing
+end
+
+
+function _duckdb_con()
+    con = _DUCKDB_CON[]
+    con === nothing &&
+        error("cozip: DuckDB connection not initialized; Cozip.__init__ must run first")
+    return con
+end
+
+
 """
     stage_metadata(table) -> (metadata, paths)
 
@@ -305,31 +346,25 @@ function _alloc_user_entries(
 end
 
 
-# Cached: short-lived connections trigger Windows heap corruption (duckdb#10787).
-const _DUCKDB_DB  = Ref{Any}(nothing)
-const _DUCKDB_CON = Ref{Any}(nothing)
-
-function _duckdb_con()
-    if _DUCKDB_CON[] === nothing
-        _DUCKDB_DB[]  = DuckDB.DB()
-        _DUCKDB_CON[] = DBInterface.connect(_DUCKDB_DB[])
-    end
-    return _DUCKDB_CON[]
-end
-
-
 function _read_parquet_columns(path::String)::Vector{String}
-    result = DBInterface.execute(_duckdb_con(),
-        "SELECT * FROM read_parquet('$(_sql_escape(path))') LIMIT 0")
-    return names(DataFrame(result))
+    con = _duckdb_con()
+    return lock(_DUCKDB_LOCK) do
+        result = DBInterface.execute(con,
+            "SELECT * FROM read_parquet('$(_sql_escape(path))') LIMIT 0")
+        names(DataFrame(result))
+    end
 end
+
 
 function _read_parquet_subset(path::String, columns::Vector{String})::DataFrame
-    # `offset` and `size` are reserved in DuckDB SQL.
-    cols_sql = join(["\"$c\"" for c in columns], ", ")
-    result = DBInterface.execute(_duckdb_con(),
-        "SELECT $cols_sql FROM read_parquet('$(_sql_escape(path))')")
-    return DataFrame(result)
+    con = _duckdb_con()
+    return lock(_DUCKDB_LOCK) do
+        # `offset` and `size` are reserved in DuckDB SQL.
+        cols_sql = join(["\"$c\"" for c in columns], ", ")
+        result = DBInterface.execute(con,
+            "SELECT $cols_sql FROM read_parquet('$(_sql_escape(path))')")
+        DataFrame(result)
+    end
 end
 
 
@@ -390,22 +425,27 @@ function _write_metadata_parquet(df::DataFrame, out_path::AbstractString)
     cols      = names(df)
     col_types = [string("\"", c, "\" ", _julia_to_duckdb_type(eltype(df[!, c])))
                  for c in cols]
-    tbl = "tmp_cozip_$(getpid())_$(time_ns())"
+
     con = _duckdb_con()
 
-    try
-        DBInterface.execute(con,
-            "CREATE TABLE $tbl ($(join(col_types, ", ")))")
-        for i in 1:nrow(df)
-            vals = join((_sql_literal(df[i, c]) for c in cols), ", ")
-            DBInterface.execute(con, "INSERT INTO $tbl VALUES ($vals)")
+    lock(_DUCKDB_LOCK) do
+        try
+            DBInterface.execute(con,
+                "CREATE OR REPLACE TEMP TABLE tmp_cozip ($(join(col_types, ", ")))")
+
+            for i in 1:nrow(df)
+                vals = join((_sql_literal(df[i, c]) for c in cols), ", ")
+                DBInterface.execute(con, "INSERT INTO tmp_cozip VALUES ($vals)")
+            end
+
+            kv_sql = _kv_metadata_sql(_table_metadata(df))
+            DBInterface.execute(con,
+                "COPY tmp_cozip TO '$(_sql_escape(String(out_path)))' (FORMAT parquet$kv_sql)")
+        finally
+            DBInterface.execute(con, "DROP TABLE IF EXISTS tmp_cozip")
         end
-        kv_sql = _kv_metadata_sql(_table_metadata(df))
-        DBInterface.execute(con,
-            "COPY $tbl TO '$(_sql_escape(String(out_path)))' (FORMAT parquet$kv_sql)")
-    finally
-        DBInterface.execute(con, "DROP TABLE IF EXISTS $tbl")
     end
+
     return nothing
 end
 
