@@ -1,21 +1,19 @@
-"""High-level archive writer (FLAT profile only, path sources only).
+"""High-level Flat-profile writer for path sources.
 
-Three operations layered top to bottom:
-
-    create(out_path, table)                                all-in-one (most common)
-    stage_metadata(table)                                  pure: plan offsets and sizes
-    stage_create(out_path, paths, metadata_parquet)        pack from user-written parquet
+``create`` handles the usual one-call path. ``stage_metadata`` and
+``stage_create`` expose the two stages when callers need to build the metadata
+Parquet themselves.
 """
 
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pyarrow.compute as pc
-
+import pyarrow.parquet as pq
 
 from ._core import (
     COZIP_SOURCE_PATH,
@@ -24,11 +22,10 @@ from ._core import (
     lib,
 )
 
-
 # Reserved entry names; source of truth is libcozip.
-_INDEX_NAME = ffi.string(lib.cozip_index_name()).decode("utf-8")
-_PADDING_NAME = ffi.string(lib.cozip_padding_name()).decode("utf-8")
-_METADATA_NAME = ffi.string(lib.cozip_flat_metadata_name()).decode("utf-8")
+_INDEX_NAME = ffi.string(lib.cozip_index_name()).decode("ascii")
+_PADDING_NAME = ffi.string(lib.cozip_padding_name()).decode("ascii")
+_METADATA_NAME = ffi.string(lib.cozip_flat_metadata_name()).decode("ascii")
 _RESERVED_NAMES = frozenset({_INDEX_NAME, _METADATA_NAME, _PADDING_NAME})
 
 # Columns the binding computes; rejected if present in the input table.
@@ -41,6 +38,28 @@ _REQUIRED_METADATA_COLUMNS = frozenset({"name", "offset", "size"})
 def _check(status: int, err: Any) -> None:
     if status != 0:
         raise CozipError.from_struct(err)
+
+
+def _path_text(value: Any, *, context: str) -> str:
+    try:
+        path = os.fspath(value)
+    except TypeError as exc:
+        raise TypeError(f"cozip: {context} must be path-like") from exc
+    if not isinstance(path, str):
+        raise TypeError(f"cozip: {context} must resolve to a string path")
+    if not path:
+        raise ValueError(f"cozip: {context} must be a non-empty path")
+    if "\0" in path:
+        raise ValueError(f"cozip: {context} contains a NUL byte")
+    return path
+
+
+def _validate_name_value(value: Any, *, context: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"cozip: {context} must be a string")
+    if "\0" in value:
+        raise ValueError(f"cozip: {context} contains a NUL byte")
+    return value
 
 
 def _validate_input_table(table: pa.Table) -> None:
@@ -64,7 +83,8 @@ def _validate_input_table(table: pa.Table) -> None:
     paths = table.column("path").to_pylist()
 
     seen: set[str] = set()
-    for i, name in enumerate(names):
+    for i, raw_name in enumerate(names):
+        name = _validate_name_value(raw_name, context=f"row {i} name")
         if name in _RESERVED_NAMES:
             raise ValueError(f"cozip: row {i} uses reserved name {name!r}")
         if name in seen:
@@ -72,19 +92,39 @@ def _validate_input_table(table: pa.Table) -> None:
         seen.add(name)
 
     for i, p in enumerate(paths):
-        if not Path(p).exists():
+        path = _path_text(p, context=f"row {i} path")
+        source = Path(path)
+        if not source.exists():
             raise FileNotFoundError(
-                f"cozip: row {i} ({names[i]!r}): source not found: {p}"
+                f"cozip: row {i} ({names[i]!r}): source not found: {path}"
+            )
+        if not source.is_file():
+            raise ValueError(
+                f"cozip: row {i} ({names[i]!r}): source is not a regular file: {path}"
             )
 
 
-def _validate_paths_arg(paths: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
+def _validate_paths_arg(
+    paths: Sequence[tuple[str, str]],
+) -> tuple[list[str], list[str]]:
     """Validate the (name, path) list passed to stage_create."""
+    if isinstance(paths, (str, bytes)) or not isinstance(paths, Sequence):
+        raise TypeError("cozip: paths must be a sequence of (name, source_path) pairs")
     if len(paths) == 0:
         raise ValueError("cozip: empty paths list")
 
-    names = [n for n, _ in paths]
-    src_paths = [p for _, p in paths]
+    names: list[str] = []
+    src_paths: list[str] = []
+    for i, item in enumerate(paths):
+        if (
+            isinstance(item, (str, bytes))
+            or not isinstance(item, Sequence)
+            or len(item) != 2
+        ):
+            raise ValueError(f"cozip: paths[{i}] must be a (name, source_path) pair")
+        name, path = item
+        names.append(_validate_name_value(name, context=f"paths[{i}] name"))
+        src_paths.append(_path_text(path, context=f"paths[{i}] source"))
 
     seen: set[str] = set()
     for i, name in enumerate(names):
@@ -95,9 +135,14 @@ def _validate_paths_arg(paths: list[tuple[str, str]]) -> tuple[list[str], list[s
         seen.add(name)
 
     for i, p in enumerate(src_paths):
-        if not Path(p).exists():
+        source = Path(p)
+        if not source.exists():
             raise FileNotFoundError(
                 f"cozip: paths[{i}] ({names[i]!r}): source not found: {p}"
+            )
+        if not source.is_file():
+            raise ValueError(
+                f"cozip: paths[{i}] ({names[i]!r}): source is not a regular file: {p}"
             )
 
     return names, src_paths
@@ -111,8 +156,8 @@ def _alloc_entries(
     """Allocate cozip_entry_t[len(names) + n_extra] with user slots filled
 
     Returns (entries, keepalive). `keepalive` owns every cdata that
-    libcozip reads through pointers in `entries`. Caller MUST keep it
-    alive across every C call.
+    libcozip reads through pointers in `entries` and must remain alive
+    across every C call.
     """
     n = len(names)
     entries = ffi.new(f"cozip_entry_t[{n + n_extra}]")
@@ -121,10 +166,10 @@ def _alloc_entries(
         name_c = ffi.new("char[]", names[i].encode("utf-8"))
         path_c = ffi.new("char[]", paths[i].encode("utf-8"))
         keepalive.extend((name_c, path_c))
-        entries[i].arc_name      = name_c
-        entries[i].payload_size  = Path(paths[i]).stat().st_size
-        entries[i].in_index      = False
-        entries[i].source.kind   = COZIP_SOURCE_PATH
+        entries[i].arc_name = name_c
+        entries[i].payload_size = Path(paths[i]).stat().st_size
+        entries[i].in_index = False
+        entries[i].source.kind = COZIP_SOURCE_PATH
         entries[i].source.u.path = path_c
     return entries, keepalive
 
@@ -148,10 +193,9 @@ def _check_parquet_schema(parquet_path: str) -> None:
     schema = pq.read_schema(parquet_path)
     cols = set(schema.names)
 
-    # paranoia? maybe 
     if "path" in cols:
         raise ValueError(
-            "cozip: metadata parquet must NOT contain a 'path' column. "
+            "cozip: metadata parquet must not contain a 'path' column. "
             "`path` is filesystem-local and does not belong inside the "
             "archive. Drop it before writing the parquet."
         )
@@ -159,8 +203,7 @@ def _check_parquet_schema(parquet_path: str) -> None:
     missing = _REQUIRED_METADATA_COLUMNS - cols
     if missing:
         raise ValueError(
-            f"cozip: metadata parquet is missing required column(s): "
-            f"{sorted(missing)}"
+            f"cozip: metadata parquet is missing required column(s): {sorted(missing)}"
         )
 
 
@@ -170,32 +213,29 @@ def _validate_parquet_values(
     expected_offsets: list[int],
     expected_sizes: list[int],
 ) -> None:
-    """Value-level check, fully vectorized via Arrow compute.
-
-    Compares the parquet contents against the plan computed from the
-    user-supplied paths. Every comparison happens inside Arrow C++:
-    no Python iteration, no NumPy.
-    """
+    """Compare metadata values with the plan using Arrow compute."""
     table = pq.read_table(parquet_path, columns=["name", "offset", "size"])
 
     n = len(table)
     if n != len(expected_names):
         raise ValueError(
-            f"cozip: metadata parquet has {n} rows, "
-            f"paths has {len(expected_names)}"
+            f"cozip: metadata parquet has {n} rows, paths has {len(expected_names)}"
         )
 
-    # Build the "expected" side once, in C, from the Python lists.
+    # Build the expected Arrow arrays once.
     exp_names = pa.array(expected_names, type=pa.string())
-    exp_off   = pa.array(expected_offsets, type=pa.uint64())
-    exp_sz    = pa.array(expected_sizes,   type=pa.uint64())
+    exp_off = pa.array(expected_offsets, type=pa.uint64())
+    exp_sz = pa.array(expected_sizes, type=pa.uint64())
 
     # Cast the parquet integer columns to uint64.
     pq_names = table.column("name")
-    pq_off   = pc.cast(table.column("offset"), pa.uint64())
-    pq_sz    = pc.cast(table.column("size"),   pa.uint64())
+    pq_off = pc.cast(table.column("offset"), pa.uint64())
+    pq_sz = pc.cast(table.column("size"), pa.uint64())
 
     def _check(field: str, pq_col, exp_col, exp_list) -> None:
+        if pq_col.null_count:
+            i = pc.index(pc.is_null(pq_col), True).as_py()
+            raise ValueError(f"cozip: metadata parquet has NULL {field} at row {i}")
         eq = pc.equal(pq_col, exp_col)
         if pc.all(eq).as_py():
             return
@@ -212,18 +252,19 @@ def _validate_parquet_values(
             f"parquet={pq_val}, plan={exp_val}"
         )
 
-    _check("name",   pq_names, exp_names, expected_names)
-    _check("offset", pq_off,   exp_off,   expected_offsets)
-    _check("size",   pq_sz,    exp_sz,    expected_sizes)
+    _check("name", pq_names, exp_names, expected_names)
+    _check("offset", pq_off, exp_off, expected_offsets)
+    _check("size", pq_sz, exp_sz, expected_sizes)
 
-   
+
 # Public API
+
 
 def stage_metadata(
     table: pa.Table,
 ) -> tuple[pa.Table, list[tuple[str, str]]]:
     """Compute offsets and sizes for a cozip archive.
-    
+
     The user is free to:
       * add extra columns to the metadata table (geometry, bbox,
         custom attributes);
@@ -231,7 +272,7 @@ def stage_metadata(
         DuckDB with spatial loaded, geopandas, ...);
       * pass the parquet plus the returned `paths` to `stage_create`.
 
-    INVARIANT: the returned table and `paths` are aligned positionally.
+    The returned table and `paths` are aligned positionally.
     If the metadata table is reordered (e.g. through a DuckDB sort)
     before being written, `paths` MUST be reordered the same way, or
     `stage_create(validate=True)` will reject the mismatch.
@@ -264,8 +305,7 @@ def stage_metadata(
     sizes = [int(entries[i].payload_size) for i in range(n_users)]
 
     out = (
-        table
-        .drop_columns(["path"])
+        table.drop_columns(["path"])
         .append_column("offset", pa.array(offsets, type=pa.uint64()))
         .append_column("size", pa.array(sizes, type=pa.uint64()))
     )
@@ -278,13 +318,13 @@ def stage_metadata(
 
 def stage_create(
     out_path: str | Path,
-    paths: list[tuple[str, str]],
+    paths: Sequence[tuple[str, str]],
     metadata_parquet: str | Path,
     validate: bool = True,
 ) -> str:
     """Pack a cozip archive from source files and a user-written parquet.
 
-    The metadata parquet is embedded VERBATIM as the `__metadata__`
+    The metadata parquet is embedded verbatim as the `__metadata__`
     entry inside the archive. cozip does not read, modify, or rewrite
     it. Whatever schema metadata, encoding, compression, and extra
     columns the user wrote are preserved bit-perfect.
@@ -300,19 +340,29 @@ def stage_create(
             `path`.
         validate: if True (default), re-runs the plan from `paths` and
             verifies that names, offsets, and sizes in the parquet
-            match the plan. Set False only when the parquet is known
+            match the plan. Set False when the parquet is known to be
             correct and the read overhead is unwanted.
 
     Returns:
         Absolute path of the created archive.
     """
-    out_path_str = str(Path(out_path).resolve())
-    parquet_str = str(Path(metadata_parquet).resolve())
+    if not isinstance(validate, bool):
+        raise TypeError("cozip: validate must be a boolean")
 
-    if not Path(parquet_str).exists():
-        raise FileNotFoundError(
-            f"cozip: metadata parquet not found: {parquet_str}"
+    out_path_str = str(Path(_path_text(out_path, context="out_path")).resolve())
+    parquet_str = str(
+        Path(_path_text(metadata_parquet, context="metadata_parquet")).resolve()
+    )
+
+    parquet_path = Path(parquet_str)
+    if not parquet_path.exists():
+        raise FileNotFoundError(f"cozip: metadata parquet not found: {parquet_str}")
+    if not parquet_path.is_file():
+        raise ValueError(
+            f"cozip: metadata parquet is not a regular file: {parquet_str}"
         )
+    if parquet_path.stat().st_size == 0:
+        raise ValueError("cozip: metadata parquet is empty")
 
     # Structural check is unconditional; enforces the contract.
     _check_parquet_schema(parquet_str)
@@ -329,9 +379,7 @@ def stage_create(
     if validate:
         planned_offsets = [int(entries[i].payload_offset) for i in range(n_users)]
         planned_sizes = [int(entries[i].payload_size) for i in range(n_users)]
-        _validate_parquet_values(
-            parquet_str, names, planned_offsets, planned_sizes
-        )
+        _validate_parquet_values(parquet_str, names, planned_offsets, planned_sizes)
 
     meta_path_c = ffi.new("char[]", parquet_str.encode("utf-8"))
     out_path_c = ffi.new("char[]", out_path_str.encode("utf-8"))
@@ -344,8 +392,6 @@ def stage_create(
         err,
     )
     return out_path_str
-
-
 
 
 def create(

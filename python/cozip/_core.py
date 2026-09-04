@@ -1,4 +1,4 @@
-"""cffi bindings to libcozip. Loads the bundled shared library at import time"""
+"""CFFI bindings to libcozip. Loads the bundled library at import time."""
 
 import os
 import sys
@@ -7,12 +7,12 @@ from pathlib import Path
 import cffi
 
 # Status codes. Must match cozip.h
-COZIP_OK                    = 0
-COZIP_ERR_INVALID_LFH       = 1
+COZIP_OK = 0
+COZIP_ERR_INVALID_LFH = 1
 COZIP_ERR_ARCHIVE_TOO_SMALL = 2
-COZIP_ERR_INVALID_ARGUMENT  = 100
-COZIP_ERR_BUFFER_TOO_SMALL  = 101
-COZIP_ERR_IO                = 102
+COZIP_ERR_INVALID_ARGUMENT = 100
+COZIP_ERR_BUFFER_TOO_SMALL = 101
+COZIP_ERR_IO = 102
 
 # Profile selector for cozip_build_index_payload
 COZIP_PROFILE_NONE = 0
@@ -20,8 +20,8 @@ COZIP_PROFILE_FLAT = 1
 COZIP_PROFILE_TACO = 2
 
 # Source kind for cozip_entry_t.source.kind
-COZIP_SOURCE_NONE   = 0
-COZIP_SOURCE_PATH   = 1
+COZIP_SOURCE_NONE = 0
+COZIP_SOURCE_PATH = 1
 COZIP_SOURCE_BUFFER = 2
 
 
@@ -45,6 +45,21 @@ typedef struct {
     uint64_t lfh_offset, lfh_size, payload_offset;
 } cozip_entry_t;
 
+typedef struct {
+    const char* arc_name;
+    const char* source_path;
+    uint64_t payload_offset;
+    uint64_t payload_size;
+} cozip_path_entry_t;
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    uint64_t n_files;
+    uint64_t n_priorities;
+    uint64_t layout_hash;
+} cozip_taco_plan_t;
+
 const char* cozip_status_string(int status);
 const char* cozip_version_string(void);
 const char* cozip_index_name(void);
@@ -59,6 +74,16 @@ int cozip_build_index_payload(const cozip_entry_t*, size_t, int,
 int cozip_write_archive(const char*, const cozip_entry_t*, size_t,
                         const uint8_t*, size_t, cozip_error_t*);
 int cozip_patch_integrity_hash(const char*, size_t, cozip_error_t*);
+
+int cozip_finalize(const char*, cozip_entry_t*, size_t, size_t, int,
+                   cozip_error_t*);
+
+int cozip_plan_taco(cozip_path_entry_t*, size_t,
+                    const cozip_path_entry_t*, size_t,
+                    cozip_taco_plan_t*, cozip_error_t*);
+int cozip_write_taco(const char*, const cozip_path_entry_t*, size_t,
+                     const cozip_path_entry_t*, size_t,
+                     const cozip_taco_plan_t*, cozip_error_t*);
 
 uint64_t cozip_predict_zip32_archive_size(const cozip_entry_t*, size_t,
                                           size_t);
@@ -99,7 +124,7 @@ def _resolve_lib_path() -> str:
 
     raise ImportError(
         f"cozip: native library {name!r} not found at {canonical}.\n"
-        f"  Fix: run `make py-install` from the cozip/ directory, "
+        f"  Fix: run `make lib` from the cozip checkout, "
         f"or set COZIP_LIB_PATH=/abs/path/to/{name}"
     )
 
