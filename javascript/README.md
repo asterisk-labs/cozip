@@ -1,6 +1,8 @@
 # cozip
 
-JavaScript reader for Cloud-Optimized ZIP archives. One HTTP call gives you the manifest of a remote `.zip`.
+JavaScript reader for Cloud-Optimized ZIP archives. It reads the small index
+and archive tail, verifies their integrity hash, then fetches the manifest
+without scanning the ZIP Central Directory.
 
 ## Install
 
@@ -19,6 +21,9 @@ const train = manifest.filter((row) => row.split === "train");
 
 `manifest` is an array of row objects with `name`, `offset`, `size`, `cozip:gdal_vsi`, plus whatever extras the writer added. Pass `columns: [...]` to bring only specific extras, `gdalVsi: false` to drop the VSI path column.
 
+`read()` supports only Flat-profile archives (`profile = 1`). TACO archives
+(`profile = 2`) and every other profile are rejected with `UNKNOWN_PROFILE`.
+
 ```js
 const manifest = await read(url, {
   columns: ["cloud_pct", "split"],
@@ -26,7 +31,10 @@ const manifest = await read(url, {
 });
 ```
 
-Only `http://` and `https://` URLs are supported. Cloud schemes like `s3://` or `gcs://` are out of scope, use a presigned HTTP URL or a CORS-enabled proxy. The server must support range requests (`Accept-Ranges: bytes`) and, for browser use, CORS with `Range` allowed.
+Only non-empty ASCII `http://` and `https://` URLs are supported. For cloud
+storage, use a presigned HTTP URL or a CORS-enabled proxy. The server must
+support range requests (`Accept-Ranges: bytes`) and, in browsers, allow the
+`Range` header through CORS.
 
 ## Spec
 
