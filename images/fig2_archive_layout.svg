@@ -44,7 +44,7 @@
   <line x1="186" y1="336" x2="494" y2="336" stroke="#0F6E56" stroke-width="0.5" stroke-dasharray="2,2"/>
 
   <text x="240" y="356" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="11" fill="#0F6E56">variable</text>
-  <text x="400" y="356" text-anchor="middle" font-size="12" fill="#085041">Names (UTF-8)</text>
+  <text x="400" y="356" text-anchor="middle" font-size="12" fill="#085041">Names (ASCII)</text>
 
   <line x1="186" y1="370" x2="494" y2="370" stroke="#0F6E56" stroke-width="0.5" stroke-dasharray="2,2"/>
 

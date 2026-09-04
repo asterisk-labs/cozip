@@ -1,9 +1,10 @@
 # Cloud Optimized ZIP Format Specification
 
-**Version** 1.0.2
+**Version** 1.1.0
 **Binary format version** 1  
 **Status** Stable  
-**Date** 2026-05-20  
+**Date** 2026-09-03
+
 **License** CC BY 4.0
 
 ---
@@ -96,7 +97,7 @@ The ZIP archive comment length in the EOCD **MUST** be zero. Therefore, the EOCD
 5. Every ZIP entry **MUST** use compression method `0` (STORE), and its resolved compressed size and resolved uncompressed size **MUST** be equal and greater than zero. Explicit directory entries (zero-byte folder records) are not allowed.
 6. Every ZIP entry **MUST** be unencrypted: General Purpose Bit Flag bits 0, 6, and 13 **MUST NOT** be set, compression method `99` **MUST NOT** be used, and archive-level Central Directory Encryption **MUST NOT** be used.
 7. General Purpose Bit Flag bit 3 (Data Descriptor) **MUST NOT** be set for any entry.
-8. All ZIP entry filenames **MUST** be valid UTF-8 path strings. General Purpose Bit Flag bit 11 (UTF-8 language encoding) **MUST** be set in both the Local File Header and the Central Directory Header for every entry whose filename contains any byte greater than or equal to `0x80`. For filenames composed entirely of bytes less than `0x80` (pure ASCII), bit 11 **MAY** be either set or unset, since ASCII is unambiguously valid UTF-8. This relaxation reflects the behavior of common ZIP writers (e.g. libzip).
+8. Every ZIP entry filename **MUST** contain only ASCII bytes from `0x01` through `0x7F`. General Purpose Bit Flag bit 11 (UTF-8 language encoding) **MAY** be set or unset. Readers **MUST** reject names containing `0x00` or a byte greater than or equal to `0x80`.
 9. All ZIP entry filenames **MUST** be unique within the archive.
 
 #### Archive-level
@@ -112,13 +113,13 @@ The ZIP archive comment length in the EOCD **MUST** be zero. Therefore, the EOCD
 
 ### 5.3 Name requirements
 
-A cozip filename is a UTF-8 string stored in the ZIP filename field.
+A cozip filename is a non-empty ASCII string stored in the ZIP filename field. Bytes outside `0x01` through `0x7F` are not allowed.
 
 1. A filename **MUST NOT** be empty.
 2. A filename **MUST NOT** start with `/`.
 3. A filename **MUST NOT** contain a drive-letter prefix such as `C:`.
-4. A filename **MUST** use `/` as the path separator when a path separator is needed.
-5. A filename **MUST NOT** be `.` or `..`, and **MUST NOT** contain `/.` or `/..` path components.
+4. A filename **MUST** use `/` as the path separator when a path separator is needed, and **MUST NOT** end with `/`.
+5. A filename **MUST NOT** contain a path component equal to `.` or `..`.
 6. The name `__cozip__` is reserved for the index entry and **MUST NOT** be used by any other entry. Profiles may reserve additional names.
 7. The name `__cozip_padding__` is reserved. A writer **MAY** emit a single ZIP entry with this name to satisfy §5.1.12. Such an entry **MUST NOT** appear in the cozip index, and no other entry **MAY** use this name. Its payload contents and byte length are unspecified; readers **MUST** treat it as an ordinary non-priority ZIP entry with no semantic meaning.
 
@@ -127,6 +128,8 @@ A cozip filename is a UTF-8 string stored in the ZIP filename field.
 This section is normative for writers.
 
 A cozip writer **MUST** construct a final, internally consistent ZIP archive. The recommended model is planned construction: before writing to the output object, the writer must compute all final archive metadata—Local File Header sizes, payload offsets and sizes, ZIP64 requirements, profile metadata, and Central Directory records.
+
+A writer **MUST** reject a source whose final payload size is zero and **SHOULD** report that condition directly. A planning API **MAY** use a zero-size placeholder for metadata that has not been materialized yet, but the placeholder **MUST NOT** be written as an archive entry.
 
 The writer **MUST** know all final payload offsets and sizes before writing the index payload. The index payload, its CRC-32, and its 32-bit size fields **MUST** be final when the index entry is emitted.
 
@@ -140,7 +143,7 @@ The archive is finalized after the writer has:
 
 The hash patch is the only mutation permitted during finalization. It does not invalidate any ZIP CRC-32, because ZIP CRC-32 covers entry payload bytes, not Local File Header extra-field metadata. After finalization the archive **MUST NOT** be modified.
 
-*Informative.* A planned archive whose total predicted size is below the §5.1.12 minimum cannot be finalized as-is, because the integrity-hash bytes at offsets 43–50 would fall inside the 32 KiB suffix region and produce a self-referential hash input. To resolve this, the writer must extend the archive past the floor through any mechanism that does not violate the requirements of this section. The recommended mechanism, and the one used by the reference writer, is to append a single non-indexed entry named `__cozip_padding__` (§5.3.7), placed last so that user payload offsets remain stable across re-planning. The padding entry's payload contents and length are at the writer's discretion. Writers that satisfy §5.1.12 by other means (for example, by enlarging a profile-controlled metadata payload) are equally valid; the only spec-level requirement is that the resulting archive conform to Part I in full.
+*Informative.* A planned archive whose total predicted size is below the §5.1.12 minimum cannot be finalized as-is, because the integrity-hash bytes at offsets 43–50 would fall inside the 32 KiB suffix region and produce a self-referential hash input. To resolve this, the writer must extend the archive past the floor through any mechanism that does not violate the requirements of this section. The recommended mechanism, and the one used by the reference writer, is to insert a single non-indexed entry named `__cozip_padding__` (§5.3.7) after all payloads whose offsets must remain stable. It is normally the final entry; a profile that requires a final priority block may instead require the padding immediately before that block, as TACO does in §14.3. The padding entry's payload contents and length are at the writer's discretion. Writers that satisfy §5.1.12 by other means (for example, by enlarging a profile-controlled metadata payload) are equally valid; the only spec-level requirement is that the resulting archive conform to Part I in full.
 
 ## 7. Index layout
 
@@ -152,7 +155,7 @@ The index is the payload of the `__cozip__` entry. It is organised as five conti
 ├──────────────────────────────────────────────────────────────┤
 │ Section 2. Name lengths                   n_entries × 2      │
 ├──────────────────────────────────────────────────────────────┤
-│ Section 3. Names (UTF-8 concatenated)     sum(name_lens) B   │
+│ Section 3. Names (ASCII concatenated)     sum(name_lens) B   │
 ├──────────────────────────────────────────────────────────────┤
 │ Section 4. Offsets                        n_entries × 8      │
 ├──────────────────────────────────────────────────────────────┤
@@ -179,7 +182,7 @@ A reader that does not recognise the declared `profile` **MAY** still parse the 
 
 ### 7.3 Names
 
-The concatenation of all priority filenames, in the same order as section 7.2, encoded in UTF-8 without null terminators. Names within the index **MUST** be unique. The index **MUST NOT** include `__cozip__`.
+The concatenation of all priority filenames, in the same order as section 7.2, encoded as ASCII without null terminators. Names within the index **MUST** be unique. The index **MUST NOT** include `__cozip__`.
 
 ### 7.4 Offsets
 
@@ -286,10 +289,10 @@ Implementations **SHOULD** map parse and validation failures to the following ca
 | `ARCHIVE_TOO_SMALL`           | The archive is smaller than `32768 + 51` bytes. |
 | `TRUNCATED_INDEX`             | The index payload is shorter than required by `n_entries` and the declared name lengths. |
 | `DUPLICATE_NAME`              | Two entries share the same name, either within the index or within the archive. |
-| `INVALID_NAME`                | A filename violates §5.3 or is not valid UTF-8. |
+| `INVALID_NAME`                | A filename violates §5.3 or contains a byte outside the allowed ASCII range. |
 | `MISSING_ENTRY`               | An indexed name has no corresponding ZIP entry, or its offset/size disagrees with the matching ZIP entry. |
 | `INVALID_OFFSET`              | An offset/size pair overflows u64 arithmetic or extends beyond the archive size. |
-| `INVALID_ZIP_STRUCTURE`       | A ZIP entry or archive-level structure violates §5.1: compression method other than STORE, encrypted, data descriptor present, explicit directory entry, zero or unequal sizes, UTF-8 flag inconsistent with §5.1.8, non-zero EOCD comment, or split/multi-disk archive. |
+| `INVALID_ZIP_STRUCTURE`       | A ZIP entry or archive-level structure violates §5.1: compression method other than STORE, encrypted, data descriptor present, explicit directory entry, zero or unequal sizes, non-ASCII filename, non-zero EOCD comment, or split/multi-disk archive. |
 | `INVALID_ZIP64`               | A ZIP64 sentinel lacks a valid corresponding ZIP64 value, ZIP64 values are inconsistent, or the index entry uses ZIP64. |
 
 ---
@@ -318,7 +321,7 @@ A value of `0` means the cozip conforms to no profile. Priority filenames are fr
 
 ### 12.3 Profile constraints
 
-A profile **MAY** reserve additional filenames, require certain priority files to exist, define their formats and schemas, fix their position in the archive, define conventions for non-priority files, and declare a profile-specific file extension or MIME type.
+A profile **MAY** reserve additional filenames, require certain priority files to exist, define their formats and schemas, fix their position in the archive, and define conventions for non-priority files.
 
 A profile **MUST NOT** modify or relax any requirement of Part I, including the binary structure of the cozip index and the Local File Header layout of the `__cozip__` entry. A registered profile value **MUST NOT** be reassigned or redefined by a successor profile.
 
@@ -412,7 +415,7 @@ The semantics of `COLLECTION.json`, the Parquet files under `METADATA/`, the `DA
 
 ### 14.5 File extension
 
-A TACO-profile cozip uses the file extension `.zip`. The MIME type is `application/zip`.
+A TACO-profile cozip uses the file extension `.zip`. The MIME type is `application/zip`. The authoritative machine-readable signal for the TACO container is `profile = 2` in the cozip index, not the extension.
 
 ---
 
@@ -420,9 +423,11 @@ A TACO-profile cozip uses the file extension `.zip`. The MIME type is `applicati
 
 ## Appendix A. MIME type and file extension
 
-A cozip archive uses the standard ZIP file extension `.zip` and MIME type `application/zip`. cozip is a structural profile of ZIP — analogous to how Cloud Optimized GeoTIFF uses `.tif` — and is detected by the presence of a `__cozip__` index entry at byte 0, not by extension. 
+A cozip archive uses the standard ZIP file extension `.zip` and MIME type `application/zip`, regardless of profile.
 
-When serving `.zip` over HTTP, servers must preserve byte-exact object bytes for range requests. Transparent content encoding is incompatible with cozip byte offsets.
+cozip is a structural profile of ZIP — analogous to how Cloud Optimized GeoTIFF uses `.tif` — and is detected authoritatively by the presence of a `__cozip__` index entry at byte 0, not by extension.
+
+When serving a cozip archive over HTTP, servers must preserve byte-exact object bytes for range requests. Transparent content encoding is incompatible with cozip byte offsets.
 
 ## Appendix B. Version history
 
@@ -436,6 +441,7 @@ When serving `.zip` over HTTP, servers must preserve byte-exact object bytes for
 | 1.0          | 2026-05-03 | First stable release. Some redundant normative statements were removed during the draft phase, but no technical changes were made between 1.0-draft.5 and 1.0. |
 | 1.0.1        | 2026-05-09 | Reserved the name `__cozip_padding__` in §5.3.7 as a writer-side mechanism for satisfying the §5.1.12 minimum archive size, and added an informative note in §6 documenting the recommended use. Excluded `__cozip_padding__` from the Flat-profile `__metadata__` row set (§13.3), and clarified its placement under the TACO profile (§14.3). No on-disk format change; archives produced under 1.0 remain valid under 1.0.1 without modification. |
 | 1.0.2        | 2026-05-20 | Added informative §13.5 pointing to GeoParquet as a valid encoding for a Flat-profile `__metadata__`. Added the GeoParquet specification to Appendix C. Editorial only; no on-disk format or normative change. Archives produced under 1.0.1 remain valid under 1.0.2 without modification. |
+| 1.1.0        | 2026-09-03 | Restricted archive filenames to ASCII and made rejection of other bytes explicit. Required writers to reject zero-byte final payloads with a direct error. Reconciled the padding guidance in §6 with TACO's final priority block, and clarified that every profile keeps the `.zip` extension. The binary index version remains 1, but archives with non-ASCII names that conformed to 1.0.x do not conform to 1.1.0. |
 
 
 ## Appendix C. References
@@ -444,8 +450,7 @@ When serving `.zip` over HTTP, servers must preserve byte-exact object bytes for
 2. IETF. **HTTP Semantics**, RFC 9110, 2022. https://datatracker.ietf.org/doc/html/rfc9110
 3. Bradner, S. **Key words for use in RFCs to Indicate Requirement Levels**, RFC 2119, 1997. https://datatracker.ietf.org/doc/html/rfc2119
 4. Leiba, B. **Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words**, RFC 8174, 2017. https://datatracker.ietf.org/doc/html/rfc8174
-5. Yergeau, F. **UTF-8, a transformation format of ISO 10646**, RFC 3629, 2003. https://datatracker.ietf.org/doc/html/rfc3629
-6. Fowler, G., Noll, L. C., Vo, K. P. **FNV Hash**, non-cryptographic hash function. http://www.isthe.com/chongo/tech/comp/fnv/
-7. Apache Software Foundation. **Apache Parquet Format**. https://parquet.apache.org/
-8. Asterisk Labs. **The TACO Specification**, version 3.0.0, released 2026-04-13. https://asterisk.coop/taco/spec/
-9. Open Geospatial Consortium. **GeoParquet Specification**, version 1.1.0, 2024. https://geoparquet.org/releases/v1.1.0/
+5. Fowler, G., Noll, L. C., Vo, K. P. **FNV Hash**, non-cryptographic hash function. http://www.isthe.com/chongo/tech/comp/fnv/
+6. Apache Software Foundation. **Apache Parquet Format**. https://parquet.apache.org/
+7. Asterisk Labs. **The TACO Specification**, version 3.0.0, released 2026-04-13. https://asterisk.coop/taco/spec/
+8. Open Geospatial Consortium. **GeoParquet Specification**, version 1.1.0, 2024. https://geoparquet.org/releases/v1.1.0/
