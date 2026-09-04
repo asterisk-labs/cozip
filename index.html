@@ -940,7 +940,7 @@
             <div class="demo-body">
               <pre class="demo-query"><span class="muted">-- query the manifest before reading any file</span>
 <span class="kw">SELECT</span> name, offset, size
-<span class="kw">FROM</span> read_cozip(<span class="str">'s3://bucket/dataset.zip'</span>)
+<span class="kw">FROM</span> read_flat(<span class="str">'s3://bucket/dataset.zip'</span>)
 <span class="kw">WHERE</span> name <span class="kw">LIKE</span> <span class="str">'tile_%'</span>
 <span class="kw">LIMIT</span> <span class="num">3</span>;</pre>
               <div class="result-table" role="table" aria-label="Query result preview">

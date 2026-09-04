@@ -39,8 +39,10 @@ lib:
 	mkdir -p $(PY_LIB_DIR)
 	cp $(BUILD_DIR)/$(LIB_NAME) $(PY_LIB_DIR)/$(LIB_NAME)
 
-# 4-part CalVer in R, 3-part SemVer in Julia and npm.
+# R keeps the full CalVer; Julia and npm use its first three components.
 sync:
+	@cp VERSION $(PY_DIR)/VERSION
+	@cp LICENSE $(PY_DIR)/LICENSE
 	@sed -i.bak -E 's/^Version:.*/Version: $(VERSION)/' $(R_DIR)/DESCRIPTION
 	@rm -f $(R_DIR)/DESCRIPTION.bak
 	@sed -i.bak -E 's/^version = ".*"/version = "$(VERSION_JL)"/' $(JL_DIR)/Project.toml
@@ -58,6 +60,8 @@ sync:
 	 [ "$$VJL" = "$(VERSION_JL)" ] || { echo "check: Project.toml=$$VJL != $(VERSION_JL)"; exit 1; }
 	@VJS=$$(grep -E '"version":' $(JS_DIR)/package.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/'); \
 	 [ "$$VJS" = "$(VERSION_NPM)" ] || { echo "check: package.json=$$VJS != $(VERSION_NPM)"; exit 1; }
+	@cmp -s VERSION $(PY_DIR)/VERSION || { echo "check: python/VERSION drift"; exit 1; }
+	@cmp -s LICENSE $(PY_DIR)/LICENSE || { echo "check: python/LICENSE drift"; exit 1; }
 	@diff -q $(CORE_DIR)/cozip.c $(R_DIR)/src/cozip.c >/dev/null || { echo "check: cozip.c drift"; exit 1; }
 	@diff -q $(CORE_DIR)/cozip.h $(R_DIR)/src/cozip.h >/dev/null || { echo "check: cozip.h drift"; exit 1; }
 	@diff -r -q $(CORE_DIR)/libzip $(R_DIR)/src/libzip >/dev/null || { echo "check: libzip/ drift"; exit 1; }

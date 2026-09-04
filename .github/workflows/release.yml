@@ -33,6 +33,9 @@ jobs:
             echo "version=$VERSION_FILE" >> "$GITHUB_OUTPUT"
           fi
 
+          cmp VERSION python/VERSION
+          cmp LICENSE python/LICENSE
+
 
   build-lib:
     name: libcozip (${{ matrix.name }})
@@ -96,9 +99,11 @@ jobs:
           -DCMAKE_INSTALL_PREFIX=install
           -DCMAKE_INSTALL_LIBDIR=lib
           -DBUILD_SHARED_LIBS=ON
+          -DCOZIP_BUILD_TESTS=ON
           ${{ matrix.cmake_extra }}
 
       - run: cmake --build build --config Release --parallel
+      - run: ctest --test-dir build -C Release --output-on-failure
       - run: cmake --install build --config Release
 
       # Ad-hoc signature so Sequoia+ accepts the dylib in sandboxed contexts.
@@ -242,8 +247,8 @@ jobs:
         run: julia --project=julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
 
-  # Pure JS, no native deps. Single Linux runner is enough; the runtime
-  # matrix (browser/Node/Deno/edge) is asserted by the package's own tests.
+  # Pure JS, no native dependencies. Type-check and run the Node integration
+  # suite on one Linux runner.
   build-npm-package:
     name: npm package
     needs: validate
@@ -258,6 +263,9 @@ jobs:
 
       - working-directory: javascript
         run: npm ci
+
+      - working-directory: javascript
+        run: npm run types
 
       - working-directory: javascript
         run: npm test
@@ -327,7 +335,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - run: python -m pip install --upgrade pip build hatchling cffi wheel
+      - run: python -m pip install --upgrade pip build hatchling cffi wheel pytest
 
       - if: startsWith(matrix.name, 'linux')
         run: python -m pip install auditwheel
@@ -395,7 +403,7 @@ jobs:
           }
           Move-Item wheelhouse-raw2\*.whl wheelhouse\
 
-      - name: Smoke test (Unix)
+      - name: Test installed wheel (Unix)
         if: runner.os != 'Windows'
         run: |
           python -m pip install wheelhouse/*.whl
@@ -404,13 +412,22 @@ jobs:
           print('cozip', cozip.__version__)
           assert cozip.lib.cozip_status_string(0)
           "
+          test_dir="$RUNNER_TEMP/cozip-wheel-tests"
+          mkdir -p "$test_dir"
+          cp -R python/tests "$test_dir/"
+          (cd "$test_dir" && python -m pytest tests -q)
 
-      - name: Smoke test (Windows)
+      - name: Test installed wheel (Windows)
         if: runner.os == 'Windows'
         run: |
           $wheel = (Get-ChildItem wheelhouse\*.whl | Select-Object -First 1).FullName
           python -m pip install $wheel
           python -c "import cozip; print('cozip', cozip.__version__)"
+          $testDir = Join-Path $env:RUNNER_TEMP "cozip-wheel-tests"
+          New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+          Copy-Item -Recurse python\tests (Join-Path $testDir "tests")
+          Push-Location $testDir
+          try { python -m pytest tests -q } finally { Pop-Location }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -430,8 +447,12 @@ jobs:
           python-version: '3.12'
       - working-directory: python
         run: |
-          python -m pip install --upgrade pip build
+          python -m pip install --upgrade pip build cffi
           python -m build --sdist --outdir ../sdist-out
+          python -m pip wheel --no-deps --wheel-dir ../sdist-wheel ../sdist-out/*.tar.gz
+          python -m pip install --no-deps ../sdist-wheel/*.whl
+          cd "${RUNNER_TEMP}"
+          python -c "import cozip; assert cozip.lib.cozip_status_string(0)"
       - uses: actions/upload-artifact@v4
         with:
           name: sdist

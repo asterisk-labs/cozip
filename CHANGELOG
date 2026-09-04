@@ -1,14 +1,83 @@
 # Changelog
 
-All notable changes to cozip are documented here. The same version stamp
-applies to every binding (C library, Python, R, Julia) since they share
-a single source of truth at `cozip/VERSION`.
+All notable changes to cozip are documented here. Releases take their version
+from the repository's `VERSION` file; `make sync` updates the package copies.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 
 
-## 2026.5.22
+## [2026.9.4] — 2026-09-04
+
+### Added
+
+- C: `cozip_plan_taco()` and `cozip_write_taco()`, the path-based ABI used by
+  Python and available to future R and Julia TACO adapters.
+- Python: private `cozip._taco.plan()` and `cozip._taco.write()` bindings, plus
+  `cozip._taco.API_VERSION`. TACO still builds the JSON and Parquet payloads;
+  cozip only plans and writes their bytes.
+- Native tests for the TACO ABI, offsets, final priority block, opaque payloads,
+  validation failures, and plan/write drift.
+
+### Changed
+
+- Archive names are ASCII-only. Source and output paths are UTF-8 and the
+  Windows build converts them to UTF-16. Final payloads must contain at least
+  one byte. Errors identify the offending rule before the output opens.
+- The C planner now owns name syntax, reserved-name and duplicate checks, file
+  sizing, checked offset arithmetic, and regular-file checks.
+- `cozip_write_archive()` re-stats path sources and refuses size drift or an
+  output that aliases a source. Existing files are compared by identity on
+  POSIX and Windows.
+- Written archives are checked against the plan, including every Local File
+  Header and the final comment-free EOCD, before the hash is patched.
+- TACO validation enforces `COLLECTION.json`, indexed `METADATA/*.parquet`
+  files, and a final contiguous priority block without inspecting payload
+  formats.
+- TACO plan structs carry their size and ABI version. The layout hash is a
+  stale-plan check over names, roles and data sizes, not a content hash.
+- R Flat planning now calls `cozip_plan_flat()` instead of rebuilding the
+  placeholder layout in R.
+- Python imports its writer and reader lazily, so `cozip._taco` does not load
+  Arrow, pandas, or DuckDB.
+- Python `read()` now implements its documented `columns` and `gdal_vsi`
+  arguments. It always delegates to the DuckDB Flat reader and no longer
+  treats a `.parquet` path as an external shard catalog. Python, R, and Julia
+  omit the VSI column when it is disabled.
+- Python, R, and Julia prefer the 2.0 `read_flat()` name and fall back to the
+  deprecated `read_cozip()` alias when an older installed extension is all the
+  client can load.
+- Python source distributions now carry the C sources and build a native
+  library for the target platform. Wheels built from an sdist are tested in CI.
+- JavaScript and DuckDB readers now validate the integrity hash and reject
+  malformed index sections, invalid names, ranges, and Flat layouts. The
+  JavaScript reader also accepts correctly clamped HTTP ranges at EOF.
+
+### Fixed
+
+- Profile-2 padding is inserted before the final priority block, keeping DATA
+  offsets stable.
+- Failed post-write checks or hash patches remove the new archive. Cleanup and
+  `fclose()` failures are reported instead of being hidden.
+- Generic buffer and path sources are fully validated before writing.
+- `METADATA/.parquet` is correctly treated as TACO priority metadata.
+- Archive-size prediction saturates at `UINT64_MAX` instead of wrapping.
+- The Windows file-size code now uses the correct `_stat64` structure for both
+  MSVC and MinGW.
+- A payload of exactly `0xFFFFFFFF` bytes is rejected because the bundled
+  libzip cannot emit a valid local header for that boundary value.
+- `zip_open` errors now include libzip's message.
+- libzip error text is copied before its owning archive or source is released.
+- Julia rejects missing or empty paths and safely quotes user column names.
+- Python rejects malformed path pairs. Python and R reject non-boolean
+  validation flags instead of silently changing validation behavior.
+- JavaScript no longer asks Parquet for the synthetic `cozip:gdal_vsi`
+  column when callers include that name in `columns`.
+- Flat profile helpers clear stale user `in_index` flags, keeping
+  `__metadata__` as the only priority entry required by the profile.
+
+
+## [2026.5.22] — 2026-05-22
 
 ### Fixed
 
@@ -295,8 +364,10 @@ Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 - GitHub Release with `libcozip-<version>-<platform>.{tar.gz,zip}`
   archives for C-standalone consumers.
 
-[Unreleased]: https://github.com/asterisk-labs/taco/compare/v2026.5.2...HEAD
-[2026.5.2]: https://github.com/asterisk-labs/taco/compare/v2026.5.1...v2026.5.2
-[2026.5.1]: https://github.com/asterisk-labs/taco/compare/v2026.4.30...v2026.5.1
-[2026.4.30]: https://github.com/asterisk-labs/taco/compare/v2026.4.29...v2026.4.30
-[2026.4.29]: https://github.com/asterisk-labs/taco/releases/tag/v2026.4.29
+[2026.9.4]: https://github.com/asterisk-labs/cozip/compare/v2026.5.22...v2026.9.4
+[2026.5.22]: https://github.com/asterisk-labs/cozip/compare/v2026.5.10...v2026.5.22
+[2026.5.10]: https://github.com/asterisk-labs/cozip/compare/v2026.5.2...v2026.5.10
+[2026.5.2]: https://github.com/asterisk-labs/cozip/compare/v2026.5.1...v2026.5.2
+[2026.5.1]: https://github.com/asterisk-labs/cozip/compare/v2026.4.30...v2026.5.1
+[2026.4.30]: https://github.com/asterisk-labs/cozip/compare/v2026.4.29...v2026.4.30
+[2026.4.29]: https://github.com/asterisk-labs/cozip/releases/tag/v2026.4.29

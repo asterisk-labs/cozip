@@ -13,15 +13,18 @@
 
 ---
 
-Open a ZIP like a table. Still a ZIP, now queryable.
+Open a ZIP like a table.
 
-cozip glues a Parquet manifest onto an ordinary ZIP and drops a tiny fixed index at byte 0 that points to it. Fetch the index, fetch the manifest, query it locally, then range-request just the bytes you actually want. A large ZIP archive becomes a queryable dataset!
+cozip adds a Parquet manifest to an ordinary ZIP and puts a small fixed index
+at byte 0. A reader fetches the index and manifest first, then requests only
+the payload bytes it needs.
 
 <div align="center">
   <img src="images/cozip_animation.svg" alt="how cozip works" width="500"/>
 </div>
 
-It works because nothing about the ZIP changes. A cozip is still a perfectly valid ZIP file. `unzip` works. `zipfile.ZipFile` works. Your OS preview pane works.
+A cozip remains a valid ZIP file: `unzip`, `zipfile.ZipFile`, and ordinary ZIP
+tools still work.
 
 ## Example
 
@@ -62,8 +65,10 @@ for _, row in manifest[manifest["split"] == "train"].iterrows():
         print(row["name"], src.read(1).mean())
 ```
 
-`path` says where each file lives on disk. `name` is how it shows up inside the archive. Only `path` and `name` are required.
-Everything else is optional metadata. The writer creates two special columns in the manifest: `offset` and `length` say where the file lives in the ZIP. The reader can create on-the-fly the `cozip:path` column that gives a [GDAL VSI](https://gdal.org/en/stable/user/virtual_file_systems.html) string.
+`path` says where each file lives on disk. `name` is how it appears inside the
+archive. Everything else is optional metadata. The writer adds `offset` and
+`size`; the reader can also add `cozip:gdal_vsi`, a
+[GDAL VSI](https://gdal.org/en/stable/user/virtual_file_systems.html) path.
 
 
 ## Bindings
@@ -75,10 +80,16 @@ Everything else is optional metadata. The writer creates two special columns in 
 | Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | read + write | [julia/](julia/) |
 | JavaScript | `npm install @asterisk-labs/cozip` | **reader** | [javascript/](javascript/) |
 | C        | vendor [`core/`](core/) (libzip + zlib bundled, zero system deps) | **core writer** | [core/](core/) |
-| C++ / DuckDB | `INSTALL cozip FROM community; LOAD cozip;` | **reader** via `read_cozip()` | [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) |
+| C++ / DuckDB | `INSTALL cozip FROM community; LOAD cozip;` | **reader** via `read_flat()` | [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) |
 
-The C library at [`core/`](core/) is the writer core — Python, R, and Julia all wrap it, so a cozip written in any of them is
-byte-for-byte identical. Two readers live outside the C path. The DuckDB community extension at [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) exposes `read_cozip(url)` to SQL, runs native and in WebAssembly, and ranges files straight from HTTPS/S3/HuggingFace. The [`javascript/`](javascript/) package runs in browser, Node, Deno, and edge runtimes. All follow the same [SPEC.md](SPEC.md).
+The C library at [`core/`](core/) is the writer core. Its public API also
+provides the two-stage TACO layout/write path described in
+[`docs/taco-writer-internal.md`](docs/taco-writer-internal.md). Python, R, and
+Julia use libcozip for layout and ZIP serialization. Two readers live outside that C path:
+the DuckDB community extension at
+[asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader)
+exposes `read_flat(url)` to SQL, and [`javascript/`](javascript/) reads HTTP
+archives in browser and server runtimes. All follow the same [SPEC.md](SPEC.md).
 
 ## Spec
 
