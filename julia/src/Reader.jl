@@ -15,8 +15,14 @@ function _ensure_duckdb_extensions!(con)
     _DUCKDB_EXTS_LOADED[] && return nothing
     DBInterface.execute(con, "INSTALL httpfs")
     DBInterface.execute(con, "LOAD httpfs")
-    DBInterface.execute(con, "INSTALL cozip FROM community")
-    DBInterface.execute(con, "LOAD cozip")
+    local_extension = get(ENV, "COZIP_EXTENSION", "")
+    if isempty(local_extension)
+        DBInterface.execute(con, "INSTALL cozip FROM community")
+        DBInterface.execute(con, "LOAD cozip")
+    else
+        quoted = replace(local_extension, "'" => "''")
+        DBInterface.execute(con, "LOAD '$(quoted)'")
+    end
     _DUCKDB_EXTS_LOADED[] = true
     return nothing
 end
@@ -29,6 +35,9 @@ Read the manifest of a FLAT-profile cozip archive via the DuckDB
 cozip extension. `name`, `offset`, `size` (and `cozip:gdal_vsi` when
 `gdal_vsi=true`) are always included; pass `columns` to bring
 extras, `nothing` brings all.
+
+Archives using any profile other than Flat (`profile = 1`), including TACO
+(`profile = 2`), are rejected by `read_flat`.
 
 Not supported on Windows yet. The writer is.
 
@@ -48,7 +57,7 @@ function read(
         cozip: Cozip.read is not supported on Windows.
 
         DuckDB.jl on Windows crashes when loading community extensions
-        that register a filesystem, which read_cozip requires. Writer
+        that register a filesystem, which read_flat requires. Writer
         operations (Cozip.create, stage_metadata, stage_create) work
         fine. For reads, use Linux, macOS, WSL, or the Python binding.
         """)
@@ -57,6 +66,13 @@ function read(
     src = string(source)
     isempty(src) &&
         throw(ArgumentError("cozip: `source` must be a non-empty string"))
+    occursin('\0', src) &&
+        throw(ArgumentError("cozip: `source` contains a NUL byte"))
+    isascii(src) ||
+        throw(ArgumentError(
+            "cozip: `source` contains non-ASCII characters; " *
+            "cozip supports ASCII paths and URLs only",
+        ))
 
     if columns !== nothing && any(isempty, columns)
         throw(ArgumentError("cozip: `columns` entries must be non-empty"))
@@ -69,9 +85,23 @@ function read(
 
         sql = string(
             "SELECT ", _build_select(columns, gdal_vsi),
-            " FROM read_cozip(?, gdal_vsi := ", gdal_vsi ? "true" : "false", ")",
+            " FROM read_flat(?, gdal_vsi := ", gdal_vsi ? "true" : "false", ")",
         )
-        DataFrame(DBInterface.execute(con, sql, [src]))
+        query = try
+            DBInterface.execute(con, sql, [src])
+        catch err
+            message = sprint(showerror, err)
+            if !occursin("read_flat", message) || !occursin("does not exist", message)
+                rethrow()
+            end
+            legacy_sql = replace(sql, "read_flat(" => "read_cozip("; count=1)
+            DBInterface.execute(con, legacy_sql, [src])
+        end
+        result = DataFrame(query)
+        if !gdal_vsi && "cozip:gdal_vsi" in names(result)
+            select!(result, Not(Symbol("cozip:gdal_vsi")))
+        end
+        result
     end
 end
 
@@ -83,6 +113,8 @@ function _build_select(columns, gdal_vsi)
     columns === nothing && return "*"
     required = ["name", "offset", "size"]
     gdal_vsi && push!(required, "cozip:gdal_vsi")
-    ordered = vcat(required, setdiff(String.(columns), required))
+    extras = String.(columns)
+    gdal_vsi || filter!(c -> c != "cozip:gdal_vsi", extras)
+    ordered = vcat(required, setdiff(extras, required))
     join((_quote_ident(c) for c in ordered), ", ")
 end

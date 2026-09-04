@@ -148,7 +148,7 @@ describe("ZIP compatibility — readable by standard ZIP tools", {
 })
 
 
-describe("stage_metadata — pure planner", {
+describe("stage_metadata — layout planner", {
 
   it("drops path column", {
     ctx <- local_archive()
@@ -234,6 +234,59 @@ describe("stage_metadata — pure planner", {
     )
     expect_error(cozip::stage_metadata(bad), "reserved")
   })
+
+  it("rejects zero-byte sources", {
+    tmp <- withr::local_tempdir()
+    empty <- file.path(tmp, "empty.bin")
+    file.create(empty)
+    bad <- arrow::arrow_table(name = "empty.bin", path = empty)
+    expect_error(cozip::stage_metadata(bad), "zero-byte payload")
+  })
+
+  it("rejects directory sources", {
+    tmp <- withr::local_tempdir()
+    bad <- arrow::arrow_table(name = "directory", path = tmp)
+    expect_error(cozip::stage_metadata(bad), "not a regular file")
+  })
+
+  it("rejects non-ASCII archive names", {
+    ctx <- local_archive()
+    bad <- arrow::arrow_table(name = "niño.bin", path = ctx$fixtures$small)
+    expect_error(cozip::stage_metadata(bad), "non-ASCII")
+  })
+
+  it("accepts Unicode writer paths", {
+    tmp <- withr::local_tempdir()
+    source <- file.path(tmp, "niño.bin")
+    writeBin(charToRaw("x"), source)
+    output <- file.path(tmp, "salida-niño.zip")
+    table <- arrow::arrow_table(name = "data.bin", path = source)
+
+    cozip::create(output, table)
+
+    expect_true(file.exists(output))
+    assert_valid_cozip(readBin(output, raw(), n = file.size(output)))
+  })
+})
+
+
+describe("read input validation", {
+
+  it("keeps the unfiltered SQL projection compatible across reader versions", {
+    expect_identical(cozip:::.build_select(NULL, FALSE), "*")
+  })
+
+  it("rejects an empty path before loading DuckDB extensions", {
+    expect_error(cozip::read(""), "non-empty")
+  })
+
+  it("rejects non-ASCII paths before loading DuckDB extensions", {
+    expect_error(cozip::read("niño.zip"), "ASCII paths and URLs only")
+  })
+
+  it("rejects empty selected column names before loading DuckDB extensions", {
+    expect_error(cozip::read("archive.zip", columns = ""), "non-empty")
+  })
 })
 
 
@@ -244,6 +297,15 @@ describe("stage_create — embed user-written parquet verbatim", {
     arrow::write_parquet(cozip::stage_metadata(ctx$input_table)$metadata, pq)
     pq
   }
+
+  it("requires validate to be one TRUE or FALSE value", {
+    expect_error(
+      cozip::stage_create("out.zip", data.frame(), "metadata.parquet",
+                          validate = "yes"),
+      "`validate` must be TRUE or FALSE",
+      fixed = TRUE
+    )
+  })
 
   it("packs a valid archive", {
     ctx <- local_archive()
@@ -290,6 +352,32 @@ describe("stage_create — embed user-written parquet verbatim", {
       cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
                           make_paths_arg(ctx$input_table), pq),
       "required column"
+    )
+  })
+
+  it("rejects an empty metadata file", {
+    ctx <- local_archive()
+    pq <- file.path(ctx$tmp_path, "empty.parquet")
+    file.create(pq)
+
+    expect_error(
+      cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
+                          make_paths_arg(ctx$input_table), pq),
+      "metadata parquet is empty"
+    )
+  })
+
+  it("rejects null metadata values", {
+    ctx <- local_archive()
+    md <- as.data.frame(cozip::stage_metadata(ctx$input_table)$metadata)
+    md$name[2L] <- NA_character_
+    pq <- file.path(ctx$tmp_path, "null.parquet")
+    arrow::write_parquet(arrow::arrow_table(md), pq)
+
+    expect_error(
+      cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
+                          make_paths_arg(ctx$input_table), pq),
+      "NA name at row 2"
     )
   })
 

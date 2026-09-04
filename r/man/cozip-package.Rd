@@ -12,17 +12,13 @@ any priority file in one range request without scanning the
 Central Directory.
 }
 \details{
-Three layers, mirroring the Python binding:
+The writer has three public functions:
 \itemize{
 \item \code{\link[=create]{create()}} — all-in-one writer for the FLAT profile.
-\item \code{\link[=stage_metadata]{stage_metadata()}} — pure planner; returns the canonical
-metadata table.
+\item \code{\link[=stage_metadata]{stage_metadata()}} — plans offsets after checking the source files.
 \item \code{\link[=stage_create]{stage_create()}} — packs an archive from source files and a
 user-written parquet, embedded verbatim.
 }
-
-For NONE / TACO profiles or buffer sources, call
-\code{.Call(C_R_cozip_finalize, ...)} directly.
 }
 \seealso{
 Useful links:

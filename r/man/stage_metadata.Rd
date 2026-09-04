@@ -17,7 +17,8 @@ List with \code{metadata} (arrow::Table) and \code{paths}
 \description{
 Computes offsets and sizes for the user entries and returns the
 canonical metadata table plus a row-aligned \code{paths} data.frame.
-No I/O.
+The function checks each source and reads its file size; it does not read
+payload contents.
 }
 \details{
 If you reorder \code{metadata} before writing it, reorder \code{paths} the

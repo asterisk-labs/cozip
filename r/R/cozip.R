@@ -2,7 +2,8 @@
 #'
 #' Computes offsets and sizes for the user entries and returns the
 #' canonical metadata table plus a row-aligned `paths` data.frame.
-#' No I/O.
+#' The function checks each source and reads its file size; it does not read
+#' payload contents.
 #'
 #' If you reorder `metadata` before writing it, reorder `paths` the
 #' same way or [stage_create()] will reject the mismatch.
@@ -22,11 +23,7 @@ stage_metadata <- function(table) {
   user_paths <- as.character(table[["path"]])
   user_sizes <- file.size(user_paths)
 
-  all_names  <- c(user_names,    .META_NAME)
-  all_sizes  <- c(user_sizes,    0)            # placeholder
-  all_in_idx <- c(rep(FALSE, n), TRUE)
-
-  plan_res <- .Call(C_R_cozip_plan, all_names, all_sizes, all_in_idx)
+  plan_res <- .Call(C_R_cozip_plan, user_names, user_sizes)
 
   out_offsets <- as.numeric(plan_res$offset[seq_len(n)])
   out_sizes   <- as.numeric(plan_res$size[seq_len(n)])
@@ -71,8 +68,15 @@ stage_metadata <- function(table) {
 stage_create <- function(out_path, paths, metadata_parquet,
                          validate = TRUE) {
   if (!is.character(out_path) || length(out_path) != 1L
-      || is.na(out_path)) {
-    .cozip_stop("`out_path` must be a single non-NA string")
+      || is.na(out_path) || !nzchar(out_path)) {
+    .cozip_stop("`out_path` must be a single non-empty string")
+  }
+  if (!is.character(metadata_parquet) || length(metadata_parquet) != 1L
+      || is.na(metadata_parquet) || !nzchar(metadata_parquet)) {
+    .cozip_stop("`metadata_parquet` must be a single non-empty string")
+  }
+  if (!is.logical(validate) || length(validate) != 1L || is.na(validate)) {
+    .cozip_stop("`validate` must be TRUE or FALSE")
   }
 
   out_abs     <- normalizePath(out_path,         mustWork = FALSE)
@@ -80,6 +84,12 @@ stage_create <- function(out_path, paths, metadata_parquet,
 
   if (!file.exists(parquet_abs)) {
     .cozip_stop("metadata parquet not found: %s", parquet_abs)
+  }
+  if (!utils::file_test("-f", parquet_abs)) {
+    .cozip_stop("metadata parquet is not a regular file: %s", parquet_abs)
+  }
+  if (file.size(parquet_abs) == 0) {
+    .cozip_stop("metadata parquet is empty")
   }
 
   .check_parquet_schema(parquet_abs)
@@ -90,13 +100,9 @@ stage_create <- function(out_path, paths, metadata_parquet,
   user_sizes <- file.size(user_paths)
   n          <- length(user_names)
 
-  all_names  <- c(user_names,    .META_NAME)
-  all_sizes  <- c(user_sizes,    0)
-  all_in_idx <- c(rep(FALSE, n), TRUE)
+  plan_res <- .Call(C_R_cozip_plan, user_names, user_sizes)
 
-  plan_res <- .Call(C_R_cozip_plan, all_names, all_sizes, all_in_idx)
-
-  if (isTRUE(validate)) {
+  if (validate) {
     .validate_parquet_values(
       parquet_abs,
       user_names,
@@ -190,6 +196,13 @@ create <- function(out_path, table, temp_dir = NULL) {
                 i, shQuote(names_v[i]), paths_v[i])
   }
 
+  bad <- which(!utils::file_test("-f", paths_v))
+  if (length(bad) > 0L) {
+    i <- bad[1L]
+    .cozip_stop("row %d (%s): source is not a regular file: %s",
+                i, shQuote(names_v[i]), paths_v[i])
+  }
+
   invisible(NULL)
 }
 
@@ -237,6 +250,13 @@ create <- function(out_path, table, temp_dir = NULL) {
                 i, shQuote(names_v[i]), paths_v[i])
   }
 
+  bad <- which(!utils::file_test("-f", paths_v))
+  if (length(bad) > 0L) {
+    i <- bad[1L]
+    .cozip_stop("`paths` row %d (%s): source is not a regular file: %s",
+                i, shQuote(names_v[i]), paths_v[i])
+  }
+
   list(names = names_v, paths = paths_v)
 }
 
@@ -277,6 +297,16 @@ create <- function(out_path, table, temp_dir = NULL) {
   pq_names   <- as.character(tbl[["name"]])
   pq_offsets <- as.numeric(tbl[["offset"]])
   pq_sizes   <- as.numeric(tbl[["size"]])
+
+  if (anyNA(pq_names)) {
+    .cozip_stop("metadata parquet has NA name at row %d", which(is.na(pq_names))[1L])
+  }
+  if (anyNA(pq_offsets)) {
+    .cozip_stop("metadata parquet has NA offset at row %d", which(is.na(pq_offsets))[1L])
+  }
+  if (anyNA(pq_sizes)) {
+    .cozip_stop("metadata parquet has NA size at row %d", which(is.na(pq_sizes))[1L])
+  }
 
   if (!identical(pq_names, expected_names)) {
     i <- which(pq_names != expected_names)[1]

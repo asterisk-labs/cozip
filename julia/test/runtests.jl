@@ -396,6 +396,43 @@ end
             bad = DataFrame(name = ["__metadata__"], path = [fix.small])
             @test_throws "reserved" stage_metadata(bad)
         end
+
+        @testset "rejects zero-byte sources" begin
+            fix = make_fixtures()
+            empty = joinpath(fix.tmp, "empty.bin")
+            touch(empty)
+            bad = DataFrame(name = ["empty.bin"], path = [empty])
+            @test_throws "zero-byte payload" stage_metadata(bad)
+        end
+
+        @testset "rejects non-ASCII archive names" begin
+            fix = make_fixtures()
+            bad = DataFrame(name = ["niño.bin"], path = [fix.small])
+            @test_throws "non-ASCII" stage_metadata(bad)
+        end
+
+        @testset "accepts Unicode writer paths" begin
+            fix = make_fixtures()
+            source = joinpath(fix.tmp, "niño.bin")
+            write(source, UInt8[0x78])
+            out = joinpath(fix.tmp, "salida-niño.zip")
+            Cozip.create(out, DataFrame(name = ["data.bin"], path = [source]))
+            assert_valid_cozip(read(out))
+        end
+
+        @testset "rejects NUL in archive names" begin
+            fix = make_fixtures()
+            bad = DataFrame(name = ["bad\0name.bin"], path = [fix.small])
+            @test_throws "NUL byte" stage_metadata(bad)
+        end
+
+        @testset "rejects missing names and paths" begin
+            fix = make_fixtures()
+            missing_name = DataFrame(name = Union{Missing,String}[missing], path = [fix.small])
+            missing_path = DataFrame(name = ["data.bin"], path = Union{Missing,String}[missing])
+            @test_throws "name` column has missing" stage_metadata(missing_name)
+            @test_throws "path` column has missing" stage_metadata(missing_path)
+        end
     end
 
 
@@ -446,6 +483,46 @@ end
             _write_parquet(bad, pq)
 
             @test_throws "required column" stage_create(
+                joinpath(fix.tmp, "out.zip"),
+                make_paths_arg(tbl),
+                pq,
+            )
+        end
+
+        @testset "rejects an empty metadata file" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            pq = joinpath(fix.tmp, "empty.parquet")
+            touch(pq)
+
+            @test_throws "metadata parquet is empty" stage_create(
+                joinpath(fix.tmp, "out.zip"),
+                make_paths_arg(tbl),
+                pq,
+            )
+        end
+
+        @testset "rejects empty output and metadata paths" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            @test_throws "out_path` must be a non-empty" stage_create(
+                "", make_paths_arg(tbl), fix.small,
+            )
+            @test_throws "metadata_parquet` must be a non-empty" stage_create(
+                joinpath(fix.tmp, "out.zip"), make_paths_arg(tbl), "",
+            )
+        end
+
+        @testset "rejects missing metadata values" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            md = stage_metadata(tbl).metadata
+            allowmissing!(md, :name)
+            md.name[2] = missing
+            pq = joinpath(fix.tmp, "missing.parquet")
+            _write_parquet(md, pq)
+
+            @test_throws "missing name at row 2" stage_create(
                 joinpath(fix.tmp, "out.zip"),
                 make_paths_arg(tbl),
                 pq,
@@ -591,6 +668,14 @@ end
             @test_throws ErrorException Cozip.read("does-not-matter.zip")
         end
     else
+        @testset "read rejects non-ASCII paths before loading extensions" begin
+            @test_throws "ASCII paths and URLs only" Cozip.read("niño.zip")
+        end
+
+        @testset "read rejects NUL paths before loading extensions" begin
+            @test_throws "NUL byte" Cozip.read("bad\0.zip")
+        end
+
         @testset "create + read round-trip with binary column" begin
             fix = make_fixtures()
             tbl = make_input_table(fix)
@@ -606,6 +691,18 @@ end
             @test df.name == ["a.txt", "b.bin"]
             @test df.geometry[1] == tbl.geometry[1]
             @test df.geometry[2] == tbl.geometry[2]
+        end
+
+
+        @testset "create preserves quoted extra column names" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            tbl[!, Symbol("source\"tag")] = ["one", "two"]
+            out = joinpath(fix.tmp, "quoted-column.zip")
+            create(out, tbl)
+            df = Cozip.read(out; gdal_vsi=false)
+            @test df[!, Symbol("source\"tag")] == ["one", "two"]
+            @test !("cozip:gdal_vsi" in names(df))
         end
     end
 end

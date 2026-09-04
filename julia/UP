@@ -6,18 +6,19 @@ A short guide for releasing a new version. Follow the steps in order. The Julia 
 
 ### 1. Bump the version
 
-Edit `VERSION` at the repo root. Bump at least one of the four CalVer parts.
+Edit `VERSION` at the repo root and set the new CalVer release.
 
 ```
-2026.5.16
+2026.9.3
 ```
 
 ### 2. Commit and tag
 
 ```bash
+VERSION="$(tr -d '[:space:]' < VERSION)"
 git add VERSION
-git commit -m "release 2026.5.16"
-git tag v2026.5.16
+git commit -m "release ${VERSION}"
+git tag "v${VERSION}"
 git push origin main --tags
 ```
 
@@ -37,7 +38,8 @@ Watch it from the Actions tab on GitHub. When `regenerate-artifacts-toml` goes g
 git pull origin main
 ```
 
-This pulls down the commit the workflow just pushed. The message looks like `chore(julia): regenerate Artifacts.toml for v2026.5.16`.
+This pulls down the commit the workflow just pushed. The message looks like
+`chore(julia): regenerate Artifacts.toml for v<version>`.
 
 Skip this and step 5 will register a version that downloads outdated binaries. It won't error, it'll just be wrong. Pull.
 

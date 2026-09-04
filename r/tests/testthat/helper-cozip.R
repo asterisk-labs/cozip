@@ -4,7 +4,7 @@ SMALL_CONTENT  <- charToRaw(strrep("hello cozip\n", 8))    #    96 bytes
 MEDIUM_CONTENT <- rep(as.raw(0:255), 160)                  # 40960 bytes
 
 
-# ---- Format constants (cozip 1.0 SPEC) ----
+# ---- Format constants (cozip 1.1 SPEC) ----
 
 INDEX_OFFSET      <- 51L
 HASH_WINDOW       <- 32768L

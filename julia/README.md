@@ -31,6 +31,10 @@ Cozip.write("out.zip", table)
 
 `name` is how each file appears inside the archive. `path` is where it lives on disk, used at write time and dropped from the manifest. Any extra columns ride along into `__metadata__` and become queryable on read.
 
+Archive names must be ASCII. Writer source and output paths may contain
+Unicode; paths and URLs passed to `Cozip.read()` are currently ASCII-only.
+Empty files are not valid cozip entries.
+
 ```julia
 table = DataFrame(
     name      = ["a.tif", "b.tif"],
@@ -52,13 +56,17 @@ train = filter(:split => ==("train"), manifest)
 
 `manifest` is a DataFrame with `name`, `offset`, `size`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Filter it like any DataFrame, then use `offset` and `size` to range-request the payloads you actually want.
 
+`Cozip.read()` supports only Flat-profile archives (`profile = 1`). TACO
+archives (`profile = 2`) and all other profiles are rejected.
+
 ## Versioning
 
-`Cozip.jl` tracks the C library. The C side uses 4-component CalVer (e.g. `2026.5.2.6`). The Julia side uses the first three because Julia enforces strict SemVer. The fourth component is exposed at runtime.
+`Cozip.jl` tracks the C library. `make sync` keeps `Project.toml` aligned with
+the repository's CalVer version.
 
 ```julia
 using Cozip
-Cozip.LibCozip.cozip_version()  # "2026.5.2.6"
+Cozip.LibCozip.cozip_version()  # "2026.9.4"
 ```
 
 ## Spec

@@ -3,10 +3,9 @@
  *
  * Two entries:
  *
- *   R_cozip_plan(names, sizes, in_idx) -> list(offset, size)
- *       Computes payload offsets and sizes for the given entries.
- *       Used by cozip::create() to learn user offsets before
- *       writing the __metadata__.parquet.
+ *   R_cozip_plan(names, sizes) -> list(offset, size)
+ *       Plans FLAT user entries and adds the temporary __metadata__
+ *       slot in C.
  *
  *   R_cozip_finalize(out_path, names, paths, sizes, in_idx, profile) -> NULL
  *       End-to-end pipeline via cozip_finalize: plan, padding
@@ -87,14 +86,24 @@ static void check_logicals(SEXP x, R_xlen_t expected_len, const char *who) {
                  who, (long long)expected_len, (long long)Rf_xlength(x));
 }
 
+static const char *translate_no_nul(SEXP value, const char *who,
+                                    R_xlen_t position) {
+    const char *raw = CHAR(value);
+    if (memchr(raw, '\0', (size_t)Rf_length(value)) != NULL) {
+        Rf_error("NUL byte in '%s' at index %lld", who,
+                 (long long)(position + 1));
+    }
+    return Rf_translateCharUTF8(value);
+}
+
 /* Build a cozip_entry_t array from R-side vectors. Allocates
  * `capacity` slots from R's transient pool but only fills the first
  * `n`. The extra slots stay zeroed; cozip_finalize uses one of them
  * for a possible __cozip_padding__ entry.
  *
  * `paths` may be R_NilValue, in which case source.kind stays
- * COZIP_SOURCE_NONE on every entry — fine for cozip_plan, but
- * cozip_finalize will reject it.
+ * COZIP_SOURCE_NONE. `in_idx` may also be R_NilValue, which leaves
+ * every entry outside the index.
  *
  * NA in `paths[i]` also leaves source.kind = NONE for that entry.
  * cozip::create uses this for the __metadata__ placeholder slot
@@ -111,7 +120,7 @@ static cozip_entry_t* build_entries(SEXP names, SEXP paths,
         SEXP name_sxp = STRING_ELT(names, i);
         if (name_sxp == NA_STRING)
             Rf_error("NA in 'names' at index %lld", (long long)(i + 1));
-        entries[i].arc_name = Rf_translateCharUTF8(name_sxp);
+        entries[i].arc_name = translate_no_nul(name_sxp, "names", i);
 
         double sz = REAL(sizes)[i];
         if (!R_FINITE(sz) || sz < 0)
@@ -119,16 +128,18 @@ static cozip_entry_t* build_entries(SEXP names, SEXP paths,
                      (long long)(i + 1), sz);
         entries[i].payload_size = (uint64_t)sz;
 
-        int flag = LOGICAL(in_idx)[i];
-        if (flag == NA_LOGICAL)
-            Rf_error("NA in 'in_idx' at index %lld", (long long)(i + 1));
-        entries[i].in_index = (bool)flag;
+        if (in_idx != R_NilValue) {
+            int flag = LOGICAL(in_idx)[i];
+            if (flag == NA_LOGICAL)
+                Rf_error("NA in 'in_idx' at index %lld", (long long)(i + 1));
+            entries[i].in_index = (bool)flag;
+        }
 
         if (paths != R_NilValue) {
             SEXP path_sxp = STRING_ELT(paths, i);
             if (path_sxp != NA_STRING) {
                 entries[i].source.kind   = COZIP_SOURCE_PATH;
-                entries[i].source.u.path = Rf_translateCharUTF8(path_sxp);
+                entries[i].source.u.path = translate_no_nul(path_sxp, "paths", i);
             }
         }
     }
@@ -158,17 +169,16 @@ SEXP R_cozip_reserved_names(void) {
     return res;
 }
 
-SEXP R_cozip_plan(SEXP names, SEXP sizes, SEXP in_idx) {
+SEXP R_cozip_plan(SEXP names, SEXP sizes) {
     R_xlen_t n = Rf_xlength(names);
     check_chars(names, n, "names");
     check_doubles(sizes, n, "sizes");
-    check_logicals(in_idx, n, "in_idx");
 
     cozip_entry_t *entries =
-        build_entries(names, R_NilValue, sizes, in_idx, n, n);
+        build_entries(names, R_NilValue, sizes, R_NilValue, n, n + 1);
 
     cozip_error_t err = {0};
-    cozip_status_t s  = cozip_plan(entries, (size_t)n, &err);
+    cozip_status_t s  = cozip_plan_flat(entries, (size_t)n, &err);
     if (s != COZIP_OK) R_THROW_COZIP(s, err);
 
     SEXP off_v = PROTECT(alloc_integer64(n));
@@ -196,8 +206,9 @@ SEXP R_cozip_plan(SEXP names, SEXP sizes, SEXP in_idx) {
 SEXP R_cozip_finalize(SEXP out_path, SEXP names, SEXP paths,
                       SEXP sizes, SEXP in_idx, SEXP profile) {
     if (TYPEOF(out_path) != STRSXP || Rf_xlength(out_path) != 1
-        || STRING_ELT(out_path, 0) == NA_STRING) {
-        Rf_error("'out_path' must be a single non-NA string");
+        || STRING_ELT(out_path, 0) == NA_STRING
+        || Rf_length(STRING_ELT(out_path, 0)) == 0) {
+        Rf_error("'out_path' must be a single non-empty string");
     }
     if (TYPEOF(profile) != INTSXP || Rf_xlength(profile) != 1
         || INTEGER(profile)[0] == NA_INTEGER) {
@@ -227,7 +238,7 @@ SEXP R_cozip_finalize(SEXP out_path, SEXP names, SEXP paths,
 
     cozip_error_t err = {0};
     cozip_profile_t p = (cozip_profile_t)INTEGER(profile)[0];
-    const char *out  = Rf_translateCharUTF8(STRING_ELT(out_path, 0));
+    const char *out = translate_no_nul(STRING_ELT(out_path, 0), "out_path", 0);
 
     cozip_status_t s = cozip_finalize(out, entries, (size_t)n,
                                       (size_t)(n + 1), p, &err);
@@ -241,7 +252,7 @@ SEXP R_cozip_finalize(SEXP out_path, SEXP names, SEXP paths,
 
 static const R_CallMethodDef CallEntries[] = {
     {"R_cozip_reserved_names", (DL_FUNC) &R_cozip_reserved_names, 0},
-    {"R_cozip_plan",           (DL_FUNC) &R_cozip_plan,           3},
+    {"R_cozip_plan",           (DL_FUNC) &R_cozip_plan,           2},
     {"R_cozip_finalize",       (DL_FUNC) &R_cozip_finalize,       6},
     {NULL, NULL, 0}
 };

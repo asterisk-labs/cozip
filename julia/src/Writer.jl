@@ -26,7 +26,9 @@ const _DUCKDB_LOCK = ReentrantLock()
 
 function _init_duckdb!()
     _DUCKDB_CON[] === nothing || return nothing
-    _DUCKDB_DB[]  = DuckDB.DB()
+    config = haskey(ENV, "COZIP_EXTENSION") ?
+        Dict("allow_unsigned_extensions" => "true") : []
+    _DUCKDB_DB[]  = DuckDB.DB(config=config)
     _DUCKDB_CON[] = DBInterface.connect(_DUCKDB_DB[])
     return nothing
 end
@@ -65,7 +67,8 @@ end
 Compute offsets and sizes for a cozip archive. Returns a NamedTuple
 where `metadata` is a DataFrame with `name`/`offset`/`size`/extras
 and `paths` is a row-aligned `Vector{Tuple{String,String}}` ready
-for `stage_create`. Pure, no I/O.
+for `stage_create`. It checks each source and reads its file size, but not its
+contents.
 
 # Arguments
 - `table`: any Tables.jl-compatible source with `name` and `path`
@@ -86,6 +89,7 @@ function stage_metadata(table)
     sizes   = UInt64[entries[i].payload_size   for i in 1:n_users]
 
     out = select(df, Not(:path))
+    out.name   = names_v
     out.offset = offsets
     out.size   = sizes
     rest = setdiff(names(out), ["name", "offset", "size"])
@@ -122,11 +126,20 @@ function stage_create(
     metadata_parquet;
     validate::Bool = true,
 )::String
-    out_path_str = abspath(string(out_path))
-    parquet_str  = abspath(string(metadata_parquet))
+    out_path_raw = _reject_nul(string(out_path), "out_path")
+    isempty(out_path_raw) &&
+        throw(ArgumentError("cozip: `out_path` must be a non-empty path"))
+    parquet_raw = _reject_nul(string(metadata_parquet), "metadata_parquet")
+    isempty(parquet_raw) &&
+        throw(ArgumentError("cozip: `metadata_parquet` must be a non-empty path"))
+
+    out_path_str = abspath(out_path_raw)
+    parquet_str  = abspath(parquet_raw)
 
     isfile(parquet_str) ||
         throw(SystemError("cozip: metadata parquet not found: $parquet_str"))
+    filesize(parquet_str) > 0 ||
+        throw(ArgumentError("cozip: metadata parquet is empty"))
 
     _check_parquet_schema(parquet_str)
 
@@ -183,6 +196,13 @@ end
 _reserved() = Set([INDEX_NAME[], PADDING_NAME[], METADATA_NAME[]])
 
 
+function _reject_nul(value::String, context::String)::String
+    occursin('\0', value) &&
+        throw(ArgumentError("cozip: $context contains a NUL byte"))
+    return value
+end
+
+
 function _validate_input_table(table)::DataFrame
     df = DataFrame(table; copycols=true)
     cols = names(df)
@@ -206,7 +226,11 @@ function _validate_input_table(table)::DataFrame
     reserved = _reserved()
     seen = Set{String}()
     for (i, name) in enumerate(df.name)
-        s = string(name)
+        ismissing(name) &&
+            throw(ArgumentError("cozip: `name` column has missing at row $i"))
+        name === nothing &&
+            throw(ArgumentError("cozip: `name` column has nothing at row $i"))
+        s = _reject_nul(string(name), "row $i name")
         s in reserved &&
             throw(ArgumentError("cozip: row $i uses reserved name $(repr(s))"))
         s in seen &&
@@ -215,7 +239,11 @@ function _validate_input_table(table)::DataFrame
     end
 
     for (i, p) in enumerate(df.path)
-        ps = string(p)
+        ismissing(p) &&
+            throw(ArgumentError("cozip: `path` column has missing at row $i"))
+        p === nothing &&
+            throw(ArgumentError("cozip: `path` column has nothing at row $i"))
+        ps = _reject_nul(string(p), "row $i path")
         isfile(ps) ||
             throw(SystemError(
                 "cozip: row $i ($(repr(string(df.name[i])))): source not found: $ps"
@@ -229,9 +257,19 @@ end
 function _validate_paths_arg(paths)::Tuple{Vector{String},Vector{String}}
     names_v = String[]
     paths_v = String[]
-    for p in paths
-        push!(names_v, string(first(p)))
-        push!(paths_v, string(last(p)))
+    for (i, item) in enumerate(paths)
+        if !(item isa Tuple) || length(item) != 2
+            throw(ArgumentError(
+                "cozip: paths[$i] must be a two-element (name, source_path) tuple"
+            ))
+        end
+        name, path = item
+        (ismissing(name) || name === nothing) &&
+            throw(ArgumentError("cozip: paths[$i] name must not be missing"))
+        (ismissing(path) || path === nothing) &&
+            throw(ArgumentError("cozip: paths[$i] source must not be missing"))
+        push!(names_v, string(name))
+        push!(paths_v, string(path))
     end
 
     isempty(names_v) &&
@@ -240,6 +278,7 @@ function _validate_paths_arg(paths)::Tuple{Vector{String},Vector{String}}
     reserved = _reserved()
     seen = Set{String}()
     for (i, name) in enumerate(names_v)
+        _reject_nul(name, "paths[$i] name")
         name in reserved &&
             throw(ArgumentError("cozip: paths[$i] uses reserved name $(repr(name))"))
         name in seen &&
@@ -248,6 +287,7 @@ function _validate_paths_arg(paths)::Tuple{Vector{String},Vector{String}}
     end
 
     for (i, p) in enumerate(paths_v)
+        _reject_nul(p, "paths[$i] source")
         isfile(p) ||
             throw(SystemError(
                 "cozip: paths[$i] ($(repr(names_v[i]))): source not found: $p"
@@ -289,6 +329,13 @@ function _validate_parquet_values(
             "cozip: metadata parquet has $(nrow(df)) rows, " *
             "paths has $(length(expected_names))"
         ))
+
+    for field in (:name, :offset, :size)
+        column = df[!, field]
+        index = findfirst(ismissing, column)
+        index === nothing ||
+            throw(ArgumentError("cozip: metadata parquet has missing $field at row $index"))
+    end
 
     pq_names   = String.(df.name)
     pq_offsets = UInt64.(df.offset)
@@ -360,7 +407,7 @@ function _read_parquet_subset(path::String, columns::Vector{String})::DataFrame
     con = _duckdb_con()
     return lock(_DUCKDB_LOCK) do
         # `offset` and `size` are reserved in DuckDB SQL.
-        cols_sql = join(["\"$c\"" for c in columns], ", ")
+        cols_sql = join((_sql_identifier(c) for c in columns), ", ")
         result = DBInterface.execute(con,
             "SELECT $cols_sql FROM read_parquet('$(_sql_escape(path))')")
         DataFrame(result)
@@ -416,14 +463,14 @@ function _sql_literal(v)::String
     v isa AbstractString && return "'" * _sql_escape(string(v)) * "'"
     v isa Date     && return "DATE '" * string(v) * "'"
     v isa DateTime && return "TIMESTAMP '" * replace(string(v), 'T' => ' ') * "'"
-    v isa Integer || v isa AbstractFloat && return string(v)
+    (v isa Integer || v isa AbstractFloat) && return string(v)
     return "'" * _sql_escape(string(v)) * "'"
 end
 
 
 function _write_metadata_parquet(df::DataFrame, out_path::AbstractString)
     cols      = names(df)
-    col_types = [string("\"", c, "\" ", _julia_to_duckdb_type(eltype(df[!, c])))
+    col_types = [string(_sql_identifier(c), " ", _julia_to_duckdb_type(eltype(df[!, c])))
                  for c in cols]
 
     con = _duckdb_con()
@@ -451,3 +498,4 @@ end
 
 
 _sql_escape(s::AbstractString) = replace(String(s), "'" => "''")
+_sql_identifier(s::AbstractString) = "\"" * replace(String(s), "\"" => "\"\"") * "\""
