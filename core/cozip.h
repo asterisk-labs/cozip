@@ -1,5 +1,5 @@
 /*
- * cozip 1.0 writer C ABI.
+ * cozip 1.1 writer C ABI.
  *
  * Cloud-Optimized ZIP. The first archive entry is a binary index at
  * byte 0 that lets a reader locate any priority file in one range
@@ -7,16 +7,16 @@
  *
  * This header is the byte-and-memory layer: offset arithmetic,
  * payload serialization, libzip-driven writes, LFH and index
- * parsing, FNV-1a 64 hashing. Format rules above the wire (UTF-8
- * validation, duplicate detection, profile-specific reserved names)
- * are the bindings' job.
+ * parsing, FNV-1a 64 hashing. Low-level primitives assume validated
+ * inputs; profile helpers validate the shared physical rules they own.
+ * Dataset semantics remain the bindings' job.
  *
- * Strings are null-terminated UTF-8. Pure functions don't allocate;
- * disk-facing ones manage scratch internally. Functions that can
- * fail return cozip_status_t and populate *err (err may be NULL).
+ * Archive names are null-terminated ASCII. Filesystem paths are UTF-8 and are
+ * converted to UTF-16 inside the Windows build. Functions manage their own
+ * scratch memory. Failures return cozip_status_t and populate *err (err may be NULL).
  * On non-OK, output parameters are unspecified.
  *
- * See the cozip 1.0 spec for the on-disk format.
+ * See the cozip 1.1 spec for the on-disk format.
  */
 
 #ifndef COZIP_H_
@@ -63,13 +63,20 @@ COZIP_API const char *cozip_version_string(void);
 #define COZIP_MIN_ARCHIVE_SIZE  (COZIP_HASH_WINDOW_SIZE + COZIP_INDEX_OFFSET)
 
 
-/* Reserved entry filenames. Bindings must reject these as user names. */
+/* Reserved entry filenames. Profile helpers reject these as user names. */
 #define COZIP_INDEX_NAME              "__cozip__"
 #define COZIP_INDEX_NAME_LEN          9
 #define COZIP_PADDING_NAME            "__cozip_padding__"
 #define COZIP_PADDING_NAME_LEN        17
 #define COZIP_FLAT_METADATA_NAME      "__metadata__"
 #define COZIP_FLAT_METADATA_NAME_LEN  12
+
+/* TACO profile names (spec 14.2). COLLECTION.json must be a priority
+ * file, and so must every "METADATA/<...>.parquet". cozip checks these
+ * by name and does not inspect their contents. */
+#define COZIP_TACO_COLLECTION_NAME    "COLLECTION.json"
+#define COZIP_TACO_METADATA_DIR       "METADATA/"
+#define COZIP_TACO_PARQUET_SUFFIX     ".parquet"
 
 
 /* Index payload magic, first 4 bytes of the payload. */
@@ -133,7 +140,9 @@ COZIP_API const char *cozip_flat_metadata_name(void);  /* "__metadata__"      */
  *   TACO: "COLLECTION.json" plus every "METADATA/<name>.parquet", contiguous,
  *         placed before the Central Directory.
  *
- * The C core does not enforce profile rules; bindings do.
+ * Generic profile finalization only enforces the final priority block. The
+ * TACO helpers below also enforce the required priority names. Payload
+ * semantics remain the caller's job.
  */
 typedef enum cozip_profile {
     COZIP_PROFILE_NONE = 0,
@@ -166,7 +175,7 @@ typedef struct cozip_source {
 /* A single ZIP entry. The caller fills the input fields; cozip_plan
  * fills the output fields in place.
  *
- *   arc_name:     null-terminated UTF-8, owned by caller, len <= UINT16_MAX.
+ *   arc_name:     null-terminated ASCII, owned by caller, len <= UINT16_MAX.
  *   payload_size: must match the underlying file or buffer.
  *   in_index:     if false, entry is in the Central Directory but not
  *                 in the cozip index payload.
@@ -188,15 +197,57 @@ typedef struct cozip_entry {
 } cozip_entry_t;
 
 
-/* Plan the on-disk byte layout. Pure arithmetic, always returns OK. */
+/* Path-only entry used by the shared TACO plan/write helpers.
+ *
+ * arc_name is null-terminated ASCII. source_path is UTF-8. Both strings are
+ * owned by the caller.
+ * During cozip_plan_taco, source_path is required for non-priority files and
+ * ignored for priority placeholders. The function fills payload_offset and
+ * payload_size for each non-priority file.
+ */
+typedef struct cozip_path_entry {
+    const char *arc_name;
+    const char *source_path;
+    uint64_t    payload_offset;
+    uint64_t    payload_size;
+} cozip_path_entry_t;
+
+
+/* Result tying a TACO write to its earlier plan.
+ * Bindings should copy this value unchanged from cozip_plan_taco to
+ * cozip_write_taco. layout_hash detects changed plan inputs; it does not hash
+ * source contents and is not part of the on-disk format.
+ */
+#define COZIP_TACO_PLAN_VERSION 1u
+typedef struct cozip_taco_plan {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    uint64_t n_files;
+    uint64_t n_priorities;
+    uint64_t layout_hash;
+} cozip_taco_plan_t;
+
+#define COZIP_TACO_PLAN_INIT                                               \
+    { (uint32_t)sizeof(cozip_taco_plan_t), COZIP_TACO_PLAN_VERSION, 0, 0, 0 }
+
+
+/* Plan the on-disk byte layout using checked u64 arithmetic.
+ * Errors: INVALID_ARGUMENT (NULL/empty/non-ASCII/oversized or duplicate names;
+ * reserved `__cozip__`; invalid paths; too many indexed entries;
+ * oversized index payload,
+ * layout arithmetic overflow, or a
+ * payload of exactly 0xFFFFFFFF bytes, which libzip cannot encode in a
+ * local header). */
 COZIP_API cozip_status_t cozip_plan(cozip_entry_t *entries, size_t n,
                                     cozip_error_t *err);
 
 /* Size of the index payload that cozip_build_index_payload would produce.
  * Use the result to size the output buffer.
  *
- * Errors: INVALID_ARGUMENT (name > UINT16_MAX, or payload >= ZIP32 limit;
- *         the index entry is ZIP32 by spec 5.2.1, so it cannot use ZIP64).
+ * Errors: INVALID_ARGUMENT (NULL output; NULL/empty/non-ASCII/oversized or
+ *         duplicate indexed names; reserved `__cozip__`; too many entries;
+ *         or payload >= ZIP32 limit; the index entry is
+ *         ZIP32 by spec 5.2.1, so it cannot use ZIP64).
  */
 COZIP_API cozip_status_t cozip_index_payload_size(const cozip_entry_t *entries,
                                                   size_t n,
@@ -205,11 +256,11 @@ COZIP_API cozip_status_t cozip_index_payload_size(const cozip_entry_t *entries,
 
 /* Serialize the index payload into `out`. Layout: 11-byte header, then
  * name lengths, names, offsets, sizes. Only in_index=true entries are
- * written, in their order in `entries`. `profile` is recorded verbatim
- * in the third header byte; values are not validated.
+ * written, in their order in `entries`. `profile` is recorded in the third
+ * header byte and must be between 0 and 255.
  *
- * Errors: same INVALID_ARGUMENT as cozip_index_payload_size, plus
- *         BUFFER_TOO_SMALL.
+ * Errors: same INVALID_ARGUMENT as cozip_index_payload_size, a NULL output,
+ *         plus BUFFER_TOO_SMALL.
  */
 COZIP_API cozip_status_t cozip_build_index_payload(const cozip_entry_t *entries,
                                                    size_t n,
@@ -224,16 +275,28 @@ COZIP_API void cozip_build_extra_field(uint8_t out[COZIP_EXTRA_FIELD_SIZE]);
 
 
 /* Write the planned archive to disk via libzip, then re-read and
- * validate that what landed matches the plan: __cozip__ LFH (the first
- * 51 bytes), index size, and every priority entry's LFH (signature, GP
- * flags, STORE method, sizes, name and extra lengths, payload offset).
+ * validate that what landed matches the plan: the __cozip__ LFH (the
+ * first 51 bytes, including the 0xCA0C extra), every entry's LFH at its
+ * planned offset (signature, GP flags, STORE method, ZIP32 or ZIP64
+ * sizes, name and extra lengths, name bytes), the contiguity of the
+ * planned layout, and a trailing comment-free EOCD. `entries` must have
+ * been planned with cozip_plan.
  *
- * Every entry uses STORE compression and UTF-8 names. The integrity
- * hash is left zero; call cozip_patch_integrity_hash next.
+ * Every entry uses STORE compression and ASCII names. Zero-byte payloads are
+ * rejected before the output is opened. The integrity hash is left zero;
+ * call cozip_patch_integrity_hash next.
  *
- * Errors: INVALID_ARGUMENT (source.kind == NONE, or BUFFER size doesn't
- *         match payload_size), INVALID_LFH (post-write check failed; the
- *         archive must be considered invalid), IO.
+ * libzip writes to a temporary file and renames it over out_path only on
+ * success, so a failure before the post-write check leaves any
+ * pre-existing file untouched. If the post-write check fails, cozip removes
+ * the new file. A cleanup failure returns IO and warns that the invalid output
+ * may remain.
+ *
+ * Errors: INVALID_ARGUMENT (NULL arguments, invalid names or paths,
+ *         zero-byte payload, source.kind == NONE, invalid path source,
+ *         source-size drift, output/source alias, NULL buffer, or BUFFER size
+ *         mismatch), INVALID_LFH (post-write check failed and cleanup
+ *         succeeded), IO.
  */
 COZIP_API cozip_status_t cozip_write_archive(const char *out_path,
                                              const cozip_entry_t *entries,
@@ -244,10 +307,11 @@ COZIP_API cozip_status_t cozip_write_archive(const char *out_path,
 
 /* Compute FNV-1a 64 over (index region) ++ (trailing 32 KiB) and patch
  * bytes 43..50. Overlap on small archives is hashed once. Only those 8
- * bytes are modified; the file is opened r+b.
+ * bytes are modified; the file is opened r+b and the close is checked,
+ * so a failed flush is reported instead of leaving a zero hash.
  *
- * Errors: ARCHIVE_TOO_SMALL, INVALID_ARGUMENT (zero or oversized
- *         index_payload_size), IO.
+ * Errors: ARCHIVE_TOO_SMALL, INVALID_ARGUMENT (empty archive path,
+ *         zero or oversized index_payload_size), IO.
  */
 COZIP_API cozip_status_t cozip_patch_integrity_hash(const char *archive_path,
                                                     size_t index_payload_size,
@@ -258,7 +322,8 @@ COZIP_API cozip_status_t cozip_patch_integrity_hash(const char *archive_path,
  * bindings that drive the pipeline step by step. */
 
 /* Predicted on-disk size of a planned ZIP32-only archive.
- * `entries` must already have been planned. */
+ * `entries` must already have been planned. Returns UINT64_MAX if the
+ * calculation overflows or entries is NULL while n is non-zero. */
 COZIP_API uint64_t cozip_predict_zip32_archive_size(
     const cozip_entry_t *entries, size_t n, size_t index_payload_size);
 
@@ -272,9 +337,16 @@ COZIP_API uint64_t cozip_required_padding_payload(uint64_t predicted);
  *
  * `capacity >= n_entries + 1` to leave room for an optional
  * __cozip_padding__ entry. `profile` is passed to the index payload
- * verbatim; profile-level rules are the bindings' problem.
+ * verbatim. For COZIP_PROFILE_TACO, entries marked in_index=true must
+ * form one final contiguous block; optional padding is inserted before
+ * that block. The function may therefore shift those entries one slot
+ * to the right. The generic function does not validate profile filenames or
+ * payload semantics.
  *
- * On non-OK, the archive at out_path is unspecified.
+ * A failure before libzip renames its temporary file leaves any pre-existing
+ * file untouched. After the rename, cozip removes an output that fails
+ * verification or hash patching. If cleanup itself fails, the function
+ * returns IO and the error says that an invalid output may remain.
  */
 COZIP_API cozip_status_t cozip_finalize(const char *out_path,
                                         cozip_entry_t *entries,
@@ -284,6 +356,60 @@ COZIP_API cozip_status_t cozip_finalize(const char *out_path,
                                         cozip_error_t *err);
 
 
+/* TACO-profile helpers. Payload contents are opaque to cozip.
+ *
+ * Both helpers enforce the physical rules of spec Part I and 14.2/14.3
+ * that need no payload inspection: portable ASCII names (5.3), no
+ * reserved names, archive-wide uniqueness, non-empty regular-file
+ * sources, COZIP_TACO_COLLECTION_NAME among the priorities, no
+ * "METADATA/<...>.parquet" outside the priorities, and the priorities as
+ * one final contiguous block with optional padding before it. JSON and
+ * Parquet contents, schemas and the set of METADATA files remain the
+ * caller's job.
+ */
+
+/* Plan a TACO archive using existing non-priority files and priority names.
+ * Priority source paths may be NULL because those files do not need to exist
+ * yet. Their names determine the byte-0 index size; their eventual payload
+ * sizes cannot move the preceding non-priority files.
+ *
+ * The caller must initialize *out_plan with COZIP_TACO_PLAN_INIT. On success,
+ * every files[i] receives its source size and final payload offset, and
+ * *out_plan binds the ordered names and sizes to the later write.
+ *
+ * Errors: INVALID_ARGUMENT (name rules above, empty or non-regular
+ *         source, n_priorities == 0), IO (source cannot be stat'ed).
+ */
+COZIP_API cozip_status_t cozip_plan_taco(
+    cozip_path_entry_t *files,
+    size_t n_files,
+    const cozip_path_entry_t *priorities,
+    size_t n_priorities,
+    cozip_taco_plan_t *out_plan,
+    cozip_error_t *err);
+
+/* Write a TACO archive from an earlier plan and materialized priority files.
+ * All priority source paths must now exist and be non-empty. The function
+ * re-stats every source, recomputes the layout in C, rejects drift from plan,
+ * and runs cozip_finalize with COZIP_PROFILE_TACO.
+ *
+ * Cozip never inspects or changes payload contents. The ordered priority
+ * names must be identical to those used for planning. The caller provides
+ * no extra-capacity slot; this helper manages all scratch allocation. An
+ * output path that names any source (same spelling or the same underlying
+ * file when out_path already exists) is rejected before it is opened.
+ * Failure semantics are those of cozip_finalize.
+ */
+COZIP_API cozip_status_t cozip_write_taco(
+    const char *out_path,
+    const cozip_path_entry_t *files,
+    size_t n_files,
+    const cozip_path_entry_t *priorities,
+    size_t n_priorities,
+    const cozip_taco_plan_t *plan,
+    cozip_error_t *err);
+
+
 /* FLAT-profile helpers around cozip_finalize. */
 
 /* Plan a FLAT archive with a placeholder __metadata__ slot at
@@ -291,6 +417,8 @@ COZIP_API cozip_status_t cozip_finalize(const char *out_path,
  * inside cozip_write_flat, so a binding can read them back and write
  * them into the metadata Parquet before that Parquet exists.
  *
+ * User entries must have non-zero payload sizes. Their `in_index` fields are
+ * set to false so `__metadata__` remains the profile's sole priority entry.
  * `capacity >= n_users + 1`.
  */
 COZIP_API cozip_status_t cozip_plan_flat(cozip_entry_t *entries,
@@ -301,8 +429,8 @@ COZIP_API cozip_status_t cozip_plan_flat(cozip_entry_t *entries,
  * already-built metadata Parquet. Configures entries[n_users] for the
  * __metadata__ slot and runs cozip_finalize with COZIP_PROFILE_FLAT.
  *
- * `capacity >= n_users + 2`. `metadata_path` must remain readable
- * until the call returns.
+ * User `in_index` fields are set to false. `capacity >= n_users + 2`.
+ * `metadata_path` must remain readable until the call returns.
  */
 COZIP_API cozip_status_t cozip_write_flat(const char *out_path,
                                           cozip_entry_t *entries,

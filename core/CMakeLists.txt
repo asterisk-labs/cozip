@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 # Single source of truth for the version.
 #
 # cozip/VERSION lives one level up. ALL bindings (this C library, the
-# Python wheel, the R package, future Julia/Rust bindings) read the
+# Python wheel, R package, Julia package, and npm package) read the
 # same file so they cannot drift apart.
 #
 # CalVer of the form YYYY.M.D parses fine into CMake's MAJOR.MINOR.PATCH.

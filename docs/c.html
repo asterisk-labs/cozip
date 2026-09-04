@@ -542,7 +542,7 @@
       <header class="page-header">
         <p class="section-kicker">Quickstart</p>
         <h1 class="page-title">cozip in C.</h1>
-        <p class="page-sub">The reference writer. Python, R, and Julia all wrap this C ABI, so a cozip written in any of them is byte-for-byte identical.</p>
+        <p class="page-sub">The reference writer. Python, R, and Julia use this C ABI for the same layout and ZIP serialization rules.</p>
         <span class="install-line">git clone https://github.com/asterisk-labs/cozip
 cd cozip
 make lib</span>
@@ -595,7 +595,7 @@ make lib</span>
       </div>
 
       <h2>Build and run</h2>
-      <p class="lede">Link against <code>libcozip</code> from <code>./build</code> after running <code>make lib</code>.</p>
+      <p class="lede">Link against <code>libcozip</code> from <code>./build</code> after running <code>make lib</code>. TACO writers use the public <code>cozip_plan_taco</code> and <code>cozip_write_taco</code> functions declared in <code>cozip.h</code>; TACO still creates and validates the JSON and Parquet payloads.</p>
       <div class="code-block">
         <button class="code-copy" type="button" aria-label="Copy code">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
