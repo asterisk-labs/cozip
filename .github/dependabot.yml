@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Lima
+    groups:
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: ci
+
+  # The duckdb submodule is cozip_reader, so this keeps the writer and the
+  # reader extension from drifting apart between releases.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Lima
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: pip
+    directory: /python
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: npm
+    directory: /javascript
+    schedule:
+      interval: monthly
+    groups:
+      javascript:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: deps
