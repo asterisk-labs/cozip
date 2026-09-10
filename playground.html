@@ -435,7 +435,7 @@
 
     <div class="nav-search">
       <input id="url" type="text"
-        value="https://raw.githubusercontent.com/asterisk-labs/cozip_reader/main/test/data/flat_simple.zip"
+        value="https://cdn.jsdelivr.net/gh/asterisk-labs/cozip_reader@main/test/data/flat_simple.zip"
         placeholder="https://example.com/dataset.zip"
         spellcheck="false">
       <button id="go">Load</button>
@@ -527,7 +527,7 @@
 </div>
 
 <script type="module">
-import { read } from 'https://esm.sh/@asterisk-labs/cozip';
+import { read } from 'https://esm.sh/@asterisk-labs/cozip@2026.9.9';
 
 // CRS assumption: all geometries are EPSG:4326 (lat/lon). GeoParquet 1.x default.
 
