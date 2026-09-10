@@ -16,6 +16,7 @@ const COZIP_NAME = "__cozip__";
 const METADATA_NAME = "__metadata__";
 const FORMAT_VERSION = 1;
 const PROFILE_FLAT = 1;
+const PROTECTED_LOCATION_COLUMNS = new Set(["cozip:location", "taco:location"]);
 const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
 const FNV_PRIME = 0x100000001b3n;
 const UINT64_MASK = 0xffffffffffffffffn;
@@ -111,7 +112,7 @@ export async function read(url, opts = {}) {
           "offset",
           "size",
           // This column is produced below, not read from Parquet.
-          ...columns.filter((column) => column !== "cozip:location"),
+          ...columns.filter((column) => !PROTECTED_LOCATION_COLUMNS.has(column)),
         ]),
       )
     : undefined;
@@ -124,16 +125,13 @@ export async function read(url, opts = {}) {
   );
   const rows = await parquetReadObjects({ file, columns: parquetCols, compressors });
 
-  // 4. Inject the VSI path for GDAL consumers.
-  if (location) {
-    for (const row of rows) {
-      row["cozip:location"] = `/vsisubfile/${row.offset}_${row.size},/vsicurl/${url}`;
+  // 4. Never trust reader-owned columns from Parquet; derive the location here.
+  for (const row of rows) {
+    for (const column of PROTECTED_LOCATION_COLUMNS) {
+      delete row[column];
     }
-  } else {
-    // A producer may have used the same name for an extra Parquet column.
-    // The option still promises that the returned manifest omits it.
-    for (const row of rows) {
-      delete row["cozip:location"];
+    if (location) {
+      row["cozip:location"] = `/vsisubfile/${row.offset}_${row.size},/vsicurl/${url}`;
     }
   }
 

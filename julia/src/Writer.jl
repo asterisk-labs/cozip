@@ -14,7 +14,8 @@ using .LibCozip:
     METADATA_NAME
 
 
-const _RESERVED_INPUT_COLUMNS    = Set(["offset", "size"])
+const _PROTECTED_LOCATION_COLUMNS = Set(["cozip:location", "taco:location"])
+const _RESERVED_INPUT_COLUMNS    = union(Set(["offset", "size"]), _PROTECTED_LOCATION_COLUMNS)
 const _REQUIRED_METADATA_COLUMNS = Set(["name", "offset", "size"])
 
 
@@ -306,6 +307,13 @@ function _check_parquet_schema(parquet_path::String)
             "cozip: metadata parquet must NOT contain a 'path' column. " *
             "`path` is filesystem-local and does not belong inside the " *
             "archive. Drop it before writing the parquet."
+        ))
+
+    protected = sort(collect(intersect(_PROTECTED_LOCATION_COLUMNS, Set(cols))))
+    isempty(protected) ||
+        throw(ArgumentError(
+            "cozip: metadata parquet must not contain reader-owned " *
+            "column(s): $protected"
         ))
 
     missing_cols = sort(collect(setdiff(_REQUIRED_METADATA_COLUMNS, Set(cols))))

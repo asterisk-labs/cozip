@@ -54,26 +54,47 @@ read <- function(source, columns = NULL, location = TRUE) {
     DBI::dbExecute(con, "LOAD cozip")
   }
 
-  sql <- sprintf(
-    "SELECT %s FROM read_flat(?, location := %s)",
-    .build_select(columns, location),
-    if (location) "true" else "false"
-  )
+  enabled <- if (location) "true" else "false"
+  sql <- sprintf("SELECT %s FROM read_flat(?, location := %s)",
+                 .build_select(columns, location), enabled)
+  legacy <- FALSE
   result <- tryCatch(
     DBI::dbGetQuery(con, sql, params = list(source)),
     error = function(err) {
       message <- conditionMessage(err)
-      if (grepl("read_flat", message, fixed = TRUE)
-          && grepl("does not exist", message, fixed = TRUE)) {
-        .cozip_stop(paste("the installed cozip extension has no `read_flat()`;",
-                          "reinstall it with INSTALL cozip FROM community"))
+      if (.legacy_flat_signature(message)) {
+        legacy_sql <- sprintf(
+          "SELECT %s FROM read_flat(?, gdal_vsi := %s)",
+          .build_select(columns, location, .LEGACY_LOCATION_COLUMN),
+          enabled
+        )
+      } else if (.missing_read_flat(message)) {
+        legacy_sql <- sprintf(
+          "SELECT %s FROM read_cozip(?, gdal_vsi := %s)",
+          .build_select(columns, location, .LEGACY_LOCATION_COLUMN),
+          enabled
+        )
+      } else {
+        stop(err)
       }
-      stop(err)
+      legacy <<- TRUE
+      DBI::dbGetQuery(con, legacy_sql, params = list(source))
     }
   )
   result <- tibble::as_tibble(result)
-  if (!location && "cozip:location" %in% names(result)) {
-    result <- result[setdiff(names(result), "cozip:location")]
+  protected <- intersect(.PROTECTED_LOCATION_COLUMNS, names(result))
+  if (legacy && location) {
+    result <- result[setdiff(names(result), protected)]
+  } else if ("taco:location" %in% protected) {
+    result <- result[setdiff(names(result), "taco:location")]
+  }
+  if (legacy && location && .LEGACY_LOCATION_COLUMN %in% names(result)) {
+    names(result)[names(result) == .LEGACY_LOCATION_COLUMN] <- .LOCATION_COLUMN
+  }
+  if (!location) {
+    result <- result[setdiff(
+      names(result), c(.LOCATION_COLUMN, .LEGACY_LOCATION_COLUMN)
+    )]
   }
   result
 }
@@ -82,14 +103,43 @@ read <- function(source, columns = NULL, location = TRUE) {
 .quote_ident <- function(s) sprintf('"%s"', gsub('"', '""', s, fixed = TRUE))
 
 
-.build_select <- function(columns, location) {
+.LOCATION_COLUMN <- "cozip:location"
+.LEGACY_LOCATION_COLUMN <- "cozip:gdal_vsi"
+
+
+.build_select <- function(columns, location,
+                          source_location_column = .LOCATION_COLUMN) {
   if (is.null(columns)) {
     return("*")
   }
   required <- c("name", "offset", "size")
-  if (location) required <- c(required, "cozip:location")
-  extras <- columns
-  if (!location) extras <- setdiff(extras, "cozip:location")
+  if (location) required <- c(required, .LOCATION_COLUMN)
+  extras <- setdiff(columns, .PROTECTED_LOCATION_COLUMNS)
   ordered <- c(required, setdiff(extras, required))
-  paste(vapply(ordered, .quote_ident, character(1)), collapse = ", ")
+  expressions <- vapply(ordered, function(column) {
+    source <- if (identical(column, .LOCATION_COLUMN)) {
+      source_location_column
+    } else {
+      column
+    }
+    expression <- .quote_ident(source)
+    if (!identical(source, column)) {
+      expression <- paste(expression, "AS", .quote_ident(column))
+    }
+    expression
+  }, character(1))
+  paste(expressions, collapse = ", ")
+}
+
+
+.legacy_flat_signature <- function(message) {
+  grepl("read_flat", message, fixed = TRUE) &&
+    grepl("gdal_vsi", message, fixed = TRUE) &&
+    grepl("does not support the supplied arguments", message, fixed = TRUE)
+}
+
+
+.missing_read_flat <- function(message) {
+  grepl("read_flat", message, fixed = TRUE) &&
+    grepl("does not exist", message, fixed = TRUE)
 }

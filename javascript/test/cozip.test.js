@@ -74,6 +74,15 @@ test("does not ask Parquet for the synthetic VSI column", async () => {
   );
 });
 
+test("does not expose protected location columns from Parquet", async () => {
+  const manifest = await read(URL, {
+    columns: ["cozip:location", "taco:location"],
+    location: false,
+  });
+  assert.ok(manifest.length > 0);
+  assert.deepEqual(Object.keys(manifest[0]).sort(), ["name", "offset", "size"].sort());
+});
+
 test("columns: [...] keeps requested extras alongside name/offset/size", async () => {
   const all = await read(URL);
   const extraKey = Object.keys(all[0]).find(

@@ -217,6 +217,19 @@ describe("stage_metadata — layout planner", {
     expect_error(cozip::stage_metadata(bad), "reserved")
   })
 
+  it("rejects reader-owned columns in input", {
+    ctx <- local_archive()
+    for (column in c("cozip:location", "taco:location")) {
+      values <- list(
+        name = "a.txt",
+        path = ctx$fixtures$small
+      )
+      values[[column]] <- "must-not-be-stored"
+      bad <- do.call(arrow::arrow_table, values)
+      expect_error(cozip::stage_metadata(bad), "reserved")
+    }
+  })
+
   it("rejects duplicate names", {
     ctx <- local_archive()
     bad <- arrow::arrow_table(
@@ -340,6 +353,22 @@ describe("stage_create — embed user-written parquet verbatim", {
                           make_paths_arg(ctx$input_table), pq),
       "path"
     )
+  })
+
+  it("rejects reader-owned columns in parquet", {
+    ctx <- local_archive()
+    for (column in c("cozip:location", "taco:location")) {
+      md_df <- as.data.frame(cozip::stage_metadata(ctx$input_table)$metadata)
+      md_df[[column]] <- "must-not-be-stored"
+      pq <- file.path(ctx$tmp_path, paste0(gsub(":", "-", column), ".parquet"))
+      arrow::write_parquet(arrow::arrow_table(md_df), pq)
+
+      expect_error(
+        cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
+                            make_paths_arg(ctx$input_table), pq),
+        "reader-owned"
+      )
+    }
   })
 
   it("rejects parquet missing required columns", {

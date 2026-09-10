@@ -266,7 +266,7 @@ class TestSpecInvariants:
                 return self
 
             def df(self):
-                return "manifest"
+                return pd.DataFrame({"name": ["a.txt"]})
 
             def close(self):
                 self.closed = True
@@ -280,7 +280,7 @@ class TestSpecInvariants:
             location=False,
         )
 
-        assert result == "manifest"
+        assert list(result.columns) == ["name"]
         assert queries[-1] == (
             (
                 'SELECT "name", "offset", "size", "category", '
@@ -326,7 +326,7 @@ class TestSpecInvariants:
                 return self
 
             def df(self):
-                return "manifest"
+                return pd.DataFrame({"name": ["a.txt"]})
 
             def close(self):
                 pass
@@ -338,19 +338,28 @@ class TestSpecInvariants:
         monkeypatch.setenv("COZIP_EXTENSION", "/tmp/cozip.duckdb_extension")
         monkeypatch.setitem(sys.modules, "duckdb", SimpleNamespace(connect=connect))
 
-        assert cozip.read("local.zip") == "manifest"
+        assert list(cozip.read("local.zip").columns) == ["name"]
         assert connections == [{"config": {"allow_unsigned_extensions": True}}]
         assert loaded == ["/tmp/cozip.duckdb_extension"]
 
-    def test_reader_rejects_an_extension_without_read_flat(self, monkeypatch) -> None:
+    def test_reader_accepts_the_previous_read_flat_signature(self, monkeypatch) -> None:
+        queries = []
+
         class FakeConnection:
             def execute(self, sql, params=None):
-                if "read_flat(" in sql:
-                    raise RuntimeError("Table Function read_flat does not exist")
+                queries.append((sql, params))
+                if "read_flat(" in sql and "location :=" in sql:
+                    raise RuntimeError(
+                        "Binder Error: Macro read_flat() does not support the "
+                        "supplied arguments. Candidate macros: "
+                        "read_flat(p, gdal_vsi := true)"
+                    )
                 return self
 
             def df(self):
-                return "manifest"
+                return pd.DataFrame(
+                    {"name": ["a.txt"], "cozip:gdal_vsi": ["computed-location"]}
+                )
 
             def close(self):
                 pass
@@ -359,8 +368,43 @@ class TestSpecInvariants:
             sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
         )
 
-        with pytest.raises(RuntimeError, match="reinstall it with INSTALL cozip"):
-            cozip.read("local.zip")
+        result = cozip.read("local.zip")
+
+        assert queries[-1] == (
+            "SELECT * FROM read_flat(?, gdal_vsi := true)",
+            ["local.zip"],
+        )
+        assert list(result.columns) == ["name", "cozip:location"]
+
+    def test_reader_accepts_an_extension_without_read_flat(self, monkeypatch) -> None:
+        queries = []
+
+        class FakeConnection:
+            def execute(self, sql, params=None):
+                queries.append((sql, params))
+                if "read_flat(" in sql:
+                    raise RuntimeError("Table Function read_flat does not exist")
+                return self
+
+            def df(self):
+                return pd.DataFrame(
+                    {"name": ["a.txt"], "cozip:gdal_vsi": ["computed-location"]}
+                )
+
+            def close(self):
+                pass
+
+        monkeypatch.setitem(
+            sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
+        )
+
+        result = cozip.read("local.zip")
+
+        assert queries[-1] == (
+            "SELECT * FROM read_cozip(?, gdal_vsi := true)",
+            ["local.zip"],
+        )
+        assert list(result.columns) == ["name", "cozip:location"]
 
     def test_parquet_suffix_still_uses_cozip_reader(self, monkeypatch) -> None:
         queries = []
@@ -371,7 +415,7 @@ class TestSpecInvariants:
                 return self
 
             def df(self):
-                return "manifest"
+                return pd.DataFrame({"name": ["a.txt"]})
 
             def close(self):
                 pass
@@ -380,7 +424,7 @@ class TestSpecInvariants:
             sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
         )
 
-        assert cozip.read("not-a-cozip.parquet") == "manifest"
+        assert list(cozip.read("not-a-cozip.parquet").columns) == ["name"]
         assert queries[-1] == (
             "SELECT * FROM read_flat(?, location := true)",
             ["not-a-cozip.parquet"],
@@ -472,6 +516,20 @@ class TestStageMetadata:
         with pytest.raises(ValueError, match="reserved"):
             cozip.stage_metadata(bad)
 
+    @pytest.mark.parametrize("column", ["cozip:location", "taco:location"])
+    def test_rejects_reader_owned_column_in_input(
+        self, fixtures: dict[str, Path], column: str
+    ) -> None:
+        bad = pa.table(
+            {
+                "name": ["a.txt"],
+                "path": [str(fixtures["small"])],
+                column: ["must-not-be-stored"],
+            }
+        )
+        with pytest.raises(ValueError, match="reserved"):
+            cozip.stage_metadata(bad)
+
     def test_rejects_duplicate_names(self, fixtures: dict[str, Path]) -> None:
         bad = pa.table(
             {
@@ -542,6 +600,24 @@ class TestStageCreate:
         pq.write_table(tampered, meta_pq)
 
         with pytest.raises(ValueError, match="path"):
+            cozip.stage_create(tmp_path / "out.zip", paths_arg, meta_pq)
+
+    @pytest.mark.parametrize("column", ["cozip:location", "taco:location"])
+    def test_rejects_reader_owned_column_in_parquet(
+        self,
+        tmp_path: Path,
+        input_table: pa.Table,
+        paths_arg,
+        column: str,
+    ) -> None:
+        meta, _ = cozip.stage_metadata(input_table)
+        tampered = meta.append_column(
+            column, pa.array(["must-not-be-stored"] * len(meta))
+        )
+        meta_pq = tmp_path / "meta.parquet"
+        pq.write_table(tampered, meta_pq)
+
+        with pytest.raises(ValueError, match="reader-owned"):
             cozip.stage_create(tmp_path / "out.zip", paths_arg, meta_pq)
 
     def test_rejects_parquet_missing_required_columns(

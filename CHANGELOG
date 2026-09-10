@@ -15,13 +15,11 @@ Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
   `taco:location`. Both names are reserved against producers.
 - The Python, JavaScript, Julia and R readers take `location` instead of
   `gdal_vsi` and emit the new name.
+- Flat writers reject `cozip:location` and `taco:location` both in their input
+  tables and in metadata Parquet files supplied to the final create stage.
+- Readers discard either protected name if it is present in stored metadata
+  and derive the location from the physical payload at read time.
 - No archive changes. The column is computed at read time and never stored.
-
-### Removed
-
-- The Python, Julia and R readers no longer fall back to the deprecated
-  `read_cozip()`. It could not accept the renamed argument. An extension
-  without `read_flat()` now raises a clear error asking for a reinstall.
 
 ## [2026.9.4] — 2026-09-04
 

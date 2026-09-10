@@ -12,8 +12,9 @@
 .RESERVED_NAMES <- NULL
 .META_NAME      <- NULL
 
-# Columns the binding computes; rejected in stage_metadata() input.
-.RESERVED_INPUT_COLUMNS <- c("offset", "size")
+# Columns owned by the writer or reader; producers must never persist them.
+.PROTECTED_LOCATION_COLUMNS <- c("cozip:location", "taco:location")
+.RESERVED_INPUT_COLUMNS <- c("offset", "size", .PROTECTED_LOCATION_COLUMNS)
 
 # Columns required in the metadata parquet for stage_create().
 .REQUIRED_METADATA_COLUMNS <- c("name", "offset", "size")

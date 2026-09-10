@@ -385,6 +385,15 @@ end
             @test_throws "reserved" stage_metadata(bad)
         end
 
+        @testset "rejects reader-owned columns in input" begin
+            fix = make_fixtures()
+            for column in ("cozip:location", "taco:location")
+                bad = DataFrame(name = ["a.txt"], path = [fix.small])
+                bad[!, Symbol(column)] = ["must-not-be-stored"]
+                @test_throws "reserved" stage_metadata(bad)
+            end
+        end
+
         @testset "rejects duplicate names" begin
             fix = make_fixtures()
             bad = DataFrame(name = ["x", "x"], path = [fix.small, fix.medium])
@@ -473,6 +482,23 @@ end
                 make_paths_arg(tbl),
                 pq,
             )
+        end
+
+        @testset "rejects reader-owned columns in parquet" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            for column in ("cozip:location", "taco:location")
+                md = stage_metadata(tbl).metadata
+                md[!, Symbol(column)] = fill("must-not-be-stored", nrow(md))
+                pq = joinpath(fix.tmp, replace(column, ":" => "-") * ".parquet")
+                _write_parquet(md, pq)
+
+                @test_throws "reader-owned" stage_create(
+                    joinpath(fix.tmp, "out.zip"),
+                    make_paths_arg(tbl),
+                    pq,
+                )
+            end
         end
 
         @testset "rejects parquet missing required columns" begin

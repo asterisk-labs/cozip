@@ -28,8 +28,9 @@ _PADDING_NAME = ffi.string(lib.cozip_padding_name()).decode("ascii")
 _METADATA_NAME = ffi.string(lib.cozip_flat_metadata_name()).decode("ascii")
 _RESERVED_NAMES = frozenset({_INDEX_NAME, _METADATA_NAME, _PADDING_NAME})
 
-# Columns the binding computes; rejected if present in the input table.
-_RESERVED_INPUT_COLUMNS = frozenset({"offset", "size"})
+# Columns owned by the writer or reader; producers must never persist them.
+_PROTECTED_LOCATION_COLUMNS = frozenset({"cozip:location", "taco:location"})
+_RESERVED_INPUT_COLUMNS = frozenset({"offset", "size"}) | _PROTECTED_LOCATION_COLUMNS
 
 # Columns required in the metadata parquet that goes into the archive.
 _REQUIRED_METADATA_COLUMNS = frozenset({"name", "offset", "size"})
@@ -198,6 +199,13 @@ def _check_parquet_schema(parquet_path: str) -> None:
             "cozip: metadata parquet must not contain a 'path' column. "
             "`path` is filesystem-local and does not belong inside the "
             "archive. Drop it before writing the parquet."
+        )
+
+    protected = sorted(_PROTECTED_LOCATION_COLUMNS & cols)
+    if protected:
+        raise ValueError(
+            "cozip: metadata parquet must not contain reader-owned column(s): "
+            f"{protected}"
         )
 
     missing = _REQUIRED_METADATA_COLUMNS - cols

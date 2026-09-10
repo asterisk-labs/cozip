@@ -325,6 +325,8 @@ A profile **MAY** reserve additional filenames, require certain priority files t
 
 A profile **MUST NOT** modify or relax any requirement of Part I, including the binary structure of the cozip index and the Local File Header layout of the `__cozip__` entry. A registered profile value **MUST NOT** be reassigned or redefined by a successor profile.
 
+The column names `cozip:location` and `taco:location` are owned by readers and reserved across all profiles. A producer **MUST NOT** store either column in any archive metadata file. A reader **MUST** compute location values at read time from the physical payload location and **MUST NOT** trust or expose a stored value under either protected name.
+
 ### 12.4 Reader behavior
 
 Reader behavior for unrecognized profiles is defined in §7.1. A reader **MAY** raise `UNKNOWN_PROFILE` when profile-specific guarantees are required by the application. A reader that supports the declared profile **SHOULD** validate the profile-specific requirements before exposing profile semantics to its caller.
@@ -355,11 +357,11 @@ The Parquet file **MUST** contain at least the following columns:
 | `offset` | uint64 | The entry's payload offset, from byte 0 of the archive. |
 | `size`   | uint64 | The entry's payload byte length. Greater than zero per §5.1.5. |
 
-The `offset` and `size` values are computed by the writer at archive-creation time; the `name` value matches the filename of the corresponding ZIP entry. A producer **MAY** add additional columns to carry user-defined metadata. The names `name`, `offset`, and `size` are reserved by this profile, as are the reader output names listed in §13.4.
+The `offset` and `size` values are computed by the writer at archive-creation time; the `name` value matches the filename of the corresponding ZIP entry. A producer **MAY** add additional columns to carry user-defined metadata. The names `name`, `offset`, and `size` are reserved by this profile. The reader-owned names `cozip:location` and `taco:location` are also prohibited by §12.3.
 
 ### 13.4 Reader output columns
 
-A Flat-profile reader **MUST** emit `cozip:location`. It is computed at read time, **MUST NOT** be stored in `__metadata__`, and its name is reserved (§13.3).
+A Flat-profile reader **MUST** compute `cozip:location` at read time and emit it by default. A reader **MAY** omit the column only when the caller explicitly opts out. The column **MUST NOT** be stored in `__metadata__` (§12.3).
 
 | Column           | Type   | Meaning |
 |------------------|--------|---------|
@@ -396,7 +398,7 @@ A TACO-profile cozip **MUST** include the following priority files in its index:
 1. `COLLECTION.json`;
 2. every Parquet file under the `METADATA/` directory.
 
-The `DATA/` and `METADATA/` layouts, and the contents of `COLLECTION.json` and the metadata Parquet files, are defined by the TACO specification (§14.4).
+The `DATA/` and `METADATA/` layouts, and the contents of `COLLECTION.json` and the metadata Parquet files, are defined by the TACO specification (§14.4). A Parquet file under `METADATA/` **MUST NOT** contain `cozip:location` or `taco:location` (§12.3).
 
 ### 14.3 Position and contiguity
 
@@ -425,13 +427,13 @@ The semantics of `COLLECTION.json`, the Parquet files under `METADATA/`, the `DA
 
 ### 14.5 Reader output columns
 
-A TACO-profile reader **MUST** emit `taco:location`, not the Flat profile's column.
+In the unpivoted file-row view, a TACO-profile reader **MUST** compute and emit `taco:location`, not the Flat profile's column. In the pivoted sample view, the computed location values populate the file columns named by `taco:structure`. A raw metadata-level view does not synthesize location columns. A reader **MAY** replace computed locations with nulls or omit them only when the caller explicitly opts out.
 
 | Column          | Type   | Meaning |
 |-----------------|--------|---------|
 | `taco:location` | string | Where a file can be read from. |
 
-The value is `/vsisubfile/{offset}_{size},A`, composed from `internal:offset`, `internal:size`, and the archive location `A`. It **MUST NOT** be stored. The TACO specification defines the column.
+The value is `/vsisubfile/{offset}_{size},A`, composed from `internal:offset`, `internal:size`, and the archive location `A`. It **MUST NOT** be stored in a metadata Parquet file (§12.3). The TACO specification defines the column.
 
 ### 14.6 File extension
 

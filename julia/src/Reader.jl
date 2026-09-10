@@ -8,6 +8,8 @@ function read end
 
 # Loaded lazily on first Reader.read so `using Cozip` stays offline.
 const _DUCKDB_EXTS_LOADED = Ref(false)
+const _LOCATION_COLUMN = "cozip:location"
+const _LEGACY_LOCATION_COLUMN = "cozip:gdal_vsi"
 
 
 # Caller already holds _DUCKDB_LOCK.
@@ -87,19 +89,41 @@ function read(
             "SELECT ", _build_select(columns, location),
             " FROM read_flat(?, location := ", location ? "true" : "false", ")",
         )
+        legacy = false
         query = try
             DBInterface.execute(con, sql, [src])
         catch err
             message = sprint(showerror, err)
-            if occursin("read_flat", message) && occursin("does not exist", message)
-                error("the installed cozip extension has no read_flat; " *
-                      "reinstall it with INSTALL cozip FROM community")
+            enabled = location ? "true" : "false"
+            legacy_sql = if _legacy_flat_signature(message)
+                string(
+                    "SELECT ", _build_select(columns, location, _LEGACY_LOCATION_COLUMN),
+                    " FROM read_flat(?, gdal_vsi := ", enabled, ")",
+                )
+            elseif _missing_read_flat(message)
+                string(
+                    "SELECT ", _build_select(columns, location, _LEGACY_LOCATION_COLUMN),
+                    " FROM read_cozip(?, gdal_vsi := ", enabled, ")",
+                )
+            else
+                rethrow()
             end
-            rethrow()
+            legacy = true
+            DBInterface.execute(con, legacy_sql, [src])
         end
         result = DataFrame(query)
-        if !location && "cozip:location" in names(result)
-            select!(result, Not(Symbol("cozip:location")))
+        protected = intersect(collect(_PROTECTED_LOCATION_COLUMNS), names(result))
+        if legacy && location
+            isempty(protected) || select!(result, Not(Symbol.(protected)))
+        elseif "taco:location" in protected
+            select!(result, Not(Symbol("taco:location")))
+        end
+        if legacy && location && _LEGACY_LOCATION_COLUMN in names(result)
+            rename!(result, Symbol(_LEGACY_LOCATION_COLUMN) => Symbol(_LOCATION_COLUMN))
+        end
+        if !location
+            drop = intersect([_LOCATION_COLUMN, _LEGACY_LOCATION_COLUMN], names(result))
+            isempty(drop) || select!(result, Not(Symbol.(drop)))
         end
         result
     end
@@ -109,12 +133,27 @@ end
 _quote_ident(s) = "\"" * replace(String(s), "\"" => "\"\"") * "\""
 
 
-function _build_select(columns, location)
+function _build_select(columns, location, source_location_column=_LOCATION_COLUMN)
     columns === nothing && return "*"
     required = ["name", "offset", "size"]
-    location && push!(required, "cozip:location")
+    location && push!(required, _LOCATION_COLUMN)
     extras = String.(columns)
-    location || filter!(c -> c != "cozip:location", extras)
+    filter!(c -> !(c in _PROTECTED_LOCATION_COLUMNS), extras)
     ordered = vcat(required, setdiff(extras, required))
-    join((_quote_ident(c) for c in ordered), ", ")
+    expressions = map(ordered) do column
+        source = column == _LOCATION_COLUMN ? source_location_column : column
+        expression = _quote_ident(source)
+        source == column ? expression : expression * " AS " * _quote_ident(column)
+    end
+    join(expressions, ", ")
 end
+
+
+_legacy_flat_signature(message) =
+    occursin("read_flat", message) &&
+    occursin("gdal_vsi", message) &&
+    occursin("does not support the supplied arguments", message)
+
+
+_missing_read_flat(message) =
+    occursin("read_flat", message) && occursin("does not exist", message)

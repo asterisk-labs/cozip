@@ -271,6 +271,14 @@ create <- function(out_path, table, temp_dir = NULL) {
     )
   }
 
+  protected <- intersect(.PROTECTED_LOCATION_COLUMNS, cols)
+  if (length(protected) > 0L) {
+    .cozip_stop(
+      "metadata parquet must not contain reader-owned column(s): %s",
+      paste(shQuote(protected), collapse = ", ")
+    )
+  }
+
   missing <- setdiff(.REQUIRED_METADATA_COLUMNS, cols)
   if (length(missing) > 0L) {
     .cozip_stop("metadata parquet is missing required column(s): %s",

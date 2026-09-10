@@ -6,6 +6,11 @@ from collections.abc import Sequence
 import pandas as pd
 
 
+_LOCATION_COLUMN = "cozip:location"
+_LEGACY_LOCATION_COLUMN = "cozip:gdal_vsi"
+_PROTECTED_LOCATION_COLUMNS = frozenset({_LOCATION_COLUMN, "taco:location"})
+
+
 def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
@@ -17,9 +22,45 @@ def _selected_columns(
         return None
     required = ["name", "offset", "size"]
     if location:
-        required.append("cozip:location")
-    extras = [column for column in columns if location or column != "cozip:location"]
+        required.append(_LOCATION_COLUMN)
+    extras = [
+        column
+        for column in columns
+        if column not in _PROTECTED_LOCATION_COLUMNS
+    ]
     return list(dict.fromkeys([*required, *extras]))
+
+
+def _projection(
+    columns: Sequence[str] | None,
+    location: bool,
+    source_location_column: str = _LOCATION_COLUMN,
+) -> str:
+    selected = _selected_columns(columns, location)
+    if selected is None:
+        return "*"
+    expressions = []
+    for column in selected:
+        source = (
+            source_location_column if column == _LOCATION_COLUMN else column
+        )
+        expression = _quote_identifier(source)
+        if source != column:
+            expression += f" AS {_quote_identifier(column)}"
+        expressions.append(expression)
+    return ", ".join(expressions)
+
+
+def _legacy_flat_signature(message: str) -> bool:
+    return (
+        "read_flat" in message
+        and "gdal_vsi" in message
+        and "does not support the supplied arguments" in message
+    )
+
+
+def _missing_read_flat(message: str) -> bool:
+    return "read_flat" in message and "does not exist" in message
 
 
 def _read_flat_archive(
@@ -37,26 +78,51 @@ def _read_flat_archive(
             con.load_extension(local_extension)
         else:
             con.execute("INSTALL cozip FROM community; LOAD cozip;")
-        selected = _selected_columns(columns, location)
-        if selected is None:
-            projection = "*"
-        else:
-            projection = ", ".join(map(_quote_identifier, selected))
         enabled = "true" if location else "false"
-        sql = f"SELECT {projection} FROM read_flat(?, location := {enabled})"
+        sql = (
+            f"SELECT {_projection(columns, location)} "
+            f"FROM read_flat(?, location := {enabled})"
+        )
+        legacy = False
         try:
             result = con.execute(sql, [source])
         except Exception as exc:
             message = str(exc)
-            if "read_flat" in message and "does not exist" in message:
-                raise RuntimeError(
-                    "cozip.read: the installed cozip extension has no read_flat; "
-                    "reinstall it with INSTALL cozip FROM community"
-                ) from exc
-            raise
+            if _legacy_flat_signature(message):
+                legacy_sql = (
+                    f"SELECT {_projection(columns, location, _LEGACY_LOCATION_COLUMN)} "
+                    f"FROM read_flat(?, gdal_vsi := {enabled})"
+                )
+            elif _missing_read_flat(message):
+                legacy_sql = (
+                    f"SELECT {_projection(columns, location, _LEGACY_LOCATION_COLUMN)} "
+                    f"FROM read_cozip(?, gdal_vsi := {enabled})"
+                )
+            else:
+                raise
+            result = con.execute(legacy_sql, [source])
+            legacy = True
         df = result.df()
-        if selected is None and not location and "cozip:location" in df.columns:
-            df = df.drop(columns=["cozip:location"])
+        protected = [
+            column
+            for column in _PROTECTED_LOCATION_COLUMNS
+            if column in df.columns
+        ]
+        if legacy and location:
+            if protected:
+                df = df.drop(columns=protected)
+        elif "taco:location" in protected:
+            df = df.drop(columns=["taco:location"])
+        if legacy and location and _LEGACY_LOCATION_COLUMN in df.columns:
+            df = df.rename(columns={_LEGACY_LOCATION_COLUMN: _LOCATION_COLUMN})
+        if not location:
+            synthetic = [
+                column
+                for column in (_LOCATION_COLUMN, _LEGACY_LOCATION_COLUMN)
+                if column in df.columns
+            ]
+            if synthetic:
+                df = df.drop(columns=synthetic)
         return df
     finally:
         con.close()
