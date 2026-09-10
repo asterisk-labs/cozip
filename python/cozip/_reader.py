@@ -48,10 +48,12 @@ def _read_flat_archive(
             result = con.execute(sql, [source])
         except Exception as exc:
             message = str(exc)
-            if "read_flat" not in message or "does not exist" not in message:
-                raise
-            legacy_sql = sql.replace("FROM read_flat(", "FROM read_cozip(", 1)
-            result = con.execute(legacy_sql, [source])
+            if "read_flat" in message and "does not exist" in message:
+                raise RuntimeError(
+                    "cozip.read: the installed cozip extension has no read_flat; "
+                    "reinstall it with INSTALL cozip FROM community"
+                ) from exc
+            raise
         df = result.df()
         if selected is None and not location and "cozip:location" in df.columns:
             df = df.drop(columns=["cozip:location"])

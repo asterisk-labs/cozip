@@ -63,12 +63,12 @@ read <- function(source, columns = NULL, location = TRUE) {
     DBI::dbGetQuery(con, sql, params = list(source)),
     error = function(err) {
       message <- conditionMessage(err)
-      if (!grepl("read_flat", message, fixed = TRUE)
-          || !grepl("does not exist", message, fixed = TRUE)) {
-        stop(err)
+      if (grepl("read_flat", message, fixed = TRUE)
+          && grepl("does not exist", message, fixed = TRUE)) {
+        .cozip_stop(paste("the installed cozip extension has no `read_flat()`;",
+                          "reinstall it with INSTALL cozip FROM community"))
       }
-      legacy_sql <- sub("FROM read_flat\\(", "FROM read_cozip(", sql)
-      DBI::dbGetQuery(con, legacy_sql, params = list(source))
+      stop(err)
     }
   )
   result <- tibble::as_tibble(result)

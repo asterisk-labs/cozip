@@ -91,11 +91,11 @@ function read(
             DBInterface.execute(con, sql, [src])
         catch err
             message = sprint(showerror, err)
-            if !occursin("read_flat", message) || !occursin("does not exist", message)
-                rethrow()
+            if occursin("read_flat", message) && occursin("does not exist", message)
+                error("the installed cozip extension has no read_flat; " *
+                      "reinstall it with INSTALL cozip FROM community")
             end
-            legacy_sql = replace(sql, "read_flat(" => "read_cozip("; count=1)
-            DBInterface.execute(con, legacy_sql, [src])
+            rethrow()
         end
         result = DataFrame(query)
         if !location && "cozip:location" in names(result)

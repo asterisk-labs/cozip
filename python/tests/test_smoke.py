@@ -342,12 +342,9 @@ class TestSpecInvariants:
         assert connections == [{"config": {"allow_unsigned_extensions": True}}]
         assert loaded == ["/tmp/cozip.duckdb_extension"]
 
-    def test_reader_falls_back_to_the_pre_2_0_name(self, monkeypatch) -> None:
-        queries = []
-
+    def test_reader_rejects_an_extension_without_read_flat(self, monkeypatch) -> None:
         class FakeConnection:
             def execute(self, sql, params=None):
-                queries.append(sql)
                 if "read_flat(" in sql:
                     raise RuntimeError("Table Function read_flat does not exist")
                 return self
@@ -362,8 +359,8 @@ class TestSpecInvariants:
             sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
         )
 
-        assert cozip.read("local.zip") == "manifest"
-        assert "read_cozip(" in queries[-1]
+        with pytest.raises(RuntimeError, match="reinstall it with INSTALL cozip"):
+            cozip.read("local.zip")
 
     def test_parquet_suffix_still_uses_cozip_reader(self, monkeypatch) -> None:
         queries = []
