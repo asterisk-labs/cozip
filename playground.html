@@ -84,19 +84,6 @@
     flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center;
     margin: 0 8px;
   }
-  .example-select {
-    flex: 0 0 168px; width: 168px; min-width: 0;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    color: var(--ink-2); padding: 10px 12px; border-radius: 999px;
-    font-family: inherit; font-size: 13px; font-weight: 700;
-    cursor: pointer;
-    transition: border-color .15s, box-shadow .15s;
-  }
-  .example-select:focus {
-    outline: none; border-color: var(--magenta);
-    box-shadow: 0 0 0 4px rgba(73, 42, 232, 0.12);
-  }
   .nav-search input {
     flex: 1; min-width: 0;
     background: var(--surface);
@@ -174,7 +161,7 @@
 
   /* ─── Attribution (bottom-right) ────────────────────────────── */
   .attribution {
-    position: absolute; bottom: 1rem; right: 1rem; z-index: 10;
+    position: absolute; bottom: 2.25rem; right: 1rem; z-index: 10;
     display: inline-flex; align-items: center; gap: 6px;
     padding: 8px 14px;
     background: rgba(255, 255, 255, 0.86);
@@ -409,9 +396,10 @@
   }
 
   /* ─── MapLibre overrides (light theme) ──────────────────────── */
-  .maplibregl-ctrl-bottom-right { display: none; }
   .maplibregl-ctrl-bottom-left { z-index: 5; }
-  .maplibregl-ctrl-attrib { display: none; }
+  .maplibregl-ctrl-attrib {
+    color: var(--ink-3); font-family: "League Spartan", system-ui, sans-serif;
+  }
   .maplibregl-ctrl-group {
     background: var(--surface) !important;
     border: 1px solid var(--line) !important;
@@ -429,9 +417,6 @@
     .brand-sub { display: none; }
   }
   @media (max-width: 640px) {
-    :root { --nav-height: 178px; }
-    .nav-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-    .example-select { grid-column: 1 / -1; width: 100%; }
     .meta-panel { top: auto; bottom: 1rem; right: 1rem; left: 1rem; width: auto; max-height: 65vh; }
     .stats, .attribution { display: none !important; }
     .nav-link:not(.primary) span { display: none; }
@@ -450,18 +435,19 @@
     </a>
 
     <div class="nav-search">
-      <select class="example-select" id="example" aria-label="Choose an example cozip">
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip">Cities · points</option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/routes.zip">Routes · lines</option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/regions.zip">Regions · polygons</option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/geometry-showcase.zip">Geometry showcase</option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/plain-files.zip">Plain files · no map</option>
-        <option value="">Custom URL</option>
-      </select>
       <input id="url" type="text"
+        list="example-list"
         value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"
         placeholder="https://example.com/dataset.zip"
+        aria-label="Cozip URL or example"
         spellcheck="false">
+      <datalist id="example-list">
+        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip" label="Cities · points"></option>
+        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/routes.zip" label="Routes · lines"></option>
+        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/regions.zip" label="Regions · polygons"></option>
+        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/geometry-showcase.zip" label="Geometry showcase"></option>
+        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/plain-files.zip" label="Plain files · no map"></option>
+      </datalist>
       <button id="go">Load</button>
     </div>
 
@@ -555,8 +541,7 @@ import { read } from 'https://esm.sh/@asterisk-labs/cozip@2026.9.9';
 
 // CRS assumption: all geometries are EPSG:4326 (lat/lon). GeoParquet 1.x default.
 
-const $example=document.getElementById('example'),
-      $url=document.getElementById('url'),$go=document.getElementById('go'),
+const $url=document.getElementById('url'),$go=document.getElementById('go'),
       $stats=document.getElementById('stats'),$statCount=document.getElementById('stat-count'),
       $statTime=document.getElementById('stat-time'),$statGeom=document.getElementById('stat-geom'),
       $panel=document.getElementById('meta-panel'),$title=document.getElementById('meta-title'),
@@ -671,25 +656,10 @@ function parseGeometryValue(v){
   return null;
 }
 
-// ─── Map setup (light Positron basemap) ───────────────────────────────────
+// ─── Map setup (OpenFreeMap Positron basemap) ─────────────────────────────
 const map = new maplibregl.Map({
   container:'map',
-  style:{
-    version:8,
-    sources:{
-      'carto-light':{
-        type:'raster',
-        tiles:['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-               'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-               'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'],
-        tileSize:256, attribution:'© OpenStreetMap © CARTO'
-      }
-    },
-    layers:[
-      { id:'bg', type:'background', paint:{ 'background-color':'#fafaf7' } },
-      { id:'carto', type:'raster', source:'carto-light' }
-    ]
-  },
+  style:'https://tiles.openfreemap.org/styles/positron',
   center:[0,25], zoom:1.6, pitch:0, antialias:true
 });
 
@@ -1088,16 +1058,6 @@ $download.addEventListener('click', async () => {
 });
 
 $go.addEventListener('click', loadCozip);
-$example.addEventListener('change', () => {
-  if(!$example.value){ $url.focus(); return; }
-  $url.value=$example.value;
-  loadCozip();
-});
-$url.addEventListener('input', () => {
-  const value=$url.value.trim();
-  const known=[...$example.options].some(option => option.value && option.value===value);
-  $example.value=known ? value : '';
-});
 $url.addEventListener('keydown', e => { if(e.key==='Enter') loadCozip(); });
 $close.addEventListener('click', hidePanel);
 </script>
