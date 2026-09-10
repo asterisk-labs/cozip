@@ -6,7 +6,7 @@ from the repository's `VERSION` file; `make sync` updates the package copies.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 
-## Unreleased
+## [2026.9.9] — 2026-09-09
 
 ### Changed
 
@@ -380,6 +380,7 @@ Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 - GitHub Release with `libcozip-<version>-<platform>.{tar.gz,zip}`
   archives for C-standalone consumers.
 
+[2026.9.9]: https://github.com/asterisk-labs/cozip/compare/v2026.9.4...v2026.9.9
 [2026.9.4]: https://github.com/asterisk-labs/cozip/compare/v2026.5.22...v2026.9.4
 [2026.5.22]: https://github.com/asterisk-labs/cozip/compare/v2026.5.10...v2026.5.22
 [2026.5.10]: https://github.com/asterisk-labs/cozip/compare/v2026.5.2...v2026.5.10

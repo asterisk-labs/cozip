@@ -1,6 +1,6 @@
 {
   "name": "@asterisk-labs/cozip",
-  "version": "2026.9.4",
+  "version": "2026.9.9",
   "description": "Pure-JS reader for Cloud-Optimized ZIP (cozip) archives over HTTP.",
   "type": "module",
   "exports": {
