@@ -7,6 +7,7 @@
 <link rel="icon" href="https://asterisk.coop/cozip/images/cozip_logo.svg" type="image/svg+xml">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="./data/natural-earth-countries.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -84,20 +85,60 @@
     flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center;
     margin: 0 8px;
   }
-  .nav-search input {
+  .url-combobox {
+    position: relative; flex: 1; min-width: 0;
+    display: flex; align-items: stretch;
     flex: 1; min-width: 0;
     background: var(--surface);
-    border: 1px solid var(--line);
-    color: var(--ink); padding: 10px 14px; border-radius: 999px;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 13px; font-weight: 500;
+    border: 1px solid var(--line); border-radius: 999px;
     transition: border-color .15s, box-shadow .15s;
   }
-  .nav-search input:focus {
-    outline: none; border-color: var(--magenta);
+  .url-combobox:focus-within {
+    border-color: var(--magenta);
     box-shadow: 0 0 0 4px rgba(73, 42, 232, 0.12);
   }
-  .nav-search button {
+  .example-trigger {
+    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    max-width: 150px; padding: 10px 12px;
+    background: transparent; color: var(--ink-2);
+    border: none; border-right: 1px solid var(--line);
+    border-radius: 999px 0 0 999px;
+    font-family: inherit; font-size: 13px; font-weight: 800;
+    cursor: pointer;
+  }
+  .example-trigger:hover { color: var(--magenta); background: rgba(73, 42, 232, 0.05); }
+  .example-trigger:focus { outline: none; }
+  .example-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .example-caret { font-size: 11px; transition: transform .15s; }
+  .example-trigger[aria-expanded="true"] .example-caret { transform: rotate(180deg); }
+  .nav-search input {
+    flex: 1; min-width: 0;
+    background: transparent; border: none;
+    color: var(--ink); padding: 10px 14px; border-radius: 0 999px 999px 0;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px; font-weight: 500;
+  }
+  .nav-search input:focus { outline: none; }
+  .example-menu {
+    position: absolute; top: calc(100% + 8px); left: 0; z-index: 200;
+    width: min(290px, calc(100vw - 24px)); padding: 6px;
+    display: none; gap: 2px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+  }
+  .example-menu.open { display: grid; }
+  .example-option {
+    width: 100%; padding: 10px 12px;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    background: transparent; color: var(--ink-2); border: none; border-radius: 10px;
+    font-family: inherit; text-align: left; cursor: pointer;
+  }
+  .example-option:hover, .example-option[aria-selected="true"] {
+    background: rgba(73, 42, 232, 0.08); color: var(--magenta);
+  }
+  .example-option strong { font-size: 13px; font-weight: 800; }
+  .example-option span { color: var(--ink-4); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .load-btn {
     background: var(--magenta); color: #fff;
     border: none; padding: 10px 20px; border-radius: 999px;
     font-family: inherit; font-size: 14px; font-weight: 800;
@@ -105,11 +146,11 @@
     box-shadow: 0 8px 20px rgba(73, 42, 232, 0.25);
     transition: transform .15s, box-shadow .15s, background .15s;
   }
-  .nav-search button:hover:not(:disabled) {
+  .load-btn:hover:not(:disabled) {
     transform: translateY(-1px); background: #351ec8;
     box-shadow: 0 12px 28px rgba(73, 42, 232, 0.32);
   }
-  .nav-search button:disabled { opacity: 0.5; cursor: wait; }
+  .load-btn:disabled { opacity: 0.5; cursor: wait; }
 
   .nav-links { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .nav-link {
@@ -161,7 +202,7 @@
 
   /* ─── Attribution (bottom-right) ────────────────────────────── */
   .attribution {
-    position: absolute; bottom: 2.25rem; right: 1rem; z-index: 10;
+    position: absolute; bottom: 1rem; right: 1rem; z-index: 10;
     display: inline-flex; align-items: center; gap: 6px;
     padding: 8px 14px;
     background: rgba(255, 255, 255, 0.86);
@@ -397,9 +438,6 @@
 
   /* ─── MapLibre overrides (light theme) ──────────────────────── */
   .maplibregl-ctrl-bottom-left { z-index: 5; }
-  .maplibregl-ctrl-attrib {
-    color: var(--ink-3); font-family: "League Spartan", system-ui, sans-serif;
-  }
   .maplibregl-ctrl-group {
     background: var(--surface) !important;
     border: 1px solid var(--line) !important;
@@ -418,7 +456,8 @@
   }
   @media (max-width: 640px) {
     .meta-panel { top: auto; bottom: 1rem; right: 1rem; left: 1rem; width: auto; max-height: 65vh; }
-    .stats, .attribution { display: none !important; }
+    .stats { display: none !important; }
+    .attribution { right: .5rem; bottom: .5rem; padding: 6px 9px; font-size: 10px; }
     .nav-link:not(.primary) span { display: none; }
     .manifest-table th, .manifest-table td { padding: 8px 10px; font-size: 12px; }
   }
@@ -435,20 +474,25 @@
     </a>
 
     <div class="nav-search">
-      <input id="url" type="text"
-        list="example-list"
-        value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"
-        placeholder="https://example.com/dataset.zip"
-        aria-label="Cozip URL or example"
-        spellcheck="false">
-      <datalist id="example-list">
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip" label="Cities · points"></option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/routes.zip" label="Routes · lines"></option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/regions.zip" label="Regions · polygons"></option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/geometry-showcase.zip" label="Geometry showcase"></option>
-        <option value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/plain-files.zip" label="Plain files · no map"></option>
-      </datalist>
-      <button id="go">Load</button>
+      <div class="url-combobox" id="url-combobox">
+        <button class="example-trigger" id="example-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="example-menu">
+          <span class="example-label" id="example-label">Cities</span>
+          <span class="example-caret" aria-hidden="true">▼</span>
+        </button>
+        <input id="url" type="text"
+          value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"
+          placeholder="https://example.com/dataset.zip"
+          aria-label="Cozip URL"
+          spellcheck="false">
+        <div class="example-menu" id="example-menu" role="listbox" aria-label="Example cozips">
+          <button class="example-option" type="button" role="option" aria-selected="true" data-label="Cities" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"><strong>Cities</strong><span>12 points</span></button>
+          <button class="example-option" type="button" role="option" aria-selected="false" data-label="Routes" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/routes.zip"><strong>Routes</strong><span>11 lines</span></button>
+          <button class="example-option" type="button" role="option" aria-selected="false" data-label="Regions" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/regions.zip"><strong>Regions</strong><span>18 polygons</span></button>
+          <button class="example-option" type="button" role="option" aria-selected="false" data-label="Showcase" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/geometry-showcase.zip"><strong>Geometry showcase</strong><span>mixed</span></button>
+          <button class="example-option" type="button" role="option" aria-selected="false" data-label="Plain files" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/plain-files.zip"><strong>Plain files</strong><span>no map</span></button>
+        </div>
+      </div>
+      <button class="load-btn" id="go">Load</button>
     </div>
 
     <div class="nav-links">
@@ -541,7 +585,11 @@ import { read } from 'https://esm.sh/@asterisk-labs/cozip@2026.9.9';
 
 // CRS assumption: all geometries are EPSG:4326 (lat/lon). GeoParquet 1.x default.
 
-const $url=document.getElementById('url'),$go=document.getElementById('go'),
+const $urlCombo=document.getElementById('url-combobox'),
+      $exampleTrigger=document.getElementById('example-trigger'),
+      $exampleLabel=document.getElementById('example-label'),
+      $exampleMenu=document.getElementById('example-menu'),
+      $url=document.getElementById('url'),$go=document.getElementById('go'),
       $stats=document.getElementById('stats'),$statCount=document.getElementById('stat-count'),
       $statTime=document.getElementById('stat-time'),$statGeom=document.getElementById('stat-geom'),
       $panel=document.getElementById('meta-panel'),$title=document.getElementById('meta-title'),
@@ -656,10 +704,35 @@ function parseGeometryValue(v){
   return null;
 }
 
-// ─── Map setup (OpenFreeMap Positron basemap) ─────────────────────────────
+// ─── Map setup (Natural Earth 1:110m countries, public domain) ─────────────
 const map = new maplibregl.Map({
   container:'map',
-  style:'https://tiles.openfreemap.org/styles/positron',
+  style:{
+    version:8,
+    sources:{
+      'natural-earth':{
+        type:'geojson',
+        data:window.NATURAL_EARTH_COUNTRIES,
+        tolerance:0.4,
+        maxzoom:5
+      }
+    },
+    layers:[
+      {
+        id:'ocean', type:'background',
+        paint:{'background-color':'#d9dfe1'}
+      },
+      {
+        id:'countries', type:'fill', source:'natural-earth',
+        paint:{'fill-color':'#fbfbf8','fill-opacity':1}
+      },
+      {
+        id:'country-borders', type:'line', source:'natural-earth',
+        paint:{'line-color':'#d3cec4','line-width':0.75}
+      }
+    ]
+  },
+  attributionControl:false,
   center:[0,25], zoom:1.6, pitch:0, antialias:true
 });
 
@@ -1058,7 +1131,43 @@ $download.addEventListener('click', async () => {
 });
 
 $go.addEventListener('click', loadCozip);
+$exampleTrigger.addEventListener('click', () => {
+  const open=$exampleMenu.classList.toggle('open');
+  $exampleTrigger.setAttribute('aria-expanded', String(open));
+});
+$exampleMenu.addEventListener('click', event => {
+  const option=event.target.closest('.example-option');
+  if(!option) return;
+  $url.value=option.dataset.url;
+  $exampleLabel.textContent=option.dataset.label;
+  $exampleMenu.querySelectorAll('.example-option').forEach(item => {
+    item.setAttribute('aria-selected', String(item===option));
+  });
+  $exampleMenu.classList.remove('open');
+  $exampleTrigger.setAttribute('aria-expanded', 'false');
+  loadCozip();
+});
+$url.addEventListener('input', () => {
+  const option=[...$exampleMenu.querySelectorAll('.example-option')]
+    .find(item => item.dataset.url===$url.value.trim());
+  $exampleLabel.textContent=option ? option.dataset.label : 'Custom';
+  $exampleMenu.querySelectorAll('.example-option').forEach(item => {
+    item.setAttribute('aria-selected', String(item===option));
+  });
+});
 $url.addEventListener('keydown', e => { if(e.key==='Enter') loadCozip(); });
+$urlCombo.addEventListener('keydown', event => {
+  if(event.key==='Escape'){
+    $exampleMenu.classList.remove('open');
+    $exampleTrigger.setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('click', event => {
+  if(!$urlCombo.contains(event.target)){
+    $exampleMenu.classList.remove('open');
+    $exampleTrigger.setAttribute('aria-expanded', 'false');
+  }
+});
 $close.addEventListener('click', hidePanel);
 </script>
 </body>
