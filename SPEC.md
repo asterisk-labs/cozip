@@ -1,9 +1,9 @@
 # Cloud Optimized ZIP Format Specification
 
-**Version** 1.1.0
+**Version** 0.1.0
 **Binary format version** 1  
 **Status** Stable  
-**Date** 2026-09-03
+**Date** 2026-09-09
 
 **License** CC BY 4.0
 
@@ -355,13 +355,23 @@ The Parquet file **MUST** contain at least the following columns:
 | `offset` | uint64 | The entry's payload offset, from byte 0 of the archive. |
 | `size`   | uint64 | The entry's payload byte length. Greater than zero per §5.1.5. |
 
-The `offset` and `size` values are computed by the writer at archive-creation time; the `name` value matches the filename of the corresponding ZIP entry. A producer **MAY** add additional columns to carry user-defined metadata. The names `name`, `offset`, and `size` are reserved by this profile.
+The `offset` and `size` values are computed by the writer at archive-creation time; the `name` value matches the filename of the corresponding ZIP entry. A producer **MAY** add additional columns to carry user-defined metadata. The names `name`, `offset`, and `size` are reserved by this profile, as are the reader output names listed in §13.4.
 
-### 13.4 File extension
+### 13.4 Reader output columns
+
+A Flat-profile reader **MUST** emit `cozip:location`. It is computed at read time, **MUST NOT** be stored in `__metadata__`, and its name is reserved (§13.3).
+
+| Column           | Type   | Meaning |
+|------------------|--------|---------|
+| `cozip:location` | string | Where the entry's payload can be read from. |
+
+For an archive opened at `A`, the value is `/vsisubfile/{offset}_{size},A`. When `A` is an HTTP or HTTPS URL, it is wrapped as `/vsicurl/A` first. The reader composes it because only the reader knows `A`.
+
+### 13.5 File extension
 
 A Flat-profile cozip uses the file extension `.zip`. The MIME type is `application/zip`.
 
-### 13.5 GeoParquet metadata (informative)
+### 13.6 GeoParquet metadata (informative)
 
 Because the Flat profile permits additional columns in `__metadata__` (§13.3), a producer **MAY** encode `__metadata__` as a [GeoParquet] file by attaching a geometry column and the required `geo` key in the Parquet file-level metadata. The reserved `name`, `offset`, and `size` columns and the one-row-per-entry semantics of §13.3 apply unchanged.
 
@@ -413,7 +423,17 @@ The returned region may contain Local File Headers between priority payloads; th
 
 The semantics of `COLLECTION.json`, the Parquet files under `METADATA/`, the `DATA/` layout, TACO metadata columns such as `internal:offset` and `internal:size`, and the dataset contract are defined by the TACO specification. This cozip profile only defines how the TACO ZIP-mode priority files are made byte-addressable through the cozip index.
 
-### 14.5 File extension
+### 14.5 Reader output columns
+
+A TACO-profile reader **MUST** emit `taco:location`, not the Flat profile's column.
+
+| Column          | Type   | Meaning |
+|-----------------|--------|---------|
+| `taco:location` | string | Where a file can be read from. |
+
+The value is `/vsisubfile/{offset}_{size},A`, composed from `internal:offset`, `internal:size`, and the archive location `A`. It **MUST NOT** be stored. The TACO specification defines the column.
+
+### 14.6 File extension
 
 A TACO-profile cozip uses the file extension `.zip`. The MIME type is `application/zip`. The authoritative machine-readable signal for the TACO container is `profile = 2` in the cozip index, not the extension.
 
@@ -429,22 +449,7 @@ cozip is a structural profile of ZIP — analogous to how Cloud Optimized GeoTIF
 
 When serving a cozip archive over HTTP, servers must preserve byte-exact object bytes for range requests. Transparent content encoding is incompatible with cozip byte offsets.
 
-## Appendix B. Version history
-
-| Version      | Date       | Changes |
-|-------------:|------------|---------|
-| 1.0-draft.1  | 2026-04-27 | Initial draft. |
-| 1.0-draft.2  | 2026-04-27 | Added ZIP64 policy for non-index entries; explicitly prohibited encryption, split/spanned archives, data descriptors, directory entries, and zero-size entries; changed the integrity hash to cover the index payload plus the final 32 KiB; fixed HTTP byte-range inclusivity; made UTF-8 and filename uniqueness requirements explicit; fixed Flat profile `__metadata__` semantics; made TACO priority files contiguous; replaced pending TACO reference. |
-| 1.0-draft.3  | 2026-04-28 | **Editorial refactor of Part I.** Removed the *Semantics and guarantees* section as fully redundant with §4–§8. Consolidated STORE+size, encryption, ZIP64-sentinel, name-uniqueness, archive-immutability, and hash-byte-range statements that were repeated across §5, §6, §7, §8, §9. Reorganised §5.1 into three groups (Index entry / All ZIP entries / Archive-level). Reduced §5.2 from six items to three. Made §8.5 step 1 the single canonical LFH validation list and added a missing check for GP bit 11 set and exact 9-byte filename equality; §10 step 2 now references it. Relaxed the §7.5 archive-size constraint from MUST to SHOULD on the reader side (writers still MUST). Reduced error codes from 24 to 15 by collapsing index/zip duplicate-name codes, name/UTF-8 codes, range/overflow codes, and per-entry violation codes into single canonical names. Fixed the APPNOTE URL in Appendix C. |
-| 1.0-draft.4  | 2026-04-28 | **Editorial refactor of Part II.** Collapsed *what a profile MAY do* and *what a profile MUST NOT do* into a single profile-constraints section, and folded reader-behavior duplication into §7.1. Removed the Flat-profile §14.3 *position requirement* as a normative MUST; placement of `__metadata__` is now an informative writer hint. Removed the Flat-profile schema's *Must be unique* note for the `name` column (already covered archive-wide by §5.1.9) and clarified that an archive with no other data entries may carry a zero-row `__metadata__`. Removed from the TACO profile the prohibition on directory entries for `DATA/` and `METADATA/` (already prohibited archive-wide by §5.1.5). Clarified that the relative order of TACO priority files within the contiguous priority block is unspecified. Section numbering shifted: Profiles is now §12, Flat is §13, TACO is §14. |
-| 1.0-draft.5  | 2026-04-29 | Relaxed §5.1.8 and §8.5 step 1.ii to require GP bit 11 (UTF-8) only when the filename contains bytes ≥ 0x80. Aligns the spec with common ZIP writer behavior and unblocks libzip builds that omit the flag for ASCII-only names. |
-| 1.0          | 2026-05-03 | First stable release. Some redundant normative statements were removed during the draft phase, but no technical changes were made between 1.0-draft.5 and 1.0. |
-| 1.0.1        | 2026-05-09 | Reserved the name `__cozip_padding__` in §5.3.7 as a writer-side mechanism for satisfying the §5.1.12 minimum archive size, and added an informative note in §6 documenting the recommended use. Excluded `__cozip_padding__` from the Flat-profile `__metadata__` row set (§13.3), and clarified its placement under the TACO profile (§14.3). No on-disk format change; archives produced under 1.0 remain valid under 1.0.1 without modification. |
-| 1.0.2        | 2026-05-20 | Added informative §13.5 pointing to GeoParquet as a valid encoding for a Flat-profile `__metadata__`. Added the GeoParquet specification to Appendix C. Editorial only; no on-disk format or normative change. Archives produced under 1.0.1 remain valid under 1.0.2 without modification. |
-| 1.1.0        | 2026-09-03 | Restricted archive filenames to ASCII and made rejection of other bytes explicit. Required writers to reject zero-byte final payloads with a direct error. Reconciled the padding guidance in §6 with TACO's final priority block, and clarified that every profile keeps the `.zip` extension. The binary index version remains 1, but archives with non-ASCII names that conformed to 1.0.x do not conform to 1.1.0. |
-
-
-## Appendix C. References
+## Appendix B. References
 
 1. PKWARE Inc. **.ZIP File Format Specification**, APPNOTE.TXT, version 6.3.10, 2022. https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.10.TXT
 2. IETF. **HTTP Semantics**, RFC 9110, 2022. https://datatracker.ietf.org/doc/html/rfc9110

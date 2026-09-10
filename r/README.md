@@ -51,7 +51,9 @@ manifest <- read("https://example.com/dataset.zip")
 train <- manifest[manifest$split == "train", ]
 ```
 
-`manifest` is a tibble with `name`, `offset`, `size`, `cozip:gdal_vsi`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Pass `columns = c(...)` to bring only specific extras, `gdal_vsi = FALSE` to drop the VSI path column.
+`manifest` is a tibble: `name`, `offset`, `size`, `cozip:location`, and the writer's extras. Local path or URL, same call. It fetches the byte-0 index and `__metadata__`, never the payloads.
+
+`columns = c(...)` picks extras. `location = FALSE` drops `cozip:location`.
 
 `cozip::read()` supports only Flat-profile archives (`profile = 1`). TACO
 archives (`profile = 2`) and all other profiles are rejected.

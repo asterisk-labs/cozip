@@ -51,14 +51,16 @@ manifest = cozip.read("https://example.com/dataset.zip")
 train = manifest[manifest["split"] == "train"]
 ```
 
-`manifest` is a pandas DataFrame with `name`, `offset`, `size`, `cozip:gdal_vsi`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Pass `columns=[...]` to bring only specific extras, `gdal_vsi=False` to drop the VSI path column.
+`manifest` is a pandas DataFrame: `name`, `offset`, `size`, `cozip:location`, and the writer's extras. Local path or URL, same call. It fetches the byte-0 index and `__metadata__`, never the payloads.
+
+`columns=[...]` picks extras. `location=False` drops `cozip:location`.
 
 `cozip.read()` supports only Flat-profile archives (`profile = 1`). TACO
 archives (`profile = 2`) and all other profiles are rejected.
 
 ## Versioning
 
-The Python package version tracks the C library, copied verbatim from the repo-root `VERSION` file at build time. The bundled `.so` / `.dylib` / `.dll` inside the wheel matches the wheel's version exactly, so there's no mismatch to worry about.
+The package version is the repo-root `VERSION`, copied at build time. The bundled `.so` / `.dylib` / `.dll` carries the same version as the wheel.
 
 ```python
 import cozip

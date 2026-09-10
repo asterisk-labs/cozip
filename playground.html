@@ -959,14 +959,14 @@ function flyToGeometry(geometry){
 function renderMeta(row){
   const keys=Object.keys(row);
   const priority=['name','size','offset'];
-  const last=['cozip:gdal_vsi'];
+  const last=['cozip:location'];
   const skip=['geometry','geom','wkb','wkt','the_geom'];
   const rest=keys.filter(k=>!priority.includes(k)&&!last.includes(k)&&!skip.includes(k.toLowerCase())).sort();
   const ordered=[...priority.filter(k=>k in row), ...rest, ...last.filter(k=>k in row)];
 
   const html=ordered.map(k=>{
     const v=row[k];
-    const isVsi=k==='cozip:gdal_vsi';
+    const isVsi=k==='cozip:location';
     let cls='meta-value', display;
     if(v===null||v===undefined) display='<em style="color:var(--ink-4)">null</em>';
     else if(v instanceof Uint8Array||ArrayBuffer.isView(v)){
@@ -1028,7 +1028,7 @@ async function copyTo(text,btn){
 $copyVsi.addEventListener('click', () => {
   if(currentSelection===null) return;
   const row=currentRows[currentSelection];
-  if(row['cozip:gdal_vsi']) copyTo(row['cozip:gdal_vsi'], $copyVsi);
+  if(row['cozip:location']) copyTo(row['cozip:location'], $copyVsi);
 });
 $copyName.addEventListener('click', () => {
   if(currentSelection===null) return;

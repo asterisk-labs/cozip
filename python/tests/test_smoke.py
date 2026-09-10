@@ -244,7 +244,7 @@ class TestSpecInvariants:
         [
             ({"columns": "category"}, "sequence of non-empty strings"),
             ({"columns": [""]}, "sequence of non-empty strings"),
-            ({"gdal_vsi": "yes"}, "must be a boolean"),
+            ({"location": "yes"}, "must be a boolean"),
         ],
     )
     def test_reader_validates_options_before_loading_duckdb(
@@ -277,14 +277,14 @@ class TestSpecInvariants:
         result = cozip.read(
             "https://example.test/data.zip",
             columns=["category", 'sensor"name', "category"],
-            gdal_vsi=False,
+            location=False,
         )
 
         assert result == "manifest"
         assert queries[-1] == (
             (
                 'SELECT "name", "offset", "size", "category", '
-                '"sensor""name" FROM read_flat(?, gdal_vsi := false)'
+                '"sensor""name" FROM read_flat(?, location := false)'
             ),
             ["https://example.test/data.zip"],
         )
@@ -301,7 +301,7 @@ class TestSpecInvariants:
                 return self
 
             def df(self):
-                return pd.DataFrame({"name": ["a"], "cozip:gdal_vsi": [None]})
+                return pd.DataFrame({"name": ["a"], "cozip:location": [None]})
 
             def close(self):
                 pass
@@ -309,9 +309,9 @@ class TestSpecInvariants:
         monkeypatch.setitem(
             sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
         )
-        result = cozip.read("local.zip", gdal_vsi=False)
+        result = cozip.read("local.zip", location=False)
 
-        assert queries[-1] == "SELECT * FROM read_flat(?, gdal_vsi := false)"
+        assert queries[-1] == "SELECT * FROM read_flat(?, location := false)"
         assert list(result.columns) == ["name"]
 
     def test_reader_can_load_a_local_extension(self, monkeypatch) -> None:
@@ -385,7 +385,7 @@ class TestSpecInvariants:
 
         assert cozip.read("not-a-cozip.parquet") == "manifest"
         assert queries[-1] == (
-            "SELECT * FROM read_flat(?, gdal_vsi := true)",
+            "SELECT * FROM read_flat(?, location := true)",
             ["not-a-cozip.parquet"],
         )
 

@@ -11,19 +11,19 @@ def _quote_identifier(value: str) -> str:
 
 
 def _selected_columns(
-    columns: Sequence[str] | None, gdal_vsi: bool
+    columns: Sequence[str] | None, location: bool
 ) -> list[str] | None:
     if columns is None:
         return None
     required = ["name", "offset", "size"]
-    if gdal_vsi:
-        required.append("cozip:gdal_vsi")
-    extras = [column for column in columns if gdal_vsi or column != "cozip:gdal_vsi"]
+    if location:
+        required.append("cozip:location")
+    extras = [column for column in columns if location or column != "cozip:location"]
     return list(dict.fromkeys([*required, *extras]))
 
 
 def _read_flat_archive(
-    source: str, columns: Sequence[str] | None, gdal_vsi: bool
+    source: str, columns: Sequence[str] | None, location: bool
 ) -> pd.DataFrame:
     import duckdb
 
@@ -37,13 +37,13 @@ def _read_flat_archive(
             con.load_extension(local_extension)
         else:
             con.execute("INSTALL cozip FROM community; LOAD cozip;")
-        selected = _selected_columns(columns, gdal_vsi)
+        selected = _selected_columns(columns, location)
         if selected is None:
             projection = "*"
         else:
             projection = ", ".join(map(_quote_identifier, selected))
-        enabled = "true" if gdal_vsi else "false"
-        sql = f"SELECT {projection} FROM read_flat(?, gdal_vsi := {enabled})"
+        enabled = "true" if location else "false"
+        sql = f"SELECT {projection} FROM read_flat(?, location := {enabled})"
         try:
             result = con.execute(sql, [source])
         except Exception as exc:
@@ -53,8 +53,8 @@ def _read_flat_archive(
             legacy_sql = sql.replace("FROM read_flat(", "FROM read_cozip(", 1)
             result = con.execute(legacy_sql, [source])
         df = result.df()
-        if selected is None and not gdal_vsi and "cozip:gdal_vsi" in df.columns:
-            df = df.drop(columns=["cozip:gdal_vsi"])
+        if selected is None and not location and "cozip:location" in df.columns:
+            df = df.drop(columns=["cozip:location"])
         return df
     finally:
         con.close()
@@ -63,13 +63,13 @@ def _read_flat_archive(
 def read(
     source: str | os.PathLike[str],
     columns: Sequence[str] | None = None,
-    gdal_vsi: bool = True,
+    location: bool = True,
 ) -> pd.DataFrame:
     """Read the manifest of a Flat-profile cozip archive.
 
     ``columns`` selects extra manifest columns; the required ``name``,
-    ``offset``, and ``size`` columns remain. Set ``gdal_vsi=False`` to omit
-    the synthetic ``cozip:gdal_vsi`` column. Archives using any profile other
+    ``offset``, and ``size`` columns remain. Set ``location=False`` to omit
+    the synthetic ``cozip:location`` column. Archives using any profile other
     than Flat (profile 1), including TACO (profile 2), are rejected by
     ``read_flat``.
     """
@@ -93,6 +93,6 @@ def read(
         )
     ):
         raise TypeError("cozip.read: columns must be a sequence of non-empty strings")
-    if not isinstance(gdal_vsi, bool):
-        raise TypeError("cozip.read: gdal_vsi must be a boolean")
-    return _read_flat_archive(source, columns, gdal_vsi)
+    if not isinstance(location, bool):
+        raise TypeError("cozip.read: location must be a boolean")
+    return _read_flat_archive(source, columns, location)

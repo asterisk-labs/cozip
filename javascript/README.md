@@ -19,7 +19,9 @@ const manifest = await read("https://example.com/dataset.zip");
 const train = manifest.filter((row) => row.split === "train");
 ```
 
-`manifest` is an array of row objects with `name`, `offset`, `size`, `cozip:gdal_vsi`, plus whatever extras the writer added. Pass `columns: [...]` to bring only specific extras, `gdalVsi: false` to drop the VSI path column.
+`manifest` is an array of row objects: `name`, `offset`, `size`, `cozip:location`, and the writer's extras.
+
+`columns: [...]` picks extras. `location: false` drops `cozip:location`.
 
 `read()` supports only Flat-profile archives (`profile = 1`). TACO archives
 (`profile = 2`) and every other profile are rejected with `UNKNOWN_PROFILE`.
@@ -27,7 +29,7 @@ const train = manifest.filter((row) => row.split === "train");
 ```js
 const manifest = await read(url, {
   columns: ["cloud_pct", "split"],
-  gdalVsi: false,
+  location: false,
 });
 ```
 

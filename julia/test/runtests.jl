@@ -700,9 +700,9 @@ end
             tbl[!, Symbol("source\"tag")] = ["one", "two"]
             out = joinpath(fix.tmp, "quoted-column.zip")
             create(out, tbl)
-            df = Cozip.read(out; gdal_vsi=false)
+            df = Cozip.read(out; location=false)
             @test df[!, Symbol("source\"tag")] == ["one", "two"]
-            @test !("cozip:gdal_vsi" in names(df))
+            @test !("cozip:location" in names(df))
         end
     end
 end

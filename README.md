@@ -61,13 +61,13 @@ cozip.write(archive, pa.table({
 # 3. Read manifest
 manifest = cozip.read(archive)
 for _, row in manifest[manifest["split"] == "train"].iterrows():
-    with rasterio.open(row["cozip:gdal_vsi"]) as src:
+    with rasterio.open(row["cozip:location"]) as src:
         print(row["name"], src.read(1).mean())
 ```
 
 `path` says where each file lives on disk. `name` is how it appears inside the
 archive. Everything else is optional metadata. The writer adds `offset` and
-`size`; the reader can also add `cozip:gdal_vsi`, a
+`size`; the reader can also add `cozip:location`, a
 [GDAL VSI](https://gdal.org/en/stable/user/virtual_file_systems.html) path.
 
 

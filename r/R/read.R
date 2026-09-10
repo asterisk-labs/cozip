@@ -1,7 +1,7 @@
 #' Read the manifest of a FLAT-profile cozip archive
 #'
 #' Thin wrapper around the DuckDB cozip extension. `name`, `offset`,
-#' `size` (and `cozip:gdal_vsi` when `gdal_vsi = TRUE`) are always
+#' `size` (and `cozip:location` when `location = TRUE`) are always
 #' included; use `columns` to bring extras, `NULL` brings all.
 #' Archives using any profile other than Flat (`profile = 1`), including TACO
 #' (`profile = 2`), are rejected by `read_flat()`.
@@ -9,11 +9,11 @@
 #' @param source Local path or http(s)/s3/gcs/azure/hf URL to the `.zip`.
 #' @param columns Character vector of extra columns. `NULL` returns
 #'   every column.
-#' @param gdal_vsi Include the `cozip:gdal_vsi` column.
+#' @param location Include the `cozip:location` column.
 #'
 #' @return A tibble.
 #' @export
-read <- function(source, columns = NULL, gdal_vsi = TRUE) {
+read <- function(source, columns = NULL, location = TRUE) {
   if (!is.character(source) || length(source) != 1L || is.na(source)
       || !nzchar(source)) {
     .cozip_stop("`source` must be a single non-empty string")
@@ -29,8 +29,8 @@ read <- function(source, columns = NULL, gdal_vsi = TRUE) {
   if (!is.null(columns) && any(!nzchar(columns))) {
     .cozip_stop("`columns` entries must be non-empty")
   }
-  if (!is.logical(gdal_vsi) || length(gdal_vsi) != 1L || is.na(gdal_vsi)) {
-    .cozip_stop("`gdal_vsi` must be TRUE or FALSE")
+  if (!is.logical(location) || length(location) != 1L || is.na(location)) {
+    .cozip_stop("`location` must be TRUE or FALSE")
   }
 
   local_extension <- Sys.getenv("COZIP_EXTENSION", unset = "")
@@ -55,9 +55,9 @@ read <- function(source, columns = NULL, gdal_vsi = TRUE) {
   }
 
   sql <- sprintf(
-    "SELECT %s FROM read_flat(?, gdal_vsi := %s)",
-    .build_select(columns, gdal_vsi),
-    if (gdal_vsi) "true" else "false"
+    "SELECT %s FROM read_flat(?, location := %s)",
+    .build_select(columns, location),
+    if (location) "true" else "false"
   )
   result <- tryCatch(
     DBI::dbGetQuery(con, sql, params = list(source)),
@@ -72,8 +72,8 @@ read <- function(source, columns = NULL, gdal_vsi = TRUE) {
     }
   )
   result <- tibble::as_tibble(result)
-  if (!gdal_vsi && "cozip:gdal_vsi" %in% names(result)) {
-    result <- result[setdiff(names(result), "cozip:gdal_vsi")]
+  if (!location && "cozip:location" %in% names(result)) {
+    result <- result[setdiff(names(result), "cozip:location")]
   }
   result
 }
@@ -82,14 +82,14 @@ read <- function(source, columns = NULL, gdal_vsi = TRUE) {
 .quote_ident <- function(s) sprintf('"%s"', gsub('"', '""', s, fixed = TRUE))
 
 
-.build_select <- function(columns, gdal_vsi) {
+.build_select <- function(columns, location) {
   if (is.null(columns)) {
     return("*")
   }
   required <- c("name", "offset", "size")
-  if (gdal_vsi) required <- c(required, "cozip:gdal_vsi")
+  if (location) required <- c(required, "cozip:location")
   extras <- columns
-  if (!gdal_vsi) extras <- setdiff(extras, "cozip:gdal_vsi")
+  if (!location) extras <- setdiff(extras, "cozip:location")
   ordered <- c(required, setdiff(extras, required))
   paste(vapply(ordered, .quote_ident, character(1)), collapse = ", ")
 }

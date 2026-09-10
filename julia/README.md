@@ -54,7 +54,9 @@ manifest = Cozip.read("https://example.com/dataset.zip")
 train = filter(:split => ==("train"), manifest)
 ```
 
-`manifest` is a DataFrame with `name`, `offset`, `size`, plus whatever extras the writer added. Local file or remote URL, same call. Only the byte-0 index and the embedded `__metadata__` Parquet are fetched, never the user payloads. Filter it like any DataFrame, then use `offset` and `size` to range-request the payloads you actually want.
+`manifest` is a DataFrame: `name`, `offset`, `size`, `cozip:location`, and the writer's extras. Local path or URL, same call. It fetches the byte-0 index and `__metadata__`, never the payloads.
+
+`columns = [...]` picks extras. `location = false` drops `cozip:location`.
 
 `Cozip.read()` supports only Flat-profile archives (`profile = 1`). TACO
 archives (`profile = 2`) and all other profiles are rejected.

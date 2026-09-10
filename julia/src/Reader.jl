@@ -29,11 +29,11 @@ end
 
 
 """
-    read(source; columns=nothing, gdal_vsi=true) -> DataFrame
+    read(source; columns=nothing, location=true) -> DataFrame
 
 Read the manifest of a FLAT-profile cozip archive via the DuckDB
-cozip extension. `name`, `offset`, `size` (and `cozip:gdal_vsi` when
-`gdal_vsi=true`) are always included; pass `columns` to bring
+cozip extension. `name`, `offset`, `size` (and `cozip:location` when
+`location=true`) are always included; pass `columns` to bring
 extras, `nothing` brings all.
 
 Archives using any profile other than Flat (`profile = 1`), including TACO
@@ -45,12 +45,12 @@ Not supported on Windows yet. The writer is.
 - `source`: local path or http(s)/s3/gcs/azure/hf URL to the `.zip`.
 - `columns`: vector of extra column names. `nothing` returns every
   column.
-- `gdal_vsi`: include the `cozip:gdal_vsi` column.
+- `location`: include the `cozip:location` column.
 """
 function read(
     source;
     columns::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-    gdal_vsi::Bool = true,
+    location::Bool = true,
 )::DataFrame
     if Sys.iswindows()
         error("""
@@ -84,8 +84,8 @@ function read(
         _ensure_duckdb_extensions!(con)
 
         sql = string(
-            "SELECT ", _build_select(columns, gdal_vsi),
-            " FROM read_flat(?, gdal_vsi := ", gdal_vsi ? "true" : "false", ")",
+            "SELECT ", _build_select(columns, location),
+            " FROM read_flat(?, location := ", location ? "true" : "false", ")",
         )
         query = try
             DBInterface.execute(con, sql, [src])
@@ -98,8 +98,8 @@ function read(
             DBInterface.execute(con, legacy_sql, [src])
         end
         result = DataFrame(query)
-        if !gdal_vsi && "cozip:gdal_vsi" in names(result)
-            select!(result, Not(Symbol("cozip:gdal_vsi")))
+        if !location && "cozip:location" in names(result)
+            select!(result, Not(Symbol("cozip:location")))
         end
         result
     end
@@ -109,12 +109,12 @@ end
 _quote_ident(s) = "\"" * replace(String(s), "\"" => "\"\"") * "\""
 
 
-function _build_select(columns, gdal_vsi)
+function _build_select(columns, location)
     columns === nothing && return "*"
     required = ["name", "offset", "size"]
-    gdal_vsi && push!(required, "cozip:gdal_vsi")
+    location && push!(required, "cozip:location")
     extras = String.(columns)
-    gdal_vsi || filter!(c -> c != "cozip:gdal_vsi", extras)
+    location || filter!(c -> c != "cozip:location", extras)
     ordered = vcat(required, setdiff(extras, required))
     join((_quote_ident(c) for c in ordered), ", ")
 end

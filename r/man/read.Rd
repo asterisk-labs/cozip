@@ -4,7 +4,7 @@
 \alias{read}
 \title{Read the manifest of a FLAT-profile cozip archive}
 \usage{
-read(source, columns = NULL, gdal_vsi = TRUE)
+read(source, columns = NULL, location = TRUE)
 }
 \arguments{
 \item{source}{Local path or http(s)/s3/gcs/azure/hf URL to the \code{.zip}.}
@@ -12,14 +12,14 @@ read(source, columns = NULL, gdal_vsi = TRUE)
 \item{columns}{Character vector of extra columns. \code{NULL} returns
 every column.}
 
-\item{gdal_vsi}{Include the \code{cozip:gdal_vsi} column.}
+\item{location}{Include the \code{cozip:location} column.}
 }
 \value{
 A tibble.
 }
 \description{
 Thin wrapper around the DuckDB cozip extension. \code{name}, \code{offset},
-\code{size} (and \code{cozip:gdal_vsi} when \code{gdal_vsi = TRUE}) are always
+\code{size} (and \code{cozip:location} when \code{location = TRUE}) are always
 included; use \code{columns} to bring extras, \code{NULL} brings all.
 Archives using any profile other than Flat (\code{profile = 1}), including TACO
 (\code{profile = 2}), are rejected by \code{read_flat()}.

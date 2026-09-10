@@ -23,7 +23,7 @@ const UINT64_MASK = 0xffffffffffffffffn;
 /**
  * @typedef {object} ReadOptions
  * @property {string[]} [columns]  Subset of extra columns from __metadata__ to include.
- * @property {boolean}  [gdalVsi]  Include the cozip:gdal_vsi column (default true).
+ * @property {boolean}  [location]  Include the cozip:location column (default true).
  */
 
 /**
@@ -31,7 +31,7 @@ const UINT64_MASK = 0xffffffffffffffffn;
  *
  * @param {string} url
  * @param {ReadOptions} [opts]
- * @returns {Promise<object[]>} Rows with { name, offset, size, ...extras, "cozip:gdal_vsi"? }.
+ * @returns {Promise<object[]>} Rows with { name, offset, size, ...extras, "cozip:location"? }.
  */
 export async function read(url, opts = {}) {
   if (typeof url !== "string") {
@@ -51,7 +51,7 @@ export async function read(url, opts = {}) {
   if (opts === null || typeof opts !== "object" || Array.isArray(opts)) {
     throw new TypeError("cozip: options must be an object");
   }
-  const { columns, gdalVsi = true } = opts;
+  const { columns, location = true } = opts;
   if (
     columns !== undefined &&
     (!Array.isArray(columns) ||
@@ -59,8 +59,8 @@ export async function read(url, opts = {}) {
   ) {
     throw new TypeError("cozip: columns must be an array of non-empty strings");
   }
-  if (typeof gdalVsi !== "boolean") {
-    throw new TypeError("cozip: gdalVsi must be a boolean");
+  if (typeof location !== "boolean") {
+    throw new TypeError("cozip: location must be a boolean");
   }
 
   // 1. Bootstrap the index from the first 64 KiB, extend if needed.
@@ -111,7 +111,7 @@ export async function read(url, opts = {}) {
           "offset",
           "size",
           // This column is produced below, not read from Parquet.
-          ...columns.filter((column) => column !== "cozip:gdal_vsi"),
+          ...columns.filter((column) => column !== "cozip:location"),
         ]),
       )
     : undefined;
@@ -125,15 +125,15 @@ export async function read(url, opts = {}) {
   const rows = await parquetReadObjects({ file, columns: parquetCols, compressors });
 
   // 4. Inject the VSI path for GDAL consumers.
-  if (gdalVsi) {
+  if (location) {
     for (const row of rows) {
-      row["cozip:gdal_vsi"] = `/vsisubfile/${row.offset}_${row.size},/vsicurl/${url}`;
+      row["cozip:location"] = `/vsisubfile/${row.offset}_${row.size},/vsicurl/${url}`;
     }
   } else {
     // A producer may have used the same name for an extra Parquet column.
     // The option still promises that the returned manifest omits it.
     for (const row of rows) {
-      delete row["cozip:gdal_vsi"];
+      delete row["cozip:location"];
     }
   }
 

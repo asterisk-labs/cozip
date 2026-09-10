@@ -38,7 +38,7 @@ function structuralArchive(entryName = "__metadata__") {
   return bytes;
 }
 
-test("returns rows with name, offset, size, cozip:gdal_vsi", async () => {
+test("returns rows with name, offset, size, cozip:location", async () => {
   const manifest = await read(URL);
   assert.ok(Array.isArray(manifest));
   assert.ok(manifest.length > 0);
@@ -47,37 +47,37 @@ test("returns rows with name, offset, size, cozip:gdal_vsi", async () => {
   assert.ok("name" in row);
   assert.ok("offset" in row);
   assert.ok("size" in row);
-  assert.ok("cozip:gdal_vsi" in row);
+  assert.ok("cozip:location" in row);
 });
 
-test("cozip:gdal_vsi uses /vsisubfile + /vsicurl", async () => {
+test("cozip:location uses /vsisubfile + /vsicurl", async () => {
   const manifest = await read(URL);
   const row = manifest[0];
   assert.equal(
-    row["cozip:gdal_vsi"],
+    row["cozip:location"],
     `/vsisubfile/${row.offset}_${row.size},/vsicurl/${URL}`,
   );
 });
 
-test("gdalVsi: false drops the VSI column", async () => {
-  const manifest = await read(URL, { gdalVsi: false });
+test("location: false drops the VSI column", async () => {
+  const manifest = await read(URL, { location: false });
   assert.ok(manifest.length > 0);
-  assert.ok(!("cozip:gdal_vsi" in manifest[0]));
+  assert.ok(!("cozip:location" in manifest[0]));
 });
 
 test("does not ask Parquet for the synthetic VSI column", async () => {
-  const manifest = await read(URL, { columns: ["cozip:gdal_vsi"] });
+  const manifest = await read(URL, { columns: ["cozip:location"] });
   assert.ok(manifest.length > 0);
   assert.deepEqual(
     Object.keys(manifest[0]).sort(),
-    ["cozip:gdal_vsi", "name", "offset", "size"].sort(),
+    ["cozip:location", "name", "offset", "size"].sort(),
   );
 });
 
 test("columns: [...] keeps requested extras alongside name/offset/size", async () => {
   const all = await read(URL);
   const extraKey = Object.keys(all[0]).find(
-    (k) => !["name", "offset", "size", "cozip:gdal_vsi"].includes(k),
+    (k) => !["name", "offset", "size", "cozip:location"].includes(k),
   );
   if (!extraKey) return; // nothing to test if the archive has no extras
 
@@ -85,7 +85,7 @@ test("columns: [...] keeps requested extras alongside name/offset/size", async (
   const keys = Object.keys(filtered[0]).sort();
   assert.deepEqual(
     keys,
-    ["cozip:gdal_vsi", extraKey, "name", "offset", "size"].sort(),
+    ["cozip:location", extraKey, "name", "offset", "size"].sort(),
   );
 });
 
@@ -212,7 +212,7 @@ test("validates options before fetching", async () => {
     /non-empty strings/,
   );
   await assert.rejects(
-    () => read("https://example.test/x.zip", { gdalVsi: "yes" }),
-    /gdalVsi must be a boolean/,
+    () => read("https://example.test/x.zip", { location: "yes" }),
+    /location must be a boolean/,
   );
 });

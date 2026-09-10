@@ -6,6 +6,16 @@ from the repository's `VERSION` file; `make sync` updates the package copies.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 
+## Unreleased
+
+### Changed
+
+- SPEC 13.4 renames the Flat-profile reader output column to `cozip:location`,
+  from `cozip:gdal_vsi`. SPEC 14.5 names the TACO-profile column
+  `taco:location`. Both names are reserved against producers.
+- The Python, JavaScript, Julia and R readers take `location` instead of
+  `gdal_vsi` and emit the new name.
+- No archive changes. The column is computed at read time and never stored.
 
 ## [2026.9.4] — 2026-09-04
 
