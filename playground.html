@@ -898,10 +898,6 @@ async function loadCozip(){
       const cols=Object.keys(rows[0]||{}).filter(k=>!k.startsWith('cozip:'));
       // Empty the map and fall back to the manifest table
       map.getSource('cozip').setData({type:'FeatureCollection',features:[]});
-      showInfo(
-        `No GeoParquet geometry detected. The viewer expects a <code>geometry</code> column (WKB) ` +
-        `plus the GeoParquet <code>geo</code> key in file-level metadata. Showing the flat manifest instead.`
-      );
       renderManifestTable(rows, cols);
       $statCount.textContent=rows.length.toLocaleString();
       $statTime.textContent=ms<1000?`${ms.toFixed(0)} ms`:`${(ms/1000).toFixed(2)} s`;
