@@ -2,6 +2,7 @@ module LibCozip
 
 using Artifacts
 using LazyArtifacts
+using Libdl
 
 # Must match cozip.h.
 const COZIP_SOURCE_PATH        = Cint(1)
@@ -77,18 +78,20 @@ function _resolve_lib_path()
     return candidate
 end
 
-const libcozip = Ref{String}("")
+const libcozip = Ref{Ptr{Cvoid}}(C_NULL)
 
-# libcozip[] only resolves in __init__, so the ccalls must run there too.
+_symbol(name::Symbol) = Libdl.dlsym(libcozip[], name)
+
+# The handle only resolves in __init__, so the ccalls must run there too.
 const INDEX_NAME    = Ref{String}("")
 const PADDING_NAME  = Ref{String}("")
 const METADATA_NAME = Ref{String}("")
 
 function __init__()
-    libcozip[] = _resolve_lib_path()
-    INDEX_NAME[]    = unsafe_string(ccall((:cozip_index_name,         libcozip[]), Cstring, ()))
-    PADDING_NAME[]  = unsafe_string(ccall((:cozip_padding_name,       libcozip[]), Cstring, ()))
-    METADATA_NAME[] = unsafe_string(ccall((:cozip_flat_metadata_name, libcozip[]), Cstring, ()))
+    libcozip[] = Libdl.dlopen(_resolve_lib_path())
+    INDEX_NAME[]    = unsafe_string(ccall(_symbol(:cozip_index_name), Cstring, ()))
+    PADDING_NAME[]  = unsafe_string(ccall(_symbol(:cozip_padding_name), Cstring, ()))
+    METADATA_NAME[] = unsafe_string(ccall(_symbol(:cozip_flat_metadata_name), Cstring, ()))
 end
 
 struct CozipError <: Exception
@@ -103,18 +106,18 @@ function CozipError(err::cozip_error_t)
     code = Int(err.code)
     msg_bytes = UInt8[UInt8(c) for c in err.message if c != 0]
     msg = String(msg_bytes)
-    name_ptr = ccall((:cozip_status_string, libcozip[]), Cstring, (Cint,), err.code)
+    name_ptr = ccall(_symbol(:cozip_status_string), Cstring, (Cint,), err.code)
     name = unsafe_string(name_ptr)
     return CozipError(code, name, msg)
 end
 
 function cozip_version()
-    ptr = ccall((:cozip_version_string, libcozip[]), Cstring, ())
+    ptr = ccall(_symbol(:cozip_version_string), Cstring, ())
     return unsafe_string(ptr)
 end
 
 function cozip_status_string(status::Integer)
-    ptr = ccall((:cozip_status_string, libcozip[]), Cstring, (Cint,), Cint(status))
+    ptr = ccall(_symbol(:cozip_status_string), Cstring, (Cint,), Cint(status))
     return unsafe_string(ptr)
 end
 
@@ -126,7 +129,7 @@ cozip_flat_metadata_name() = METADATA_NAME[]
 function plan!(entries::AbstractVector{cozip_entry_t}, err::cozip_error_t)
     err_ref = Ref(err)
     GC.@preserve entries err_ref begin
-        status = ccall((:cozip_plan, libcozip[]), Cint,
+        status = ccall(_symbol(:cozip_plan), Cint,
                        (Ptr{cozip_entry_t}, Csize_t, Ptr{cozip_error_t}),
                        pointer(entries), length(entries), err_ref)
     end
@@ -138,7 +141,7 @@ function index_payload_size(entries::AbstractVector{cozip_entry_t}, err::cozip_e
     out = Ref{Csize_t}(0)
     err_ref = Ref(err)
     GC.@preserve entries err_ref begin
-        status = ccall((:cozip_index_payload_size, libcozip[]), Cint,
+        status = ccall(_symbol(:cozip_index_payload_size), Cint,
                        (Ptr{cozip_entry_t}, Csize_t, Ptr{Csize_t}, Ptr{cozip_error_t}),
                        pointer(entries), length(entries), out, err_ref)
     end
@@ -152,7 +155,7 @@ function build_index_payload(entries::AbstractVector{cozip_entry_t},
     buf = Vector{UInt8}(undef, sz)
     err_ref = Ref(err)
     GC.@preserve entries buf err_ref begin
-        status = ccall((:cozip_build_index_payload, libcozip[]), Cint,
+        status = ccall(_symbol(:cozip_build_index_payload), Cint,
                        (Ptr{cozip_entry_t}, Csize_t, Cint, Ptr{UInt8}, Csize_t,
                         Ptr{cozip_error_t}),
                        pointer(entries), length(entries), Cint(profile),
@@ -167,7 +170,7 @@ function write_archive!(out_path::AbstractString,
                         payload::Vector{UInt8}, err::cozip_error_t)
     err_ref = Ref(err)
     GC.@preserve entries payload err_ref begin
-        status = ccall((:cozip_write_archive, libcozip[]), Cint,
+        status = ccall(_symbol(:cozip_write_archive), Cint,
                        (Cstring, Ptr{cozip_entry_t}, Csize_t,
                         Ptr{UInt8}, Csize_t, Ptr{cozip_error_t}),
                        out_path, pointer(entries), length(entries),
@@ -181,7 +184,7 @@ function patch_integrity_hash!(archive_path::AbstractString,
                                payload_size::Integer, err::cozip_error_t)
     err_ref = Ref(err)
     GC.@preserve err_ref begin
-        status = ccall((:cozip_patch_integrity_hash, libcozip[]), Cint,
+        status = ccall(_symbol(:cozip_patch_integrity_hash), Cint,
                        (Cstring, Csize_t, Ptr{cozip_error_t}),
                        archive_path, Csize_t(payload_size), err_ref)
     end
@@ -196,7 +199,7 @@ function plan_flat!(entries::AbstractVector{cozip_entry_t},
                     err::cozip_error_t)
     err_ref = Ref(err)
     GC.@preserve entries err_ref begin
-        status = ccall((:cozip_plan_flat, libcozip[]), Cint,
+        status = ccall(_symbol(:cozip_plan_flat), Cint,
                        (Ptr{cozip_entry_t}, Csize_t, Ptr{cozip_error_t}),
                        pointer(entries), Csize_t(n_users), err_ref)
     end
@@ -211,7 +214,7 @@ function write_flat!(out_path::AbstractString,
                      err::cozip_error_t)
     err_ref = Ref(err)
     GC.@preserve entries err_ref begin
-        status = ccall((:cozip_write_flat, libcozip[]), Cint,
+        status = ccall(_symbol(:cozip_write_flat), Cint,
                        (Cstring, Ptr{cozip_entry_t}, Csize_t, Csize_t,
                         Cstring, Ptr{cozip_error_t}),
                        out_path, pointer(entries),

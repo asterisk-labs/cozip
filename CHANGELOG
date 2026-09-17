@@ -13,6 +13,8 @@ Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 - Python, R and Julia `read(..., columns=...)` keep the computed
   `cozip:location` column when falling back to DuckDB cozip extension 1.x,
   2.0.0 or 2.0.1.
+- Julia loads libcozip through `Libdl` function pointers, restoring package
+  precompilation and tests on Julia 1.13 without changing the native ABI.
 
 ## [2026.9.9] — 2026-09-09
 
