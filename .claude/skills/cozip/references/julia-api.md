@@ -98,8 +98,7 @@ Cozip.read(source; columns = nothing, location = true) -> DataFrame
   extensions when the variable was set before `using Cozip`.
 - Same compatibility fallbacks as Python (`gdal_vsi :=`, `read_cozip`, renamed legacy
   column, dropped `taco:location`). Only Flat archives are accepted.
-- Same known issue as Python: with extension 2.0.0 or 2.0.1, passing `columns` drops
-  `cozip:location`. Read every column and `select` afterwards when you need the location.
+- Projected reads retain the normalized `cozip:location` column on legacy extensions.
 - On Windows `Cozip.read` throws an `ErrorException` before touching DuckDB: DuckDB.jl
   crashes there when a community extension registers a filesystem. Writing works on
   Windows; read with Python or R instead.

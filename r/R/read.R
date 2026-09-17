@@ -122,11 +122,9 @@ read <- function(source, columns = NULL, location = TRUE) {
     } else {
       column
     }
-    expression <- .quote_ident(source)
-    if (!identical(source, column)) {
-      expression <- paste(expression, "AS", .quote_ident(column))
-    }
-    expression
+    # Keep the legacy name until result cleanup so it remains distinct from
+    # an untrusted cozip:location stored in the manifest.
+    .quote_ident(source)
   }, character(1))
   paste(expressions, collapse = ", ")
 }

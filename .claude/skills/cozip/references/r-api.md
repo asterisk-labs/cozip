@@ -93,8 +93,7 @@ read(source, columns = NULL, location = TRUE)
   down. The duckdb package prints a note that extensions live under `~/.duckdb`.
 - The same fallbacks as Python apply: `gdal_vsi :=` for extension 2.0.0 and 2.0.1,
   `read_cozip()` for 1.x, legacy `cozip:gdal_vsi` renamed to `cozip:location`,
-  `taco:location` dropped. The same known issue too: with those extensions a non-NULL
-  `columns` loses `cozip:location`; read all columns and subset afterwards.
+  `taco:location` dropped. Projected reads retain the normalized location column.
 - Only Flat archives are accepted.
 
 ## 6. Errors

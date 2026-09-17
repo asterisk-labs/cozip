@@ -376,6 +376,56 @@ class TestSpecInvariants:
         )
         assert list(result.columns) == ["name", "cozip:location"]
 
+    def test_legacy_reader_keeps_location_with_selected_columns(
+        self, monkeypatch
+    ) -> None:
+        queries = []
+
+        class FakeConnection:
+            def execute(self, sql, params=None):
+                queries.append((sql, params))
+                if "read_flat(" in sql and "location :=" in sql:
+                    raise RuntimeError(
+                        "Binder Error: Macro read_flat() does not support the "
+                        "supplied arguments. Candidate macros: "
+                        "read_flat(p, gdal_vsi := true)"
+                    )
+                return self
+
+            def df(self):
+                return pd.DataFrame(
+                    {
+                        "name": ["a.txt"],
+                        "offset": [127],
+                        "size": [96],
+                        "cozip:gdal_vsi": ["computed-location"],
+                        "category": ["train"],
+                    }
+                )
+
+            def close(self):
+                pass
+
+        monkeypatch.setitem(
+            sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
+        )
+
+        result = cozip.read("local.zip", columns=["category"])
+
+        assert queries[-1] == (
+            'SELECT "name", "offset", "size", "cozip:gdal_vsi", '
+            '"category" FROM read_flat(?, gdal_vsi := true)',
+            ["local.zip"],
+        )
+        assert list(result.columns) == [
+            "name",
+            "offset",
+            "size",
+            "cozip:location",
+            "category",
+        ]
+        assert result["cozip:location"].tolist() == ["computed-location"]
+
     def test_reader_accepts_an_extension_without_read_flat(self, monkeypatch) -> None:
         queries = []
 

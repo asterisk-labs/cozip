@@ -100,8 +100,8 @@ same manifest with `cozip.read("https://...")`, DuckDB or the JavaScript reader.
 - `read()` accepts only Flat archives and installs the DuckDB extension from the community
   repository on first use. As of 2026-09-17 the build served for DuckDB 1.5.5 is extension
   2.0.1, whose SQL spells the option `gdal_vsi :=` and the column `cozip:gdal_vsi`; the
-  Python, R and Julia wrappers normalize both to `cozip:location`, except that with this
-  extension passing `columns` loses the location column. Read all columns, then subset.
+  Python, R and Julia wrappers normalize both to `cozip:location`, including projected
+  reads made with `columns`.
 - `cozip:location` repeats the path you read from, so a relative path gives a relative
   location. JavaScript returns `offset` and `size` as `BigInt`. Julia exports only
   `create`, `stage_metadata` and `stage_create`: call `Cozip.write` and `Cozip.read`.

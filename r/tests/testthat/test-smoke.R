@@ -289,6 +289,18 @@ describe("read input validation", {
     expect_identical(cozip:::.build_select(NULL, FALSE), "*")
   })
 
+  it("keeps the legacy location column available for normalization", {
+    expect_identical(
+      cozip:::.build_select(
+        "category", TRUE, cozip:::.LEGACY_LOCATION_COLUMN
+      ),
+      paste(
+        '"name", "offset", "size", "cozip:gdal_vsi",',
+        '"category"'
+      )
+    )
+  })
+
   it("rejects an empty path before loading DuckDB extensions", {
     expect_error(cozip::read(""), "non-empty")
   })

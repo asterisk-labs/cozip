@@ -44,10 +44,9 @@ def _projection(
         source = (
             source_location_column if column == _LOCATION_COLUMN else column
         )
-        expression = _quote_identifier(source)
-        if source != column:
-            expression += f" AS {_quote_identifier(column)}"
-        expressions.append(expression)
+        # Keep the legacy name until result cleanup so it cannot be confused
+        # with an untrusted cozip:location stored in the manifest.
+        expressions.append(_quote_identifier(source))
     return ", ".join(expressions)
 
 

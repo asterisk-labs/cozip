@@ -141,8 +141,8 @@ rewriting it as the writer does.
   `stage_create(validate=False)` with an edited Parquet).
 - JavaScript `TypeError: Cannot mix BigInt and other types`: offsets and sizes are
   `BigInt` (`javascript-api.md` section 5).
-- `cozip:location` missing after `read(source, columns=[...])`: known issue with extension
-  2.0.0 and 2.0.1 in Python, R and Julia; read every column and select afterwards.
+- `cozip:location` missing after a projected read: update cozip; current Python, R and
+  Julia wrappers preserve it across the extension 1.x, 2.0.0/2.0.1 and 2.0.2 signatures.
 - GDAL cannot open a location: a relative archive path used from another directory, a
   `/vsis3/` or `/vsigs/` location without GDAL credentials, or an `hf://` revision mangled
   by extension 2.0.x (`duckdb-reader.md` section 5).

@@ -702,6 +702,13 @@ end
             @test_throws "NUL byte" Cozip.read("bad\0.zip")
         end
 
+        @testset "legacy projected reads keep their location source" begin
+            @test Cozip._build_select(
+                ["category"], true, Cozip._LEGACY_LOCATION_COLUMN,
+            ) ==
+                "\"name\", \"offset\", \"size\", \"cozip:gdal_vsi\", \"category\""
+        end
+
         @testset "create + read round-trip with binary column" begin
             fix = make_fixtures()
             tbl = make_input_table(fix)
@@ -726,9 +733,9 @@ end
             tbl[!, Symbol("source\"tag")] = ["one", "two"]
             out = joinpath(fix.tmp, "quoted-column.zip")
             create(out, tbl)
-            df = Cozip.read(out; location=false)
+            df = Cozip.read(out; columns=["source\"tag"])
             @test df[!, Symbol("source\"tag")] == ["one", "two"]
-            @test !("cozip:location" in names(df))
+            @test "cozip:location" in names(df)
         end
     end
 end

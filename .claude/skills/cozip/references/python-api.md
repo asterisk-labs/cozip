@@ -138,11 +138,8 @@ cozip.read(source, columns=None, location=True) -> pandas.DataFrame
   `gdal_vsi :=`, and when `read_flat` does not exist it uses `read_cozip`. A legacy
   `cozip:gdal_vsi` column is renamed to `cozip:location`; a `taco:location` column is
   always dropped. The community build for DuckDB 1.5.5 needs the first retry.
-- Known issue in 2026.9.9: on that retry path (extension 2.0.0 or 2.0.1), passing
-  `columns` drops `cozip:location` even with `location=True`, because the aliased column
-  is removed together with the stored ones. R and Julia behave the same. Read without
-  `columns` and select afterwards, or build the value yourself as
-  `f"/vsisubfile/{offset}_{size},{source}"`, with `/vsicurl/` before HTTP(S) sources.
+- Projected reads keep the normalized `cozip:location` column on both the current and
+  legacy extension signatures.
 - Only Flat archives are read. Profile 0 and TACO archives raise DuckDB's
   `InvalidInputException` (`read_flat needs a Flat-profile archive (profile=1). Got
   profile=taco ...`).

@@ -142,8 +142,9 @@ function _build_select(columns, location, source_location_column=_LOCATION_COLUM
     ordered = vcat(required, setdiff(extras, required))
     expressions = map(ordered) do column
         source = column == _LOCATION_COLUMN ? source_location_column : column
-        expression = _quote_ident(source)
-        source == column ? expression : expression * " AS " * _quote_ident(column)
+        # Keep the legacy name until result cleanup so it remains distinct from
+        # an untrusted cozip:location stored in the manifest.
+        _quote_ident(source)
     end
     join(expressions, ", ")
 end
