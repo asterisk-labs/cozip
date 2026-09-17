@@ -1,6 +1,6 @@
 # Python API
 
-Everything here is `cozip` 2026.9.9 as implemented in `python/cozip/__init__.py`,
+Everything here is `cozip` 2026.9.17 as implemented in `python/cozip/__init__.py`,
 `_core.py`, `_writer.py` and `_reader.py`. Examples and messages were captured from that
 build with pyarrow 24, pandas 3 and DuckDB 1.5.5.
 
@@ -174,7 +174,7 @@ full message table is in `debugging.md`; the common ones:
 
 - `cozip.lib` exposes every C function through a hand-written cffi `cdef` in `_core.py`
   (ABI mode, nothing checks it against `cozip.h`). Strings come back as `char *` cdata:
-  `cozip.ffi.string(cozip.lib.cozip_version_string()).decode()` gives `'2026.9.9'`.
+  `cozip.ffi.string(cozip.lib.cozip_version_string()).decode()` gives `'2026.9.17'`.
 - Status, profile and source constants are plain integers in `cozip._core`
   (`COZIP_OK`, `COZIP_ERR_INVALID_ARGUMENT` = 100, `COZIP_ERR_IO` = 102,
   `COZIP_PROFILE_FLAT` = 1, `COZIP_SOURCE_PATH` = 1, ...), not attributes of `lib`.
@@ -281,6 +281,6 @@ Or query `read_flat` on your own connection (`duckdb-reader.md`).
 ### Version checks
 
 ```python
-cozip.__version__                                         # package metadata, '2026.9.9'
+cozip.__version__                                         # package metadata, '2026.9.17'
 cozip.ffi.string(cozip.lib.cozip_version_string()).decode()  # loaded native library
 ```

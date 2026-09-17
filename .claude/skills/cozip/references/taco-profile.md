@@ -3,7 +3,7 @@
 Sources: `SPEC.md` section 14, `docs/taco-writer-internal.md`, `core/cozip.c` section 11,
 `python/cozip/_taco.py`, `core/tests/test_taco.c`, `python/tests/test_taco_internal.py`,
 and the consumer in the TACO package (`taco/writer/archive.py`, PyPI `taco-eo`). Messages
-and offsets below were captured from cozip 2026.9.9.
+and offsets below were captured from cozip 2026.9.17.
 
 ## Contents
 

@@ -1,6 +1,6 @@
 # Debugging
 
-Messages below were captured from cozip 2026.9.9 (Python, R, Julia and C), the JavaScript
+Messages below were captured from cozip 2026.9.17 (Python, R, Julia and C), the JavaScript
 reader and the DuckDB community extension 2.0.1 on DuckDB 1.5.5. libcozip messages are the
 same in every binding; Python shows them as `CozipError: [NAME] message`, R as
 `[cozip:NAME] message`, Julia as `CozipError [NAME] message`. Match on the text.

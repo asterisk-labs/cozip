@@ -19,7 +19,7 @@ and any columns you add. A reader fetches the index and the manifest, filters ro
 reads each file as one byte range. Entries are stored uncompressed, so
 `[offset, offset + size)` is exactly the original file, and `unzip` still works.
 
-This skill describes **cozip 2026.9.9** (SPEC.md 0.1.0, binary format version 1). Check
+This skill describes **cozip 2026.9.17** (SPEC.md 0.1.0, binary format version 1). Check
 `cozip.__version__`, `packageVersion("cozip")` or `Cozip.LibCozip.cozip_version()`. If it
 differs, trust the installed source and `CHANGELOG` over this file.
 
@@ -112,7 +112,7 @@ same manifest with `cozip.read("https://...")`, DuckDB or the JavaScript reader.
 ## Reference map
 
 Read only the reference relevant to the current task. Each one names its sources in the
-repository and is scoped to cozip 2026.9.9.
+repository and is scoped to cozip 2026.9.17.
 
 | Task | Read |
 | --- | --- |

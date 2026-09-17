@@ -4,7 +4,7 @@ For changes inside `github.com/asterisk-labs/cozip`. Sources: `Makefile`,
 `core/CMakeLists.txt`, `.github/workflows/release.yml`, `.github/dependabot.yml`,
 `.pre-commit-config.yaml`, `CHANGELOG`, `julia/UP`, `python/pyproject.toml`,
 `python/hatch_build.py`, `r/src/Makevars`, the test suites. Commands were run on macOS
-arm64 with the 2026.9.9 tree.
+arm64 with the 2026.9.17 tree.
 
 ## Contents
 

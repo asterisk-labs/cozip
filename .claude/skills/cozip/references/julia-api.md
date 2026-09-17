@@ -1,6 +1,6 @@
 # Julia API
 
-Everything here is `Cozip.jl` 2026.9.9 as implemented in `julia/src/Cozip.jl`,
+Everything here is `Cozip.jl` 2026.9.17 as implemented in `julia/src/Cozip.jl`,
 `LibCozip.jl`, `Writer.jl` and `Reader.jl`. Examples were run with Julia 1.12,
 DataFrames 1 and DuckDB.jl on macOS.
 

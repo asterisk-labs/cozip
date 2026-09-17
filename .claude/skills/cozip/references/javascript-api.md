@@ -1,6 +1,6 @@
 # JavaScript reader
 
-Everything here is `@asterisk-labs/cozip` 2026.9.9 as implemented in
+Everything here is `@asterisk-labs/cozip` 2026.9.17 as implemented in
 `javascript/src/index.js`, run on Node 24 with hyparquet 1.25.8. The package only reads;
 there is no JavaScript writer.
 

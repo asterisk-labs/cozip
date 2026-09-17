@@ -2,7 +2,7 @@
 
 Sources: `SPEC.md` (version 0.1.0, dated 2026-09-09), `core/cozip.h`, `core/cozip.c`,
 `scripts/check_cozip.py` in this skill. Offsets and sizes below were measured on archives
-written by cozip 2026.9.9. `SPEC.md` is normative; when this file and the spec disagree,
+written by cozip 2026.9.17. `SPEC.md` is normative; when this file and the spec disagree,
 the spec wins. Comments in `core/cozip.h` still call the rules "cozip 1.1"; the spec's
 version line reads 0.1.0 since 2026-09-09, and the binary format version is 1 in both.
 

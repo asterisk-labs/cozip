@@ -1,6 +1,6 @@
 # R API
 
-Everything here is the `cozip` R package 2026.9.9 as implemented in `r/R/cozip.R`,
+Everything here is the `cozip` R package 2026.9.17 as implemented in `r/R/cozip.R`,
 `r/R/read.R`, `r/R/zzz.R` and `r/src/cozip_glue.c`. Examples were run with R 4.6,
 arrow 24, duckdb 1.5.5, sf 1.1, geoarrow 0.4 and terra 1.9 in a UTF-8 locale.
 

@@ -2,7 +2,7 @@
 
 The public header is `core/cozip.h`; the implementation is the single file
 `core/cozip.c`, linked statically against the vendored libzip 1.11.4 and zlib 1.3.1. The
-examples below compiled with `-std=c11 -Wall -Wextra` and ran against a 2026.9.9 build on
+examples below compiled with `-std=c11 -Wall -Wextra` and ran against a 2026.9.17 build on
 macOS arm64. The C library only writes; there is no C reader API.
 
 ## Contents
