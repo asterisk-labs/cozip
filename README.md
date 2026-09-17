@@ -95,6 +95,14 @@ archives in browser and server runtimes. All follow the same [SPEC.md](SPEC.md).
 
 See [SPEC.md](SPEC.md). Any conforming reader handles any conforming writer.
 
+## AI agent skill
+
+Install the [cozip skill](https://github.com/asterisk-labs/cozip/blob/main/.claude/skills/cozip/SKILL.md) so coding agents know its format rules, binding APIs and TACO writer contract.
+
+```bash
+npx skills add asterisk-labs/cozip
+```
+
 ## License
 
 MIT.
