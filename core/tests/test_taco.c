@@ -257,6 +257,107 @@ static void test_taco_plan_and_write(void) {
     remove(drift_path);
 }
 
+static void test_taco_plan_sized(void) {
+    static const uint8_t image_bytes[] = "image-opaque";
+    static const uint8_t collection_bytes[] = "collection-opaque";
+    const uint64_t image_size = sizeof(image_bytes) - 1;
+    const char *image_path = COZIP_TEST_DIR "/sized-image.bin";
+    const char *collection_path = COZIP_TEST_DIR "/sized-collection.bin";
+    const char *stat_archive_path = COZIP_TEST_DIR "/stat-plan.zip";
+    const char *sized_archive_path = COZIP_TEST_DIR "/sized-plan.zip";
+    const char *wrong_archive_path = COZIP_TEST_DIR "/wrong-size.zip";
+
+    remove(stat_archive_path);
+    remove(sized_archive_path);
+    remove(wrong_archive_path);
+    CHECK(write_bytes(image_path, image_bytes, (size_t)image_size));
+    CHECK(write_bytes(collection_path, collection_bytes,
+                      sizeof(collection_bytes) - 1));
+
+    cozip_path_entry_t planned_priorities[] = {
+        {COZIP_TACO_COLLECTION_NAME, NULL, 0, 0},
+    };
+    cozip_path_entry_t priorities[] = {
+        {COZIP_TACO_COLLECTION_NAME, collection_path, 0, 0},
+    };
+    cozip_error_t err = {0};
+
+    cozip_path_entry_t stat_files[] = {{"DATA/0/image.tif", image_path, 0, 0}};
+    cozip_taco_plan_t stat_plan = COZIP_TACO_PLAN_INIT;
+    CHECK(cozip_plan_taco(stat_files, 1, planned_priorities, 1,
+                          &stat_plan, &err) == COZIP_OK);
+
+    cozip_path_entry_t files[] = {
+        {"DATA/0/image.tif", image_path, 0, image_size},
+    };
+    cozip_taco_plan_t plan = COZIP_TACO_PLAN_INIT;
+    CHECK(cozip_plan_taco_sized(files, 1, planned_priorities, 1,
+                                &plan, &err) == COZIP_OK);
+    CHECK(files[0].payload_offset == stat_files[0].payload_offset);
+    CHECK(files[0].payload_size == image_size);
+    CHECK(plan.layout_hash == stat_plan.layout_hash);
+
+    cozip_path_entry_t absent[] = {
+        {"DATA/0/image.tif", COZIP_TEST_DIR "/absent.bin", 0, image_size},
+    };
+    cozip_taco_plan_t absent_plan = COZIP_TACO_PLAN_INIT;
+    CHECK(cozip_plan_taco_sized(absent, 1, planned_priorities, 1,
+                                &absent_plan, &err) == COZIP_OK);
+    CHECK(absent[0].payload_offset == files[0].payload_offset);
+
+    cozip_path_entry_t empty[] = {{"DATA/0/image.tif", image_path, 0, 0}};
+    cozip_taco_plan_t empty_plan = COZIP_TACO_PLAN_INIT;
+    CHECK(cozip_plan_taco_sized(empty, 1, planned_priorities, 1,
+                                &empty_plan, &err) ==
+          COZIP_ERR_INVALID_ARGUMENT);
+    cozip_path_entry_t no_source[] = {
+        {"DATA/0/image.tif", NULL, 0, image_size},
+    };
+    cozip_taco_plan_t no_source_plan = COZIP_TACO_PLAN_INIT;
+    CHECK(cozip_plan_taco_sized(no_source, 1, planned_priorities, 1,
+                                &no_source_plan, &err) ==
+          COZIP_ERR_INVALID_ARGUMENT);
+
+    CHECK(cozip_write_taco(stat_archive_path, stat_files, 1, priorities, 1,
+                           &stat_plan, &err) == COZIP_OK);
+    CHECK(cozip_write_taco(sized_archive_path, files, 1, priorities, 1,
+                           &plan, &err) == COZIP_OK);
+    size_t stat_size = 0;
+    size_t sized_size = 0;
+    uint8_t *stat_archive = read_file(stat_archive_path, &stat_size);
+    uint8_t *sized_archive = read_file(sized_archive_path, &sized_size);
+    CHECK(stat_archive != NULL && sized_archive != NULL);
+    if (stat_archive && sized_archive) {
+        uint32_t index_size = read_u32(stat_archive + 18);
+        CHECK(stat_size == sized_size);
+        CHECK(read_u32(sized_archive + 18) == index_size);
+        CHECK(COZIP_INDEX_OFFSET + (size_t)index_size <= stat_size);
+        CHECK(memcmp(stat_archive + COZIP_INDEX_OFFSET,
+                     sized_archive + COZIP_INDEX_OFFSET, index_size) == 0);
+        CHECK(files[0].payload_offset + image_size <= sized_size);
+        CHECK(memcmp(sized_archive + files[0].payload_offset, image_bytes,
+                     (size_t)image_size) == 0);
+    }
+    free(stat_archive);
+    free(sized_archive);
+
+    cozip_path_entry_t wrong[] = {
+        {"DATA/0/image.tif", image_path, 0, image_size + 1},
+    };
+    cozip_taco_plan_t wrong_plan = COZIP_TACO_PLAN_INIT;
+    CHECK(cozip_plan_taco_sized(wrong, 1, planned_priorities, 1,
+                                &wrong_plan, &err) == COZIP_OK);
+    CHECK(cozip_write_taco(wrong_archive_path, wrong, 1, priorities, 1,
+                           &wrong_plan, &err) == COZIP_ERR_INVALID_ARGUMENT);
+    CHECK(!file_exists(wrong_archive_path));
+
+    remove(image_path);
+    remove(collection_path);
+    remove(stat_archive_path);
+    remove(sized_archive_path);
+    remove(wrong_archive_path);
+}
+
 static void test_taco_validation(void) {
     static const uint8_t byte = 1;
     const char *source_path = COZIP_TEST_DIR "/validation.bin";
@@ -517,6 +618,7 @@ static void test_write_archive_post_write_check(void) {
 
 int main(void) {
     test_taco_plan_and_write();
+    test_taco_plan_sized();
     test_taco_validation();
     test_write_archive_post_write_check();
     if (failures != 0) {

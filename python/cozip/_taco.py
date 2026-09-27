@@ -66,7 +66,7 @@ def _normalize_name(value: Any, *, context: str) -> str:
     return value
 
 
-def _normalize_path(value: Any, *, context: str) -> Path:
+def _normalize_path(value: Any, *, context: str, resolve: bool = False) -> Path:
     try:
         raw = os.fspath(value)
     except TypeError as exc:
@@ -77,7 +77,11 @@ def _normalize_path(value: Any, *, context: str) -> Path:
         raise ValueError(f"cozip._taco: {context} must be a non-empty path")
     if "\0" in raw:
         raise ValueError(f"cozip._taco: {context} contains a NUL byte")
-    return Path(raw).expanduser().resolve()
+    path = Path(raw).expanduser()
+    if resolve:
+        return path.resolve()
+    # resolve() would lstat every path component.
+    return path.absolute()
 
 
 def _normalize_file_pairs(
@@ -116,10 +120,26 @@ def _normalize_priority_names(values: Sequence[str]) -> tuple[str, ...]:
     )
 
 
+def _normalize_sizes(values: Sequence[int], *, count: int) -> tuple[int, ...]:
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise TypeError("cozip._taco: sizes must be an ordered sequence of integers")
+    if len(values) != count:
+        raise ValueError(
+            f"cozip._taco: sizes has {len(values)} items for {count} files"
+        )
+    for index, value in enumerate(values):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"cozip._taco: sizes[{index}] must be an integer")
+        if not 0 <= value < 1 << 64:
+            raise ValueError(f"cozip._taco: sizes[{index}] is outside uint64")
+    return tuple(values)
+
+
 def _allocate_path_entries(
     pairs: Sequence[tuple[str, Path | None]],
     *,
     planned: Sequence[PlannedFile] | None = None,
+    sizes: Sequence[int] | None = None,
 ) -> tuple[Any, list[Any]]:
     if not pairs:
         return ffi.NULL, []
@@ -137,21 +157,31 @@ def _allocate_path_entries(
         if planned is not None:
             entries[index].payload_offset = planned[index].offset
             entries[index].payload_size = planned[index].size
+        if sizes is not None:
+            entries[index].payload_size = sizes[index]
     return entries, keepalive
 
 
-def plan(files: Sequence[FilePair], priority_names: Sequence[str]) -> Plan:
-    """Ask libcozip to plan DATA offsets using priority-name placeholders.
+def plan(
+    files: Sequence[FilePair],
+    priority_names: Sequence[str],
+    *,
+    sizes: Sequence[int] | None = None,
+) -> Plan:
+    """Plan DATA offsets before the priority files are materialized.
 
-    Non-priority ``files`` must already exist. Priority payloads need not exist
-    yet: only their ordered names are required because names determine the
-    byte-0 index size. TACO uses ``Plan.offsets`` to materialize its own
-    metadata files afterward.
+    ``sizes`` skips source stats during planning. ``write()`` always checks the
+    sources against the plan.
     """
     normalized_files = _normalize_file_pairs(files, context="files")
     normalized_priorities = _normalize_priority_names(priority_names)
+    known_sizes = (
+        None if sizes is None else _normalize_sizes(sizes, count=len(normalized_files))
+    )
 
-    data_entries, data_keepalive = _allocate_path_entries(normalized_files)
+    data_entries, data_keepalive = _allocate_path_entries(
+        normalized_files, sizes=known_sizes
+    )
     priority_entries, priority_keepalive = _allocate_path_entries(
         [(name, None) for name in normalized_priorities]
     )
@@ -159,8 +189,9 @@ def plan(files: Sequence[FilePair], priority_names: Sequence[str]) -> Plan:
     native_plan.struct_size = ffi.sizeof("cozip_taco_plan_t")
     native_plan.abi_version = API_VERSION
     err = ffi.new("cozip_error_t *")
+    native = lib.cozip_plan_taco if known_sizes is None else lib.cozip_plan_taco_sized
     _check(
-        lib.cozip_plan_taco(
+        native(
             data_entries,
             len(normalized_files),
             priority_entries,
@@ -230,7 +261,7 @@ def write(
     native_plan.n_priorities = layout._native.n_priorities
     native_plan.layout_hash = layout._native.layout_hash
 
-    output_path = _normalize_path(output, context="output")
+    output_path = _normalize_path(output, context="output", resolve=True)
     output_c = ffi.new("char[]", str(output_path).encode("utf-8"))
     err = ffi.new("cozip_error_t *")
     _check(

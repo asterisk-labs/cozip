@@ -81,6 +81,9 @@ int cozip_finalize(const char*, cozip_entry_t*, size_t, size_t, int,
 int cozip_plan_taco(cozip_path_entry_t*, size_t,
                     const cozip_path_entry_t*, size_t,
                     cozip_taco_plan_t*, cozip_error_t*);
+int cozip_plan_taco_sized(cozip_path_entry_t*, size_t,
+                          const cozip_path_entry_t*, size_t,
+                          cozip_taco_plan_t*, cozip_error_t*);
 int cozip_write_taco(const char*, const cozip_path_entry_t*, size_t,
                      const cozip_path_entry_t*, size_t,
                      const cozip_taco_plan_t*, cozip_error_t*);

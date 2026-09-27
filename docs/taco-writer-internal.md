@@ -9,14 +9,14 @@ TACO validates the contract, assigns archive names, and creates
 `COLLECTION.json` and the `METADATA/*.parquet` files. It also owns staging,
 overwrite policy, partitioning, and publication of the completed archive.
 
-Libcozip handles the ZIP layout. It validates entry names, reads source sizes,
-computes payload offsets, writes STORE entries, places the final priority
-block, adds padding when needed, checks the headers it wrote, and patches the
-cozip integrity field. Payloads are opaque bytes to this layer: libcozip does
-not link Arrow, Parquet, or a JSON library.
+Libcozip handles the ZIP layout. It validates entry names, reads or checks
+source sizes, computes payload offsets, writes STORE entries, places the final
+priority block, adds padding when needed, checks the headers it wrote, and
+patches the cozip integrity field. Payloads are opaque bytes to this layer:
+libcozip does not link Arrow, Parquet, or a JSON library.
 
 That split keeps TACO changes out of the container ABI. An R or Julia TACO
-writer can call the same two C functions through its own private adapter; it
+writer can call the same C functions through its own private adapter; it
 does not need to route through Python.
 
 ## Two calls
@@ -47,6 +47,9 @@ the priority files. Priority payloads do not exist yet. Their names determine
 the size of the byte-0 index, while their later sizes cannot move the data
 entries that precede them. The call returns the data offsets that TACO writes
 into its Parquet metadata.
+
+`cozip_plan_taco_sized` reads sizes from `files[i].payload_size` and does not
+stat sources. The write step still checks them.
 
 TACO then materializes the priority files and calls `cozip_write_taco`.
 Libcozip stats the sources again, rebuilds the layout, and rejects changes in
@@ -83,6 +86,7 @@ from cozip._taco import plan, write
 layout = plan(
     [("DATA/0/image.tif", "/tmp/image.tif")],
     ["COLLECTION.json", "METADATA/collection.parquet"],
+    sizes=[1_048_576],  # optional: sizes TACO already measured
 )
 
 # Build the JSON and Parquet files with layout.offsets, then write:

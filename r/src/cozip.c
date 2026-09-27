@@ -1598,6 +1598,7 @@ static cozip_status_t build_taco_entries(
     const cozip_path_entry_t *priorities,
     size_t n_priorities,
     bool materialized_priorities,
+    bool caller_sizes,
     cozip_entry_t **out_entries,
     size_t *out_total,
     cozip_error_t *err) {
@@ -1637,7 +1638,12 @@ static cozip_status_t build_taco_entries(
                            "file %zu has no source path", i);
         }
         uint64_t size = 0;
-        s = stat_file_size(files[i].source_path, &size, err);
+        if (caller_sizes) {
+            s = validate_path(files[i].source_path, "source path", err);
+            size = files[i].payload_size;
+        } else {
+            s = stat_file_size(files[i].source_path, &size, err);
+        }
         if (s != COZIP_OK) { free(entries); return s; }
         if (size == 0) {
             free(entries);
@@ -1714,13 +1720,13 @@ static uint64_t taco_layout_hash(const cozip_entry_t *entries,
     return hash;
 }
 
-COZIP_API cozip_status_t cozip_plan_taco(
-    cozip_path_entry_t *files,
-    size_t n_files,
-    const cozip_path_entry_t *priorities,
-    size_t n_priorities,
-    cozip_taco_plan_t *out_plan,
-    cozip_error_t *err) {
+static cozip_status_t plan_taco(cozip_path_entry_t *files,
+                                size_t n_files,
+                                const cozip_path_entry_t *priorities,
+                                size_t n_priorities,
+                                bool caller_sizes,
+                                cozip_taco_plan_t *out_plan,
+                                cozip_error_t *err) {
     if (!out_plan) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                        "out_plan must be non-NULL");
@@ -1735,7 +1741,8 @@ COZIP_API cozip_status_t cozip_plan_taco(
     size_t total = 0;
     cozip_status_t s = build_taco_entries(files, n_files,
                                           priorities, n_priorities,
-                                          false, &entries, &total, err);
+                                          false, caller_sizes,
+                                          &entries, &total, err);
     if (s != COZIP_OK) return s;
     if (!entries) {
         return set_err(err, COZIP_ERR_IO,
@@ -1754,6 +1761,28 @@ COZIP_API cozip_status_t cozip_plan_taco(
     out_plan->layout_hash = taco_layout_hash(entries, n_files, n_priorities);
     free(entries);
     return COZIP_OK;
+}
+
+COZIP_API cozip_status_t cozip_plan_taco(
+    cozip_path_entry_t *files,
+    size_t n_files,
+    const cozip_path_entry_t *priorities,
+    size_t n_priorities,
+    cozip_taco_plan_t *out_plan,
+    cozip_error_t *err) {
+    return plan_taco(files, n_files, priorities, n_priorities, false,
+                     out_plan, err);
+}
+
+COZIP_API cozip_status_t cozip_plan_taco_sized(
+    cozip_path_entry_t *files,
+    size_t n_files,
+    const cozip_path_entry_t *priorities,
+    size_t n_priorities,
+    cozip_taco_plan_t *out_plan,
+    cozip_error_t *err) {
+    return plan_taco(files, n_files, priorities, n_priorities, true,
+                     out_plan, err);
 }
 
 COZIP_API cozip_status_t cozip_write_taco(
@@ -1786,7 +1815,7 @@ COZIP_API cozip_status_t cozip_write_taco(
     size_t total = 0;
     cozip_status_t s = build_taco_entries(files, n_files,
                                           priorities, n_priorities,
-                                          true, &entries, &total, err);
+                                          true, false, &entries, &total, err);
     if (s != COZIP_OK) return s;
     if (!entries) {
         return set_err(err, COZIP_ERR_IO,

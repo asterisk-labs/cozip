@@ -54,6 +54,12 @@ cozip_status_t cozip_plan_taco(cozip_path_entry_t *files, size_t n_files,
                                const cozip_path_entry_t *priorities, size_t n_priorities,
                                cozip_taco_plan_t *out_plan, cozip_error_t *err);
 
+/* Same arguments and result; files[i].payload_size is an input. */
+cozip_status_t cozip_plan_taco_sized(cozip_path_entry_t *files, size_t n_files,
+                                     const cozip_path_entry_t *priorities,
+                                     size_t n_priorities,
+                                     cozip_taco_plan_t *out_plan, cozip_error_t *err);
+
 cozip_status_t cozip_write_taco(const char *out_path,
                                 const cozip_path_entry_t *files, size_t n_files,
                                 const cozip_path_entry_t *priorities, size_t n_priorities,
@@ -67,6 +73,8 @@ cozip_status_t cozip_write_taco(const char *out_path,
   Priority names fix the index size, and priority sizes cannot move earlier entries, so
   the call fills `payload_offset` and `payload_size` for every file and a
   `cozip_taco_plan_t`.
+- Sized plan: `cozip_plan_taco_sized` reads `files[i].payload_size` without touching
+  sources. Write checks the real sizes.
 - Write: the same files and the same ordered priority names, now with existing, non-empty
   sources. libcozip re-stats every source, recomputes the layout, compares it with the
   plan and with the offsets echoed back in `files`, rejects an output that aliases any
@@ -85,12 +93,14 @@ pyarrow, pandas or DuckDB.
 
 ```text
 cozip._taco.API_VERSION == 1
-plan(files, priority_names) -> Plan
+plan(files, priority_names, *, sizes=None) -> Plan
 write(output, layout, priority_files) -> str
 ```
 
-- `files`: ordered `(archive_name, source_path)` pairs; paths are resolved to absolute
-  `Path`s. `priority_names`: ordered names.
+- `files`: ordered `(archive_name, source_path)` pairs. Source paths become absolute
+  without resolving symlinks. `priority_names`: ordered names.
+- `sizes`: optional byte sizes aligned with `files`. When present, planning does not
+  touch sources; write still checks them.
 - `Plan` is a frozen dataclass with `files` (tuple of `PlannedFile(name, source, offset,
   size)`), `priority_names`, a private copy of the native struct, and
   `offsets -> {name: (offset, size)}`. It is an in-process value, not a file format.

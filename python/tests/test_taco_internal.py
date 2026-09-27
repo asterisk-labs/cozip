@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import struct
 import subprocess
 import sys
@@ -211,6 +212,38 @@ class TestPlan:
         source.write_bytes(b"x")
         result = plan([("DATA/0/file.bin", source)], [COLLECTION])
         assert result.files[0].size == 1
+
+    def test_sources_are_made_absolute_without_resolving_links(
+        self, tmp_path: Path
+    ) -> None:
+        real = tmp_path / "real"
+        real.mkdir()
+        (real / "image.tif").write_bytes(b"linked")
+        alias = tmp_path / "alias"
+        try:
+            alias.symlink_to(real, target_is_directory=True)
+        except OSError:
+            pytest.skip("symlinks are not available")
+        result = plan([("DATA/0/image.tif", alias / "image.tif")], [COLLECTION])
+        assert result.files[0].source == alias / "image.tif"
+        assert result.files[0].size == len(b"linked")
+
+    def test_plan_leaves_source_metadata_calls_to_libcozip(
+        self, physical_files: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[str] = []
+
+        def counting(original):
+            def wrapper(*args, **kwargs):
+                calls.append(os.fspath(args[0]))
+                return original(*args, **kwargs)
+
+            return wrapper
+
+        monkeypatch.setattr(os, "lstat", counting(os.lstat))
+        monkeypatch.setattr(os, "stat", counting(os.stat))
+        plan([("DATA/0/image.tif", physical_files["image"])], [COLLECTION])
+        assert calls == []
 
     def test_rejects_nul_in_name(self, physical_files: dict[str, Path]) -> None:
         with pytest.raises(ValueError, match="NUL"):
@@ -429,6 +462,26 @@ class TestPlanWriteConsistency:
                 [("OTHER", physical_files["metadata"])],
             )
 
+    def test_relative_sources_are_anchored_when_planned(
+        self,
+        tmp_path: Path,
+        physical_files: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = plan([("DATA/0/image.tif", "image.tif")], [COLLECTION])
+        (tmp_path / "elsewhere").mkdir()
+        monkeypatch.chdir(tmp_path / "elsewhere")
+        output = write(
+            tmp_path / "relative.zip",
+            result,
+            [(COLLECTION, physical_files["collection"])],
+        )
+        with zipfile.ZipFile(output) as archive:
+            assert (
+                archive.read("DATA/0/image.tif") == physical_files["image"].read_bytes()
+            )
+
     def test_c_rejects_data_size_drift_before_touching_output(
         self,
         tmp_path: Path,
@@ -493,6 +546,79 @@ class TestPlanWriteConsistency:
                 ],
             )
         assert captured.value.code == COZIP_ERR_INVALID_ARGUMENT
+
+
+class TestKnownSizes:
+    def test_matches_the_plan_libcozip_measures(
+        self, layout: Plan, physical_files: dict[str, Path]
+    ) -> None:
+        sized = plan(
+            [
+                ("DATA/0/image.tif", physical_files["image"]),
+                ("DATA/0/mask.tif", physical_files["mask"]),
+            ],
+            ["COLLECTION.json", "METADATA/sample.parquet"],
+            sizes=[item.size for item in layout.files],
+        )
+        assert sized == layout
+
+    def test_plans_without_touching_sources(self, tmp_path: Path) -> None:
+        result = plan(
+            [("DATA/0/image.tif", tmp_path / "materialized-later.tif")],
+            [COLLECTION],
+            sizes=[123],
+        )
+        assert result.files[0].size == 123
+
+    def test_write_rejects_a_size_the_source_does_not_have(
+        self, tmp_path: Path, layout: Plan, physical_files: dict[str, Path]
+    ) -> None:
+        wrong = plan(
+            [
+                ("DATA/0/image.tif", physical_files["image"]),
+                ("DATA/0/mask.tif", physical_files["mask"]),
+            ],
+            ["COLLECTION.json", "METADATA/sample.parquet"],
+            sizes=[layout.files[0].size + 1, layout.files[1].size],
+        )
+        output = tmp_path / "wrong-size.zip"
+        with pytest.raises(CozipError, match="differ from plan") as captured:
+            _write_fixture(output, wrong, physical_files)
+        assert captured.value.code == COZIP_ERR_INVALID_ARGUMENT
+        assert not output.exists()
+
+    def test_libcozip_rejects_a_zero_size(
+        self, physical_files: dict[str, Path]
+    ) -> None:
+        with pytest.raises(CozipError, match="zero-byte") as captured:
+            plan(
+                [("DATA/0/image.tif", physical_files["image"])],
+                [COLLECTION],
+                sizes=[0],
+            )
+        assert captured.value.code == COZIP_ERR_INVALID_ARGUMENT
+
+    @pytest.mark.parametrize(
+        ("sizes", "error"),
+        [
+            ([1, 2], ValueError),
+            ([True], TypeError),
+            (["1"], TypeError),
+            ([1.0], TypeError),
+            ([-1], ValueError),
+            ([1 << 64], ValueError),
+            ("1", TypeError),
+        ],
+    )
+    def test_sizes_are_one_uint64_per_file(
+        self, sizes: object, error: type[Exception], physical_files: dict[str, Path]
+    ) -> None:
+        with pytest.raises(error):
+            plan(
+                [("DATA/0/image.tif", physical_files["image"])],
+                [COLLECTION],
+                sizes=sizes,
+            )
 
 
 class TestPostWriteVerification:

@@ -6,6 +6,19 @@ from the repository's `VERSION` file; `make sync` updates the package copies.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 
+## [Unreleased]
+
+### Added
+
+- C `cozip_plan_taco_sized()` and Python `cozip._taco.plan(..., sizes=...)`
+  accept known sizes and skip source stats during planning. Writing still
+  validates the sizes.
+
+### Fixed
+
+- Python no longer resolves source paths before planning, avoiding an `lstat`
+  for every path component. Output paths are still resolved.
+
 ## [2026.9.17] — 2026-09-17
 
 ### Fixed
