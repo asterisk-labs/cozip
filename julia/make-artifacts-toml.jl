@@ -22,12 +22,12 @@ const PLATFORMS = [
     ),
     (
         kv = ["arch = \"x86_64\"", "os = \"macos\""],
-        asset = "libcozip-$(VERSION)-macos-universal.tar.gz",
+        asset = "libcozip-$(VERSION)-macos-x86_64.tar.gz",
         kind  = :tar,
     ),
     (
         kv = ["arch = \"aarch64\"", "os = \"macos\""],
-        asset = "libcozip-$(VERSION)-macos-universal.tar.gz",
+        asset = "libcozip-$(VERSION)-macos-aarch64.tar.gz",
         kind  = :tar,
     ),
     (

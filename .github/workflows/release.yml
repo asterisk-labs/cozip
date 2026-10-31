@@ -37,6 +37,8 @@ jobs:
           cmp LICENSE python/LICENSE
 
 
+  # libcozip links the vendored karu, so libcurl and OpenSSL come from vcpkg
+  # as static libraries and the shared library carries no dependency on them.
   build-lib:
     name: libcozip (${{ matrix.name }})
     needs: validate
@@ -47,25 +49,37 @@ jobs:
           - name: linux-x86_64
             runner: ubuntu-24.04
             container: quay.io/pypa/manylinux_2_28_x86_64
+            triplet: x64-linux
             lib_ext: so
             shell: bash
           - name: linux-aarch64
             runner: ubuntu-24.04-arm
             container: quay.io/pypa/manylinux_2_28_aarch64
+            triplet: arm64-linux
             lib_ext: so
             shell: bash
-          - name: macos-universal
+          # Static OpenSSL is built per architecture, so macOS ships one
+          # library per architecture instead of a universal one.
+          - name: macos-aarch64
             runner: macos-14
             container: ''
+            triplet: arm64-osx
+            arch: arm64
             lib_ext: dylib
             shell: bash
-            # arm64 + x86_64 fat dylib. 11.0 is the floor for Apple Silicon.
-            cmake_extra: >-
-              "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
-              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          - name: macos-x86_64
+            runner: macos-15-intel
+            container: ''
+            triplet: x64-osx
+            arch: x86_64
+            lib_ext: dylib
+            shell: bash
+          # The C runtime is linked statically too: karu is C++, and Python
+          # ships vcruntime140.dll but not msvcp140.dll.
           - name: windows-x86_64
             runner: windows-2022
             container: ''
+            triplet: x64-windows-static
             lib_ext: dll
             shell: pwsh
     runs-on: ${{ matrix.runner }}
@@ -73,16 +87,33 @@ jobs:
     defaults:
       run:
         shell: ${{ matrix.shell }}
+    env:
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
+      VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.triplet }}
     steps:
       - uses: actions/checkout@v4
 
-      # manylinux ships gcc/cmake but not ninja.
+      # vcpkg builds OpenSSL with perl and unpacks its ports with zip.
       - if: startsWith(matrix.name, 'linux')
-        run: yum install -y ninja-build
-      - if: runner.os == 'macOS'
-        run: brew install ninja
-      - if: runner.os == 'Windows'
-        run: choco install ninja -y
+        run: |
+          dnf install -y kernel-headers perl-core zip unzip
+          git config --global --add safe.directory "$PWD"
+
+      # vcpkg ships no arm64 Linux tools; get-cmake below provides them.
+      - if: matrix.name == 'linux-aarch64'
+        run: echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> "$GITHUB_ENV"
+
+      - name: Set vcpkg paths (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          echo "VCPKG_INSTALLED_DIR=$PWD/vcpkg_installed" >> "$GITHUB_ENV"
+          echo "COZIP_TRIPLETS_DIR=$PWD/core/triplets" >> "$GITHUB_ENV"
+
+      - name: Set vcpkg paths (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INSTALLED_DIR=$($PWD.Path)\vcpkg_installed"
+          Add-Content -Path $env:GITHUB_ENV -Value "COZIP_TRIPLETS_DIR=$($PWD.Path)\core\triplets"
 
       # cl.exe + nmake on PATH for cmake.
       - if: runner.os == 'Windows'
@@ -90,9 +121,22 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure
-        # BUILD_SHARED_LIBS=ON applies only to cozip. Vendored libzip
-        # and zlib stay STATIC and absorb into cozip with hidden visibility.
+      # CMake and Ninja for every runner, including manylinux.
+      - uses: lukka/get-cmake@v4.4.2
+
+      - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: vcpkg
+          vcpkgGitCommitId: 9e44ec0e9f247d77c230ced0ee66c76296837807
+          vcpkgJsonGlob: "**/core/vcpkg.json"
+          runVcpkgInstall: true
+          runVcpkgFormatString: '[`install`, `--recurse`, `--clean-after-build`, `--x-install-root`, `$[env.VCPKG_INSTALLED_DIR]`, `--triplet`, `$[env.VCPKG_DEFAULT_TRIPLET]`, `--overlay-triplets=triplets`]'
+          doNotCache: false
+
+      - name: Configure (Unix)
+        # BUILD_SHARED_LIBS=ON applies only to cozip. Vendored libzip, zlib
+        # and karu stay STATIC and absorb into cozip with hidden visibility.
+        if: runner.os != 'Windows'
         run: >
           cmake -B build -S core -G Ninja
           -DCMAKE_BUILD_TYPE=Release
@@ -100,25 +144,65 @@ jobs:
           -DCMAKE_INSTALL_LIBDIR=lib
           -DBUILD_SHARED_LIBS=ON
           -DCOZIP_BUILD_TESTS=ON
-          ${{ matrix.cmake_extra }}
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR"
+          -DVCPKG_OVERLAY_TRIPLETS="$COZIP_TRIPLETS_DIR"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake -B build -S core -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX=install
+          -DCMAKE_INSTALL_LIBDIR=lib
+          -DBUILD_SHARED_LIBS=ON
+          -DCOZIP_BUILD_TESTS=ON
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR"
+          "-DVCPKG_OVERLAY_TRIPLETS=$env:COZIP_TRIPLETS_DIR"
 
       - run: cmake --build build --config Release --parallel
       - run: ctest --test-dir build -C Release --output-on-failure
       - run: cmake --install build --config Release
 
+      - if: startsWith(matrix.name, 'linux')
+        name: Verify Linux dependencies
+        run: |
+          ldd install/lib/cozip.so
+          if ldd install/lib/cozip.so | grep -E 'curl|ssl|crypto'; then
+            echo "::error::cozip.so still depends on a build-environment curl or crypto library"
+            exit 1
+          fi
+
       # Ad-hoc signature so Sequoia+ accepts the dylib in sandboxed contexts.
-      - if: matrix.name == 'macos-universal'
-        name: Sign and verify universal dylib
+      - if: runner.os == 'macOS'
+        name: Verify and sign macOS dylib
         run: |
           DYLIB=install/lib/cozip.dylib
+          otool -L "$DYLIB"
+          if otool -L "$DYLIB" | tail -n +2 | grep -E 'curl|ssl|crypto|/(opt/homebrew|usr/local|vcpkg)/'; then
+            echo "::error::cozip.dylib still contains a build-environment library path"
+            exit 1
+          fi
+          otool -l "$DYLIB" | grep -A4 LC_BUILD_VERSION | grep -q 'minos 11.0'
+          [ "$(lipo -archs "$DYLIB")" = "${{ matrix.arch }}" ] || { echo "::error::unexpected architectures"; exit 1; }
           codesign --force --sign - "$DYLIB"
-          ARCHS=$(lipo -archs "$DYLIB")
-          echo "$ARCHS" | grep -qw x86_64 || { echo "Missing x86_64"; exit 1; }
-          echo "$ARCHS" | grep -qw arm64  || { echo "Missing arm64";  exit 1; }
 
-      # Catches a regression where the static link absorbs libzip/zlib
-      # but doesn't hide their symbols. awk instead of `nm | grep -v`
-      # because pipefail propagates grep's exit-1-on-no-match.
+      - if: runner.os == 'Windows'
+        name: Verify Windows dependencies
+        run: |
+          $dependencies = (dumpbin /dependents install\bin\cozip.dll | Out-String)
+          $dependencies
+          if ($dependencies -match 'libcurl|libssl|libcrypto|MSVCP|VCRUNTIME') {
+            throw "cozip.dll still depends on a curl, crypto or C++ runtime DLL"
+          }
+
+      # Catches a regression where the static link absorbs libzip, zlib,
+      # karu, curl or OpenSSL but doesn't hide their symbols. awk instead of
+      # `nm | grep -v` because pipefail propagates grep's exit-1-on-no-match.
       - if: runner.os != 'Windows'
         name: Verify symbol isolation
         run: |
@@ -142,6 +226,9 @@ jobs:
           cp install/include/cozip.h                 staged/
           cp install/include/version.h               staged/
           cp LICENSE   staged/
+          cp core/karu/LICENSE staged/karu-LICENSE
+          cp "$VCPKG_INSTALLED_DIR/${{ matrix.triplet }}/share/curl/copyright"    staged/curl-LICENSE
+          cp "$VCPKG_INSTALLED_DIR/${{ matrix.triplet }}/share/openssl/copyright" staged/openssl-LICENSE
           cp README.md staged/
 
       - name: Stage artifact (Windows)
@@ -152,6 +239,9 @@ jobs:
           Copy-Item install\include\cozip.h      staged\
           Copy-Item install\include\version.h    staged\
           Copy-Item LICENSE                      staged\
+          Copy-Item core\karu\LICENSE            staged\karu-LICENSE
+          Copy-Item "$env:VCPKG_INSTALLED_DIR\${{ matrix.triplet }}\share\curl\copyright"    staged\curl-LICENSE
+          Copy-Item "$env:VCPKG_INSTALLED_DIR\${{ matrix.triplet }}\share\openssl\copyright" staged\openssl-LICENSE
           Copy-Item README.md                    staged\
 
       - uses: actions/upload-artifact@v4
@@ -173,7 +263,7 @@ jobs:
           - name: ubuntu
             runner: ubuntu-latest
           - name: macos
-            runner: macos-14
+            runner: macos-15
           - name: windows
             runner: windows-2022
     runs-on: ${{ matrix.runner }}
@@ -184,6 +274,15 @@ jobs:
         with:
           r-version: 'release'
           use-public-rspm: true
+
+      # configure finds libcurl and OpenSSL for the reader with pkg-config.
+      # Rtools ships both on Windows.
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libcurl4-openssl-dev libssl-dev
+      - if: runner.os == 'macOS'
+        run: brew install pkgconf openssl@3
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
@@ -211,7 +310,7 @@ jobs:
           - name: linux-x86_64
             runner: ubuntu-24.04
             lib_ext: so
-          - name: macos-universal
+          - name: macos-aarch64
             runner: macos-14
             lib_ext: dylib
           - name: windows-x86_64
@@ -303,9 +402,16 @@ jobs:
             lib_ext: so
             shell: bash
             manylinux_plat: manylinux_2_28_aarch64
-          - name: macos-universal
+          - name: macos-aarch64
             runner: macos-14
             container: ''
+            arch: arm64
+            lib_ext: dylib
+            shell: bash
+          - name: macos-x86_64
+            runner: macos-15-intel
+            container: ''
+            arch: x86_64
             lib_ext: dylib
             shell: bash
           - name: windows-x86_64
@@ -353,12 +459,14 @@ jobs:
         run: |
           mkdir -p python/cozip/_lib
           cp libcozip-bin/cozip.${{ matrix.lib_ext }} python/cozip/_lib/
+          cp libcozip-bin/*-LICENSE python/cozip/_lib/
 
       - name: Bundle native lib (Windows)
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force -Path python\cozip\_lib | Out-Null
           Copy-Item libcozip-bin\cozip.dll python\cozip\_lib\
+          Copy-Item libcozip-bin\*-LICENSE python\cozip\_lib\
 
       - name: Build wheel
         working-directory: python
@@ -383,11 +491,11 @@ jobs:
         run: |
           mkdir -p wheelhouse-delocated wheelhouse
           for whl in wheelhouse-raw/*.whl; do
-            delocate-wheel -v --require-archs x86_64,arm64 -w wheelhouse-delocated "$whl"
+            delocate-wheel -v --require-archs ${{ matrix.arch }} -w wheelhouse-delocated "$whl"
           done
           for whl in wheelhouse-delocated/*.whl; do
             python -m wheel tags \
-              --platform-tag macosx_11_0_universal2 \
+              --platform-tag macosx_11_0_${{ matrix.arch }} \
               --python-tag py3 --abi-tag none --remove "$whl"
           done
           mv wheelhouse-delocated/*.whl wheelhouse/
@@ -445,6 +553,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # A source build compiles the reader, which links libcurl and OpenSSL.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev
       - working-directory: python
         run: |
           python -m pip install --upgrade pip build cffi
@@ -492,7 +604,7 @@ jobs:
                 mkdir -p "$stage/bin"
                 cp "$plat_dir/cozip.dll" "$stage/bin/"
                 ;;
-              macos-universal)
+              macos-*)
                 mkdir -p "$stage/lib"
                 cp "$plat_dir/cozip.dylib" "$stage/lib/"
                 ;;
@@ -504,6 +616,7 @@ jobs:
             cp "$plat_dir/cozip.h"   "$stage/include/"
             cp "$plat_dir/version.h" "$stage/include/"
             cp "$plat_dir/LICENSE"   "$stage/"
+            cp "$plat_dir"/*-LICENSE "$stage/"
             cp "$plat_dir/README.md" "$stage/"
 
             (cd staging && tar czf "../release-files/${pkg}.tar.gz" "$pkg")

@@ -1,0 +1,13 @@
+{
+  "builtin-baseline": "9e44ec0e9f247d77c230ced0ee66c76296837807",
+  "dependencies": [
+    {
+      "name": "curl",
+      "default-features": false,
+      "features": [
+        "ssl"
+      ]
+    },
+    "openssl"
+  ]
+}
