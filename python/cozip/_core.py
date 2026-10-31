@@ -10,9 +10,13 @@ import cffi
 COZIP_OK = 0
 COZIP_ERR_INVALID_LFH = 1
 COZIP_ERR_ARCHIVE_TOO_SMALL = 2
+COZIP_ERR_INVALID_INDEX = 3
+COZIP_ERR_PROFILE = 4
 COZIP_ERR_INVALID_ARGUMENT = 100
 COZIP_ERR_BUFFER_TOO_SMALL = 101
 COZIP_ERR_IO = 102
+COZIP_ERR_NOT_FOUND = 103
+COZIP_ERR_UNSUPPORTED = 104
 
 # Profile selector for cozip_build_index_payload
 COZIP_PROFILE_NONE = 0
@@ -95,6 +99,10 @@ uint64_t cozip_required_padding_payload(uint64_t);
 int cozip_plan_flat(cozip_entry_t*, size_t, cozip_error_t*);
 int cozip_write_flat(const char*, cozip_entry_t*, size_t, size_t,
                      const char*, cozip_error_t*);
+
+int cozip_read_flat_metadata(const char*, uint8_t**, size_t*, char**);
+int cozip_location_base(const char*, char**, char**);
+void cozip_free(void*);
 """)
 
 
@@ -150,4 +158,13 @@ class CozipError(RuntimeError):
         code = int(err.code)
         msg = ffi.string(err.message).decode("utf-8", errors="replace")
         name = ffi.string(lib.cozip_status_string(code)).decode("ascii")
+        return cls(code, name, msg)
+
+    @classmethod
+    def from_message(cls, code: int, message) -> "CozipError":
+        """Builds the exception from a reader status and its char* message."""
+        name = ffi.string(lib.cozip_status_string(code)).decode("ascii")
+        if message == ffi.NULL:
+            return cls(code, name, name)
+        msg = ffi.string(message).decode("utf-8", errors="replace")
         return cls(code, name, msg)

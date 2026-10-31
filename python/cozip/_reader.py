@@ -1,14 +1,31 @@
 """Read the manifest of a Flat-profile cozip archive."""
 
 import os
+import tempfile
 from collections.abc import Sequence
 
 import pandas as pd
 
 
 _LOCATION_COLUMN = "cozip:location"
-_LEGACY_LOCATION_COLUMN = "cozip:gdal_vsi"
 _PROTECTED_LOCATION_COLUMNS = frozenset({_LOCATION_COLUMN, "taco:location"})
+
+# DuckDB only decodes the fetched manifest from a local file, so it needs no
+# extension and must never install or load one.
+_DUCKDB_CONFIG = {
+    "autoinstall_known_extensions": False,
+    "autoload_known_extensions": False,
+}
+
+# The body of the read_flat macro in cozip_reader, over the fetched manifest.
+# Hive partitioning stays off so the manifest's path never adds columns.
+_MANIFEST_SQL = (
+    "SELECT COLUMNS(lambda c: c != 'cozip:location' AND c != 'cozip:gdal_vsi'), "
+    "CASE WHEN {location} "
+    "THEN '/vsisubfile/' || \"offset\" || '_' || \"size\" || ',' || ? "
+    'ELSE NULL END AS "cozip:location" '
+    "FROM read_parquet(?, hive_partitioning = false)"
+)
 
 
 def _quote_identifier(value: str) -> str:
@@ -31,35 +48,45 @@ def _selected_columns(
     return list(dict.fromkeys([*required, *extras]))
 
 
-def _projection(
-    columns: Sequence[str] | None,
-    location: bool,
-    source_location_column: str = _LOCATION_COLUMN,
-) -> str:
+def _projection(columns: Sequence[str] | None, location: bool) -> str:
     selected = _selected_columns(columns, location)
     if selected is None:
         return "*"
-    expressions = []
-    for column in selected:
-        source = (
-            source_location_column if column == _LOCATION_COLUMN else column
-        )
-        # Keep the legacy name until result cleanup so it cannot be confused
-        # with an untrusted cozip:location stored in the manifest.
-        expressions.append(_quote_identifier(source))
-    return ", ".join(expressions)
+    return ", ".join(_quote_identifier(column) for column in selected)
 
 
-def _legacy_flat_signature(message: str) -> bool:
-    return (
-        "read_flat" in message
-        and "gdal_vsi" in message
-        and "does not support the supplied arguments" in message
-    )
+def _fetch_metadata(source: str, destination: str) -> None:
+    """Writes the archive's __metadata__ Parquet bytes to destination."""
+    from ._core import CozipError, ffi, lib
+
+    data = ffi.new("uint8_t **")
+    size = ffi.new("size_t *")
+    message = ffi.new("char **")
+    status = lib.cozip_read_flat_metadata(source.encode("ascii"), data, size, message)
+    try:
+        if status != 0:
+            raise CozipError.from_message(status, message[0])
+        with open(destination, "wb") as stream:
+            stream.write(ffi.buffer(data[0], size[0]))
+    finally:
+        lib.cozip_free(data[0])
+        lib.cozip_free(message[0])
 
 
-def _missing_read_flat(message: str) -> bool:
-    return "read_flat" in message and "does not exist" in message
+def _location_base(source: str) -> str:
+    """The GDAL path that cozip:location appends after the byte range."""
+    from ._core import CozipError, ffi, lib
+
+    base = ffi.new("char **")
+    message = ffi.new("char **")
+    status = lib.cozip_location_base(source.encode("ascii"), base, message)
+    try:
+        if status != 0:
+            raise CozipError.from_message(status, message[0])
+        return ffi.string(base[0]).decode("ascii")
+    finally:
+        lib.cozip_free(base[0])
+        lib.cozip_free(message[0])
 
 
 def _read_flat_archive(
@@ -67,64 +94,30 @@ def _read_flat_archive(
 ) -> pd.DataFrame:
     import duckdb
 
-    local_extension = os.environ.get("COZIP_EXTENSION")
-    if local_extension:
-        con = duckdb.connect(config={"allow_unsigned_extensions": True})
-    else:
-        con = duckdb.connect()
-    try:
-        if local_extension:
-            con.load_extension(local_extension)
-        else:
-            con.execute("INSTALL cozip FROM community; LOAD cozip;")
-        enabled = "true" if location else "false"
+    with tempfile.TemporaryDirectory(prefix="cozip-") as directory:
+        metadata = os.path.join(directory, "__metadata__.parquet")
+        _fetch_metadata(source, metadata)
+        base = _location_base(source) if location else ""
         sql = (
-            f"SELECT {_projection(columns, location)} "
-            f"FROM read_flat(?, location := {enabled})"
+            f"SELECT {_projection(columns, location)} FROM ("
+            f"{_MANIFEST_SQL.format(location='true' if location else 'false')})"
         )
-        legacy = False
+        con = duckdb.connect(config=_DUCKDB_CONFIG)
         try:
-            result = con.execute(sql, [source])
-        except Exception as exc:
-            message = str(exc)
-            if _legacy_flat_signature(message):
-                legacy_sql = (
-                    f"SELECT {_projection(columns, location, _LEGACY_LOCATION_COLUMN)} "
-                    f"FROM read_flat(?, gdal_vsi := {enabled})"
-                )
-            elif _missing_read_flat(message):
-                legacy_sql = (
-                    f"SELECT {_projection(columns, location, _LEGACY_LOCATION_COLUMN)} "
-                    f"FROM read_cozip(?, gdal_vsi := {enabled})"
-                )
-            else:
+            df = con.execute(sql, [base, metadata]).df()
+        except duckdb.Error as exc:
+            text = str(exc)
+            if metadata not in text:
                 raise
-            result = con.execute(legacy_sql, [source])
-            legacy = True
-        df = result.df()
-        protected = [
-            column
-            for column in _PROTECTED_LOCATION_COLUMNS
-            if column in df.columns
-        ]
-        if legacy and location:
-            if protected:
-                df = df.drop(columns=protected)
-        elif "taco:location" in protected:
-            df = df.drop(columns=["taco:location"])
-        if legacy and location and _LEGACY_LOCATION_COLUMN in df.columns:
-            df = df.rename(columns={_LEGACY_LOCATION_COLUMN: _LOCATION_COLUMN})
-        if not location:
-            synthetic = [
-                column
-                for column in (_LOCATION_COLUMN, _LEGACY_LOCATION_COLUMN)
-                if column in df.columns
-            ]
-            if synthetic:
-                df = df.drop(columns=synthetic)
-        return df
-    finally:
-        con.close()
+            label = source if "://" not in source else "remote archive"
+            raise type(exc)(text.replace(metadata, f"{label}!__metadata__")) from None
+        finally:
+            con.close()
+    if "taco:location" in df.columns:
+        df = df.drop(columns=["taco:location"])
+    if not location and _LOCATION_COLUMN in df.columns:
+        df = df.drop(columns=[_LOCATION_COLUMN])
+    return df
 
 
 def read(
@@ -137,8 +130,8 @@ def read(
     ``columns`` selects extra manifest columns; the required ``name``,
     ``offset``, and ``size`` columns remain. Set ``location=False`` to omit
     the synthetic ``cozip:location`` column. Archives using any profile other
-    than Flat (profile 1), including TACO (profile 2), are rejected by
-    ``read_flat``.
+    than Flat (profile 1), including TACO (profile 2), are rejected with a
+    ``CozipError``.
     """
     source = os.fspath(source)
     if not isinstance(source, str):
