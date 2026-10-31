@@ -1,3 +1,0 @@
-[submodule "duckdb"]
-	path = duckdb
-	url = https://github.com/asterisk-labs/cozip_reader.git

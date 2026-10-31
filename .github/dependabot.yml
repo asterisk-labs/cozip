@@ -16,19 +16,6 @@ updates:
     commit-message:
       prefix: ci
 
-  # The duckdb submodule is cozip_reader, so this keeps the writer and the
-  # reader extension from drifting apart between releases.
-  - package-ecosystem: gitsubmodule
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "09:00"
-      timezone: America/Lima
-    open-pull-requests-limit: 1
-    commit-message:
-      prefix: deps
-
   - package-ecosystem: pip
     directory: /python
     schedule:
