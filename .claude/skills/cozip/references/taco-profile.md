@@ -176,5 +176,7 @@ profile byte 2. Planning with no data files (`plan([], ["COLLECTION.json"])`) is
 ## 9. Reading TACO archives
 
 `cozip.read`, R `read`, Julia `Cozip.read` and the JavaScript reader reject profile 2.
-Read TACO datasets with the TACO package. The DuckDB extension's `read_taco` exists in
-2.0.x but is removed on cozip_reader `main` (3.0.0), so do not build on it.
+In Python, R and Julia the error has status `PROFILE` and the message `read_flat needs a
+Flat-profile archive (profile=1). Got profile=2 in: ...`. Read TACO datasets with the TACO package. The DuckDB
+extension's `read_taco` exists in 2.0.x but is removed on cozip_reader `main` (3.0.0), so
+do not build on it.

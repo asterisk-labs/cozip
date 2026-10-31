@@ -1,8 +1,9 @@
 # Python API
 
 Everything here is `cozip` 2026.9.27 as implemented in `python/cozip/__init__.py`,
-`_core.py`, `_writer.py` and `_reader.py`. Examples and messages were captured from that
-build with pyarrow 24, pandas 3 and DuckDB 1.5.5.
+`_core.py`, `_writer.py` and `_reader.py`, with the native reader in `core/cozip_read.c`.
+Examples and messages were captured from that build with pyarrow 24, pandas 3 and DuckDB
+1.5.5.
 
 ## Contents
 
@@ -13,7 +14,7 @@ build with pyarrow 24, pandas 3 and DuckDB 1.5.5.
 5. `read`
 6. Errors
 7. `lib`, `ffi` and constants
-8. Patterns: GeoParquet manifests, pandas input, row order, payload access, private buckets
+8. Patterns: GeoParquet manifests, pandas input, row order, payload access, private data
 
 ## 1. Install and runtime
 
@@ -24,14 +25,16 @@ pip install cozip
 - Python 3.10 or newer. Dependencies: `cffi>=1.16`, `pyarrow>=14`, `duckdb>=1.5.2`,
   `pandas>=2.0`.
 - Wheels are tagged `py3-none` (cffi loads the library with `dlopen`, no CPython ABI) for
-  manylinux 2.28 x86-64 and aarch64, macOS 11 universal2 and Windows x86-64. The sdist
-  carries `core/` and compiles the library with CMake and Ninja.
+  manylinux 2.28 x86-64 and aarch64, macOS 11 arm64 and x86-64 (one wheel each) and
+  Windows x86-64. Their library links libcurl and OpenSSL statically. The sdist carries
+  `core/` with karu and compiles the library with CMake and Ninja, which also needs a C++23
+  compiler, libcurl and OpenSSL.
 - `import cozip` loads `cozip/_lib/cozip.{so,dylib,dll}` immediately (no `lib` prefix).
   `COZIP_LIB_PATH=/abs/path/cozip.dylib` overrides the lookup. The writer imports pyarrow
   on first use of a writer name; the reader imports pandas on `cozip.read` and DuckDB only
   when called. `cozip._taco` imports none of them.
-- `COZIP_EXTENSION=/abs/path/cozip.duckdb_extension` makes `read()` load a locally built
-  DuckDB extension (unsigned extensions allowed) instead of the community one.
+- DuckDB is only the Parquet decoder for `read()`. No DuckDB extension is installed or
+  loaded, and `COZIP_EXTENSION` is ignored.
 
 Public names: `write`, `create`, `stage_metadata`, `stage_create`, `read`, `CozipError`,
 `lib`, `ffi`, `__version__`. `cozip.write is cozip.create`.
@@ -127,37 +130,44 @@ cozip.read(source, columns=None, location=True) -> pandas.DataFrame
 
 | Argument | Meaning |
 | --- | --- |
-| `source` | Local path or URL that DuckDB can open (`https://`, `s3://`, `gs://`, `hf://`, `azure://`). Non-empty, ASCII, no NUL. |
+| `source` | Local path, `file://`, `http(s)://`, `s3://` (also `s3a://`, `s3n://`), `gs://`, `gcs://`, `az://`, `azure://`, `abfs://`, `abfss://`, `hf://` or `source://` URL, or a GDAL `/vsi` path. `r2://` is not readable. Non-empty, ASCII, no NUL. A leading `~/` is expanded to fetch the bytes but stays in the location. |
 | `columns` | `None` returns every column. A list returns `name`, `offset`, `size`, the location column when enabled, then the listed extras without duplicates; `cozip:location` and `taco:location` in the list are ignored. |
 | `location` | `bool`. `False` omits `cozip:location`. |
 
-- Each call opens a new in-memory DuckDB connection, runs
-  `INSTALL cozip FROM community; LOAD cozip;` (network on first use), queries
-  `read_flat(?, location := ...)` and closes the connection.
-- Older extensions are handled: when `read_flat` rejects `location :=` it retries with
-  `gdal_vsi :=`, and when `read_flat` does not exist it uses `read_cozip`. A legacy
-  `cozip:gdal_vsi` column is renamed to `cozip:location`; a `taco:location` column is
-  always dropped. The community build for DuckDB 1.5.5 needs the first retry.
-- Projected reads keep the normalized `cozip:location` column on both the current and
-  legacy extension signatures.
-- Only Flat archives are read. Profile 0 and TACO archives raise DuckDB's
-  `InvalidInputException` (`read_flat needs a Flat-profile archive (profile=1). Got
-  profile=taco ...`).
-- Types: `offset` and `size` are `uint64`; strings; binary columns and GeoParquet
-  geometry arrive as `bytearray` WKB without CRS.
+- libcozip reads the byte-0 index through karu, verifies it (LFH, integrity hash,
+  sections, names, ranges, profile 1) and fetches only `__metadata__`. A typical archive
+  costs two range requests, the first 64 KiB and the last 32 KiB, and a manifest stored in
+  either is not fetched again. Later reads are pinned to the first response's strong ETag.
+- The manifest goes to a temporary file that a new in-memory DuckDB connection decodes,
+  with `autoinstall_known_extensions` and `autoload_known_extensions` off and Hive
+  partitioning off, so a `key=value` directory in the path adds no column. The connection
+  is closed on return.
+- Stored `cozip:location`, `cozip:gdal_vsi` and `taco:location` columns are dropped and the
+  location is computed again.
+- Only Flat archives are read. Profile 0 and TACO archives raise `CozipError`
+  (`[PROFILE] read_flat needs a Flat-profile archive (profile=1). Got profile=2 in: ...`).
+- Types follow DuckDB. `offset` and `size` are `uint64`, strings use the pandas string
+  dtype, integer and boolean columns with nulls use pandas nullable dtypes such as `Int32`
+  and `boolean`, and binary columns and GeoParquet geometry arrive as `bytearray` WKB
+  without CRS.
 - The location repeats `source` as given: `cozip.read("w1/out.zip")` yields
-  `/vsisubfile/127_96,w1/out.zip`. HTTP(S) sources get `/vsicurl/`; see `duckdb-reader.md`
-  for other schemes.
+  `/vsisubfile/127_96,w1/out.zip`. Remote sources map to `/vsicurl/`, `/vsis3/`, `/vsigs/`,
+  `/vsiaz/` and `/vsiadls/` (table in `duckdb-reader.md` section 6); `hf://` becomes a
+  `/vsicurl/` `resolve` URL that keeps an explicit `@revision`. Unlike the DuckDB
+  extension, `read()` also maps `az://` to `/vsiaz/` and `s3a://` and `s3n://` to
+  `/vsis3/`. `source://`, `r2://`, `file://` and `/vsi` paths stay unchanged.
 
-Argument errors are raised before DuckDB is imported.
+Argument errors are raised before anything is read.
 
 ## 6. Errors
 
 `CozipError` (a `RuntimeError`) comes from libcozip: `str(e)` is `[NAME] message`, with
 `e.code` (int), `e.name` (`INVALID_ARGUMENT`, `IO`, `INVALID_LFH`, ...) and `e.message`.
 Everything the binding checks itself raises `TypeError`, `ValueError` or
-`FileNotFoundError` with a `cozip: ` prefix. `read()` lets DuckDB exceptions through. The
-full message table is in `debugging.md`; the common ones:
+`FileNotFoundError` with a `cozip: ` prefix. `read()` raises `CozipError` for index and
+transport problems (`PROFILE`, `INVALID_INDEX`, `INVALID_LFH`, `ARCHIVE_TOO_SMALL`,
+`NOT_FOUND`, `IO`) and lets DuckDB's `BinderException` through for an unknown `columns`
+entry. The full message table is in `debugging.md`; the common ones:
 
 | Message (excerpt) | Fix |
 | --- | --- |
@@ -262,21 +272,25 @@ Local files use `seek`/`read`; GDAL uses the `cozip:location` column; object sto
 range requests. Worked examples with `requests`, `obstore` and rasterio are in
 `access-and-publishing.md`.
 
-### Private buckets
+### Private data
 
-`read()` opens a fresh DuckDB connection per call, so a secret created on your own
-connection is not visible to it. A persistent secret is: new connections load it from
-`~/.duckdb/stored_secrets`.
+`read()` takes credentials from the environment and the standard credential files, as
+karu discovers them (`core/karu/CONFIGURATION.md`). DuckDB secrets are not used.
+
+| Store | Settings |
+| --- | --- |
+| Hugging Face | `HF_TOKEN`, else the token file from `huggingface-cli login` (`$HF_TOKEN_PATH`, `$HF_HOME/token`, `~/.cache/huggingface/token`) |
+| S3 | `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE` with `~/.aws`, web identity, container or instance metadata credentials |
+| GCS | `GOOGLE_APPLICATION_CREDENTIALS`, gcloud's ADC file, or metadata credentials |
+| Azure | `AZURE_STORAGE_CONNECTION_STRING`, or `AZURE_STORAGE_ACCOUNT` with `AZURE_STORAGE_ACCESS_KEY`, `AZURE_STORAGE_SAS_TOKEN` or a client secret |
 
 ```python
-import duckdb
-duckdb.connect().execute(
-    "CREATE PERSISTENT SECRET my_bucket (TYPE s3, KEY_ID '...', SECRET '...', "
-    "REGION 'us-west-2', SCOPE 's3://my-bucket')")
-cozip.read("s3://my-bucket/dataset.zip")
+import os
+os.environ["HF_TOKEN"] = "hf_..."              # or log in once with huggingface-cli
+cozip.read("hf://datasets/org/private-repo@v1/data/dataset.zip")
 ```
 
-Or query `read_flat` on your own connection (`duckdb-reader.md`).
+GDAL needs its own credentials to open the resulting locations.
 
 ### Version checks
 

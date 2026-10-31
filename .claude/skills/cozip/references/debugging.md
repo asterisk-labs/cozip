@@ -1,16 +1,17 @@
 # Debugging
 
-Messages below were captured from cozip 2026.9.27 (Python, R, Julia and C), the JavaScript
-reader and the DuckDB community extension 2.0.1 on DuckDB 1.5.5. libcozip messages are the
-same in every binding; Python shows them as `CozipError: [NAME] message`, R as
-`[cozip:NAME] message`, Julia as `CozipError [NAME] message`. Match on the text.
+Messages below were captured from cozip 2026.9.27 with the native reader (Python, R,
+Julia and C), the JavaScript reader and the DuckDB community extension 2.0.1 on DuckDB
+1.5.5. libcozip messages, the reader's included, are the same in every binding; Python
+shows them as `CozipError: [NAME] message`, R as `[cozip:NAME] message`, Julia as
+`CozipError [NAME] message`. Match on the text.
 
 ## Contents
 
 1. Writing
 2. Staging a custom manifest
 3. Reading a manifest
-4. Library and extension loading
+4. Library loading
 5. Integrity hash mismatches
 6. Wrong bytes, wrong offsets, missing columns
 7. Silent outcomes worth checking
@@ -76,17 +77,22 @@ Python, R and Julia (`read()`):
 | --- | --- | --- |
 | `cozip.read: source contains non-ASCII characters; cozip supports ASCII paths and URLs only` | Unicode path or URL | rename, or percent-encode the URL |
 | `cozip.read: columns must be a sequence of non-empty strings` | `columns="split"` | `columns=["split"]` |
-| `Invalid Input Error: read_flat needs a Flat-profile archive (profile=1). Got profile=taco in: ...` | TACO archive (`profile=none` for profile 0) | read TACO with the TACO package |
-| `Invalid Input Error: LFH does not match cozip layout: ...` | a plain ZIP or other file | not a cozip |
-| `Invalid Input Error: cozip archive too small (minimum is 32819 bytes): ...` | wrong object, an HTML error page, a truncated upload | check the URL and object size |
-| `Invalid Input Error: cozip integrity hash mismatch: ...` | modified or re-encoded bytes | section 5 |
-| `IO Error: Cannot open file "...": No such file or directory` | wrong local path | relative paths resolve against the process working directory |
-| `HTTP Error: HTTP GET error on '...' (HTTP 404 Not Found)` | wrong URL or revision | fix the URL |
-| `HTTP 401` or `HTTP 403` | private object, expired presigned URL, mangled `hf://` revision | DuckDB secret (`duckdb-reader.md` section 6), or an HTTPS `resolve` URL |
-| `Cozip.read is not supported on Windows` (Julia) | DuckDB.jl limitation | read from Python or R on Windows |
+| `[PROFILE] read_flat needs a Flat-profile archive (profile=1). Got profile=2 in: ...` | TACO archive (`profile=0` for profile 0) | read TACO with the TACO package |
+| `[INVALID_LFH] LFH does not match cozip layout: ...` or `[INVALID_LFH] byte 0 is not a ZIP Local File Header: ...` | a plain ZIP, a bare Parquet file or another file | not a cozip |
+| `[ARCHIVE_TOO_SMALL] cozip archive too small (minimum is 32819 bytes): ...` | wrong object, an HTML error page, a truncated upload | check the URL and object size |
+| `[INVALID_INDEX] cozip integrity hash mismatch: ...` | modified or re-encoded bytes | section 5 |
+| `[INVALID_INDEX] cozip index has no entry named '__metadata__': ...` | profile byte 1 without a Flat index | rebuild the archive |
+| `[IO] /path/missing.zip: No such file or directory` | wrong local path | relative paths resolve against the process working directory |
+| `[NOT_FOUND] https://host/missing.zip: HTTP 404: ...` | wrong URL or revision | fix the URL |
+| a message with `HTTP 401` or `HTTP 403` | private object without credentials, expired presigned URL | set the credentials (`HF_TOKEN`, `AWS_*` and so on, `python-api.md` section 8), or use a fresh URL |
+| `[INVALID_ARGUMENT] unknown scheme in 's4://...'` | a scheme karu does not read | use a local path or a supported URL (`python-api.md` section 5) |
+| `[INVALID_ARGUMENT] could not read hf://datasets/a: expected hf://owner/name/path in 'a'` | incomplete `hf://` URL | add the owner, repository and file path |
+| `Binder Error: Referenced column "x" not found` (a DuckDB exception) | a `columns` entry the manifest does not have | check the manifest's columns |
+| `[UNSUPPORTED] this libcozip was built without the Flat reader` | library built with `-DCOZIP_READER=OFF`, or an R build for webR | rebuild with the reader |
+| `Cozip.read is not supported on Windows yet` (Julia) | the native reader is not verified on Windows from Julia | read from Python or R on Windows |
 
 JavaScript messages are listed in `javascript-api.md` section 7; SQL-only messages in
-`duckdb-reader.md` section 7.
+`duckdb-reader.md` section 8.
 
 ## 4. Library and extension loading
 
@@ -97,23 +103,14 @@ JavaScript messages are listed in `javascript-api.md` section 7; SQL-only messag
 | Julia `cozip: COZIP_LIB_PATH=... does not exist` or `cozip: native library not found at ...` | override or artifact missing | set the variable before `using Cozip`, or reinstall to fetch the artifact |
 | C changes not visible in Python, R or Julia | the binding loads an older library | `make lib` (Python, Julia with `COZIP_LIB_PATH`), reinstall the R package |
 | R source install fails compiling `libzip/*.c` | no C toolchain or GNU make (Rtools on Windows) | install the toolchain; no system libzip is needed |
+| R `configure: pkg-config is required to find libcurl and OpenSSL` or `configure: libcurl >= 7.83.0 and OpenSSL >= 3.0 are required` | the reader's system libraries are missing | install pkg-config, libcurl and OpenSSL development files (`libcurl4-openssl-dev`, `libssl-dev` on Debian and Ubuntu) |
+| R `C++23 standard requested but CXX23 is not defined` | R older than 4.3 or a compiler without C++23 | upgrade R or the toolchain |
+| CMake `Could NOT find CURL` or `Could NOT find OpenSSL` in `make lib` or an sdist build | the reader's system libraries are missing | install them, or configure `-DCOZIP_READER=OFF` for a writer-only library |
 
-The DuckDB extension is separate from the package version:
-
-```python
-import duckdb
-con = duckdb.connect()
-con.execute("LOAD cozip")
-con.execute("SELECT extension_version FROM duckdb_extensions() WHERE extension_name = 'cozip'").fetchall()
-# [('7af22df',)] is 2.0.1
-```
-
-- Each DuckDB version has its own extension directory (`~/.duckdb/extensions/v1.5.5/<platform>/`),
-  so upgrading the `duckdb` package installs the extension again.
-- `UPDATE EXTENSIONS (cozip)` or `FORCE INSTALL cozip FROM community` refreshes it. Without
-  network access `read()` fails until the extension has been installed once.
-- `COZIP_EXTENSION=/abs/path/cozip.duckdb_extension` loads a local build (unsigned allowed).
-  Python and R read the variable on every call; Julia needs it set before `using Cozip`.
+`read()` never installs or loads a DuckDB extension, so a missing `cozip` or `httpfs`
+extension, an old extension build or no network for `INSTALL` no longer affect it.
+`COZIP_EXTENSION` is ignored. For the optional extension itself see `duckdb-reader.md`
+section 1.
 
 ## 5. Integrity hash mismatches
 
@@ -141,11 +138,12 @@ rewriting it as the writer does.
   `stage_create(validate=False)` with an edited Parquet).
 - JavaScript `TypeError: Cannot mix BigInt and other types`: offsets and sizes are
   `BigInt` (`javascript-api.md` section 5).
-- `cozip:location` missing after a projected read: update cozip; current Python, R and
-  Julia wrappers preserve it across the extension 1.x, 2.0.0/2.0.1 and 2.0.2 signatures.
+- `cozip:location` missing after a projected read: pass `location=True`; the required
+  columns and the location always come first in a projection.
 - GDAL cannot open a location: a relative archive path used from another directory, a
-  `/vsis3/` or `/vsigs/` location without GDAL credentials, or an `hf://` revision mangled
-  by extension 2.0.x (`duckdb-reader.md` section 5).
+  `/vsis3/`, `/vsigs/` or `/vsiaz/` location without GDAL credentials, a private
+  `hf://` location without GDAL HTTP credentials, or a location
+  made by DuckDB extension 2.0.x from an `hf://` revision (`duckdb-reader.md` section 6).
 - An `__index_level_0__` column in the manifest: the table came from pandas without
   `preserve_index=False`.
 
@@ -156,10 +154,11 @@ rewriting it as the writer does.
 - R under a non-UTF-8 locale writes names such as `ni<c3><b1>o` instead of rejecting
   `niño` (`r-api.md` section 7).
 - `stage_create` accepts `offset` and `size` stored as int64; the spec asks for uint64.
-- `cozip_finalize` with `COZIP_PROFILE_FLAT` writes whatever the entries say, including an
-  index without `__metadata__`; only `cozip_write_flat` enforces the Flat layout.
+- Generic `cozip_finalize` can write a nonconforming Flat index; the Flat reader
+  rejects it.
 - In SQL with extension 2.0.1, a location column stored in the Parquet passes through
-  `read_flat`; the language wrappers drop it.
+  `read_flat`; `read()` in Python, R and Julia drops stored `cozip:location`,
+  `cozip:gdal_vsi` and `taco:location` columns and computes the location again.
 
 ## 8. Reporting problems
 
@@ -168,5 +167,5 @@ rewriting it as the writer does.
 - Post-write check failures (`INVALID_LFH` from a writer) point at libcozip or libzip, not at
   user input.
 - Reader crashes or hangs on malformed archives belong to the reader's repository:
-  asterisk-labs/cozip for the JavaScript reader and the bindings, asterisk-labs/cozip_reader
-  for the DuckDB extension.
+  asterisk-labs/cozip for the native reader, the JavaScript reader and the bindings,
+  asterisk-labs/cozip_reader for the DuckDB extension.

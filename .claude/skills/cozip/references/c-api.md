@@ -1,9 +1,10 @@
 # C API
 
-The public header is `core/cozip.h`; the implementation is the single file
-`core/cozip.c`, linked statically against the vendored libzip 1.11.4 and zlib 1.3.1. The
-examples below compiled with `-std=c11 -Wall -Wextra` and ran against a 2026.9.27 build on
-macOS arm64. The C library only writes; there is no C reader API.
+The public header is `core/cozip.h`; the writer is `core/cozip.c`, linked statically
+against the vendored libzip 1.11.4 and zlib 1.3.1, and the Flat reader is
+`core/cozip_read.c`, which fetches bytes through the vendored karu 0.4.0 (C++23, libcurl,
+OpenSSL). The examples below compiled with `-std=c11 -Wall -Wextra` and ran against a
+2026.9.27 build on macOS arm64.
 
 ## Contents
 
@@ -28,8 +29,11 @@ ctest --test-dir core/build-tests --output-on-failure
 ```
 
 - Options: `COZIP_BUILD_TESTS` (default `OFF`), `COZIP_INSTALL` (default `ON`, forced off
-  under Emscripten). The build type defaults to `Release` and the macOS deployment target
-  to 11.0. The version comes from the repository's `VERSION` file and lands in the
+  under Emscripten), `COZIP_READER` (default `ON`, forced off under Emscripten). The reader
+  needs a C++23 compiler, libcurl 7.83 or newer and OpenSSL 3; with `COZIP_READER=OFF` the
+  library is C11 with no system dependencies, `cozip_location_base` still works and
+  `cozip_read_flat_metadata` returns `UNSUPPORTED`. The build type defaults to `Release`
+  and the macOS deployment target to 11.0. The version comes from the repository's `VERSION` file and lands in the
   generated `<build>/version.h`.
 - The shared library has no `lib` prefix: `cozip.dylib`, `cozip.so`, `cozip.dll`. `-lcozip`
   therefore fails (`ld: library 'cozip' not found`); link the file itself and set an rpath:
@@ -42,10 +46,14 @@ ctest --test-dir core/build-tests --output-on-failure
   tree exports the same target through `cozipConfig.cmake`.
 - GitHub releases carry `libcozip-<version>-<platform>.tar.gz` (plus a `.zip` for Windows)
   with `include/cozip.h`, `include/version.h`, and `lib/cozip.{so,dylib}` or
-  `bin/cozip.dll`. Platforms: `linux-x86_64`, `linux-aarch64` (manylinux 2.28),
-  `macos-universal`, `windows-x86_64`.
-- Only `cozip_*` symbols are exported (`COZIP_API`, hidden visibility); the release build
-  fails if a libzip or zlib symbol leaks.
+  `bin/cozip.dll`, and `karu-LICENSE`, `curl-LICENSE` and `openssl-LICENSE`. Platforms:
+  `linux-x86_64`, `linux-aarch64` (manylinux 2.28), `macos-aarch64`, `macos-x86_64`,
+  `windows-x86_64`; releases up to 2026.9.27 shipped one `macos-universal` archive instead.
+  Release builds link libcurl and OpenSSL statically from vcpkg, and the Windows DLL also
+  links the C runtime statically, so it needs no `msvcp140.dll`.
+- Only `cozip_*` symbols are exported (`COZIP_API`, hidden visibility, and with the reader
+  `-exported_symbol,_cozip_*` on macOS and `--exclude-libs,ALL` on Linux); the release
+  build fails if a libzip, zlib, karu, curl or OpenSSL symbol leaks.
 
 ## 2. Conventions and status codes
 
@@ -62,10 +70,16 @@ ctest --test-dir core/build-tests --output-on-failure
 | --- | --- | --- |
 | `COZIP_OK` | 0 | success |
 | `COZIP_ERR_INVALID_LFH` | 1 | the written archive did not match the plan (post-write check); the output was removed |
-| `COZIP_ERR_ARCHIVE_TOO_SMALL` | 2 | hash patch on a file below 32,819 bytes |
-| `COZIP_ERR_INVALID_ARGUMENT` | 100 | names, sizes, sources, capacity, profile rules, plan drift |
+| `COZIP_ERR_ARCHIVE_TOO_SMALL` | 2 | hash patch or read of a file below 32,819 bytes |
+| `COZIP_ERR_INVALID_INDEX` | 3 | reader: index payload, integrity hash, sections, names or ranges invalid, or no `__metadata__` |
+| `COZIP_ERR_PROFILE` | 4 | reader: the profile byte is not 1 |
+| `COZIP_ERR_INVALID_ARGUMENT` | 100 | names, sizes, sources, capacity, profile rules, plan drift; reader: malformed URI, unknown scheme or incomplete `hf://` path |
 | `COZIP_ERR_BUFFER_TOO_SMALL` | 101 | index output buffer too small |
-| `COZIP_ERR_IO` | 102 | open, stat, read, write, libzip, allocation or cleanup failure |
+| `COZIP_ERR_IO` | 102 | open, stat, read, write, libzip, allocation or cleanup failure; reader: transport failure, including a missing local file |
+| `COZIP_ERR_NOT_FOUND` | 103 | reader: the remote object does not exist |
+| `COZIP_ERR_UNSUPPORTED` | 104 | reader: built without `COZIP_READER`, or a GDAL `/vsi` handler karu does not read |
+
+The reader reports LFH errors as `COZIP_ERR_INVALID_LFH`.
 
 `cozip_status_string(status)` returns the name (`"INVALID_ARGUMENT"`).
 
@@ -78,6 +92,7 @@ ctest --test-dir core/build-tests --output-on-failure
 | TACO profile | `cozip_plan_taco`, `cozip_write_taco` | TACO writers (`taco-profile.md`) |
 | Primitives | `cozip_plan`, `cozip_index_payload_size`, `cozip_build_index_payload`, `cozip_build_extra_field`, `cozip_write_archive`, `cozip_patch_integrity_hash`, `cozip_predict_zip32_archive_size`, `cozip_required_padding_payload` | a custom pipeline; `cozip_finalize` is the reference composition |
 | Accessors | `cozip_version_string`, `cozip_status_string`, `cozip_index_name`, `cozip_padding_name`, `cozip_flat_metadata_name` | bindings that avoid macros |
+| Flat reader | `cozip_read_flat_metadata`, `cozip_location_base`, `cozip_free` | reading a manifest; Python, R and Julia `read()` |
 
 `cozip_finalize` runs: optional TACO block check, `cozip_plan`, size prediction and
 padding, `cozip_build_index_payload`, `cozip_write_archive` (libzip write plus post-write
@@ -240,3 +255,11 @@ While writing:
   must update all three by hand.
 - Read reserved names through the accessors (`cozip_index_name()` and friends) instead of
   copying the strings; R and Julia cache them at load time.
+- The reader functions do not take a `cozip_error_t`. On failure `*out_error` holds a
+  heap message (NULL only if it could not be allocated), so a long URL is never cut at
+  192 bytes. Release `*out_data`, `*out_base` and `*out_error` with `cozip_free`, also on
+  failure. `cozip_read_flat_metadata` checks the index in cozip_reader's order and with its
+  messages, reads the first 64 KiB and the last 32 KiB in one request batch, pins later
+  reads to the strong ETag, and reuses those bytes when the manifest lies inside them.
+  Credentials come from the environment and the standard credential files (karu's
+  `core/karu/CONFIGURATION.md`).

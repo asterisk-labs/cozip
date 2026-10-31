@@ -1,7 +1,8 @@
 # R API
 
 Everything here is the `cozip` R package 2026.9.27 as implemented in `r/R/cozip.R`,
-`r/R/read.R`, `r/R/zzz.R` and `r/src/cozip_glue.c`. Examples were run with R 4.6,
+`r/R/read.R`, `r/R/zzz.R`, `r/src/cozip_glue.c` and the native reader
+`r/src/cozip_read.c`. Examples were run with R 4.6,
 arrow 24, duckdb 1.5.5, sf 1.1, geoarrow 0.4 and terra 1.9 in a UTF-8 locale.
 
 ## Contents
@@ -21,12 +22,18 @@ arrow 24, duckdb 1.5.5, sf 1.1, geoarrow 0.4 and terra 1.9 in a UTF-8 locale.
 install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")
 ```
 
-- R 4.1 or newer. Imports: arrow (>= 14), bit64, duckdb, DBI, tibble. Suggests sf and
+- R 4.3 or newer. Imports: arrow (>= 14), bit64, duckdb, DBI, tibble. Suggests sf and
   geoarrow for GeoParquet.
 - r-universe builds the package from the `r/` directory of the `main` branch on every
   push, with binaries for Linux, macOS and Windows. A source install compiles libcozip,
-  libzip 1.11.4 and zlib 1.3.1 from `r/src/`; it needs a C toolchain and GNU make, no
-  system libraries (Windows adds `-ladvapi32`).
+  the reader, libzip 1.11.4, zlib 1.3.1 and karu 0.4.0 from `r/src/`. It needs GNU make,
+  a C++23 compiler (`CXX_STD = CXX23`), pkg-config, libcurl 7.83 or newer and OpenSSL 3
+  (`libcurl4-openssl-dev` and `libssl-dev` on Debian and Ubuntu; Rtools ships them on
+  Windows, which also links `-ladvapi32` and `-lws2_32`).
+- `configure` and `configure.win` find libcurl and OpenSSL with pkg-config and write
+  `src/Makevars` and `src/Makevars.win` from their `.in` templates; `cleanup` removes
+  them. An Emscripten (webR) build leaves the reader out, and `read()` then fails with
+  `UNSUPPORTED`.
 - Exports: `create`, `write` (the same function), `stage_metadata`, `stage_create`, `read`.
   `library(cozip)` masks `base::write`; call `cozip::write` or `base::write` explicitly
   when both are needed.
@@ -82,18 +89,21 @@ stage_create(out_path, paths, metadata_parquet, validate = TRUE)
 read(source, columns = NULL, location = TRUE)
 ```
 
-- `source`: a single non-empty ASCII string, local path or http(s)/s3/gcs/azure/hf URL.
+- `source`: a single non-empty ASCII string, local path or URL; the accepted schemes and
+  credentials are those of Python (`python-api.md` sections 5 and 8).
 - `columns`: `NULL` for every column, otherwise extra column names; `name`, `offset`,
   `size` (and `cozip:location` when enabled) are always included.
 - Returns a tibble. `offset` and `size` are doubles (DuckDB maps `UBIGINT` to double in R),
   exact up to 2^53 bytes.
-- Every call creates its own DuckDB database, runs `INSTALL httpfs`, `LOAD httpfs`,
-  `INSTALL cozip FROM community` and `LOAD cozip` (or `LOAD` the file named by the
-  `COZIP_EXTENSION` environment variable), queries `read_flat()` and shuts the database
-  down. The duckdb package prints a note that extensions live under `~/.duckdb`.
-- The same fallbacks as Python apply: `gdal_vsi :=` for extension 2.0.0 and 2.0.1,
-  `read_cozip()` for 1.x, legacy `cozip:gdal_vsi` renamed to `cozip:location`,
-  `taco:location` dropped. Projected reads retain the normalized location column.
+- `.Call(C_R_cozip_read_flat_metadata, source)` verifies the index and returns the
+  `__metadata__` bytes, which `read()` writes to a `tempfile()`. A new DuckDB database
+  decodes it with `autoinstall_known_extensions` and `autoload_known_extensions` off, plus
+  `shared_home = FALSE` and `allow_extensions = FALSE` when the installed duckdb has those
+  arguments (1.5.5 does), so nothing touches `~/.duckdb` and no note is printed. The
+  database is disconnected before the temporary file is removed.
+- No extension is installed or loaded, not even `httpfs`. `COZIP_EXTENSION` is ignored.
+- Stored location columns are dropped and `cozip:location` is computed again, as in
+  Python. Hive partitioning is off.
 - Only Flat archives are accepted.
 
 ## 6. Errors
@@ -105,9 +115,10 @@ read(source, columns = NULL, location = TRUE)
 - libcozip failures carry the status name:
   `[cozip:INVALID_ARGUMENT] entry 0 ('e') has a zero-byte payload; FLAT user entries must
   be non-empty`. The entry index is zero-based there and one-based in R-side messages.
-- DuckDB errors from `read()` pass through, for example
-  `Invalid Input Error: read_flat needs a Flat-profile archive (profile=1). Got
-  profile=taco ...`.
+- Reader failures also carry the status name, for example
+  `[cozip:PROFILE] read_flat needs a Flat-profile archive (profile=1). Got profile=2 in:
+  ...` or `[cozip:IO] /path/missing.zip: No such file or directory`. DuckDB errors pass
+  through only for an unknown `columns` entry.
 
 ## 7. Locale and encodings
 

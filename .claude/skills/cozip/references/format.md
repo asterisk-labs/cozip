@@ -115,7 +115,8 @@ This skips the integrity check; use it only on trusted sources, or verify the ha
 - The writer emits eight zero bytes at 43-50, finishes the whole ZIP, then patches the
   hash. That patch is the only mutation allowed, and it does not affect any ZIP CRC-32.
 - Readers should verify it before trusting offsets from remote or cached copies
-  (spec 8.5). The DuckDB extension and the JavaScript reader do.
+  (spec 8.5). The native reader (`core/cozip_read.c`, used by Python, R and Julia), the
+  DuckDB extension and the JavaScript reader do.
 - It detects accidental changes to the fast path: the index, the Central Directory, the
   end records and whatever else sits in the last 32 KiB. It is not a signature, and it does
   not cover payload bytes in the middle of a large archive. Appending a ZIP comment,
@@ -219,7 +220,8 @@ Spec 9 names the failures a reader should report:
 These are reader codes. The C writer returns its own `cozip_status_t`
 (`INVALID_ARGUMENT`, `IO`, `INVALID_LFH` for a failed post-write check, and so on; see
 `c-api.md`). The JavaScript reader prefixes several messages with the spec code
-(`cozip HASH_MISMATCH: ...`); the DuckDB extension uses plain sentences (`debugging.md`).
+(`cozip HASH_MISMATCH: ...`); the native reader and the DuckDB extension use the same plain
+sentences, the native reader behind a status such as `INVALID_INDEX` (`debugging.md`).
 
 ## 11. Validating an archive
 

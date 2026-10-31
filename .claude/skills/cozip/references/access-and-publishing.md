@@ -50,10 +50,9 @@ r <- terra::rast(m[["cozip:location"]][1])
 - Build it yourself when the reader did not emit it:
   `f"/vsisubfile/{offset}_{size},/vsicurl/{url}"` for HTTP(S), or
   `f"/vsisubfile/{offset}_{size},{absolute_path}"` for a local file.
-- For `s3://`, `gs://` and Azure archives the location uses `/vsis3/`, `/vsigs/`,
-  `/vsiaz/`; GDAL then needs its own credentials. `hf://` paths with a revision produce a
-  broken location on extension 2.0.x (`duckdb-reader.md` section 5); use the HTTPS
-  `resolve/<revision>` URL.
+- For `s3://`, `gs://` and Azure archives (`az://`, `azure://`) the location uses
+  `/vsis3/`, `/vsigs/`, `/vsiaz/`; GDAL needs its own credentials. An `hf://` location
+  uses `huggingface.co`, even if Karu reads from a custom `HF_ENDPOINT`.
 
 ## 3. Plain byte ranges
 
@@ -154,7 +153,8 @@ key you will read by (split, tile, time) before `stage_metadata`.
   name.
 - A large collection can also be split into several archives, as the TACO writer's
   `partition_size` option does. Each keeps its own manifest and can be rebuilt alone;
-  DuckDB combines the manifests with `UNION ALL BY NAME`.
+  concatenate the `read()` results, or combine them in SQL with the DuckDB extension and
+  `UNION ALL BY NAME`.
 - Once public, the playground (`playground.html`) renders a manifest from its URL, and
   a GeoParquet manifest on a map.
 

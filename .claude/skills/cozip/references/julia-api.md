@@ -26,7 +26,11 @@ Pkg.add("Cozip")
 - Julia 1.10 or newer. Dependencies: DataFrames, DuckDB, DBInterface, Tables.
 - libcozip is a lazy artifact (`julia/Artifacts.toml`): the matching
   `libcozip-<version>-<platform>.tar.gz` from the GitHub release downloads on first load.
-  Platforms: Linux x86-64 and aarch64 (glibc), macOS universal, Windows x86-64.
+  Platforms: Linux x86-64 and aarch64 (glibc), macOS aarch64 and x86-64, Windows x86-64.
+  Releases built from this tree ship one macOS archive per architecture with the reader
+  and static libcurl and OpenSSL; the `Artifacts.toml` for 2026.9.27 still points both
+  macOS architectures at the older universal build, which has no reader. Use
+  `COZIP_LIB_PATH` with a local build until the next release.
 - `COZIP_LIB_PATH=/abs/path/cozip.dylib` overrides the artifact. It is read in
   `LibCozip.__init__`, so set it before `using Cozip`.
 - `Cozip.LibCozip.cozip_version()` returns the loaded library's version.
@@ -91,17 +95,19 @@ Cozip.read(source; columns = nothing, location = true) -> DataFrame
 
 - `source`: non-empty ASCII path or URL without NUL. `columns`: `nothing` or a vector of
   extra column names. `offset` and `size` come back as `UInt64`.
-- Uses one DuckDB connection created in `Cozip.__init__` and guarded by a lock. The first
-  read of a session runs `INSTALL httpfs`, `LOAD httpfs`, `INSTALL cozip FROM community` and
-  `LOAD cozip`; later reads reuse them.
-- `COZIP_EXTENSION` loads a local extension instead. The connection only allows unsigned
-  extensions when the variable was set before `using Cozip`.
-- Same compatibility fallbacks as Python (`gdal_vsi :=`, `read_cozip`, renamed legacy
-  column, dropped `taco:location`). Only Flat archives are accepted.
-- Projected reads retain the normalized `cozip:location` column on legacy extensions.
-- On Windows `Cozip.read` throws an `ErrorException` before touching DuckDB: DuckDB.jl
-  crashes there when a community extension registers a filesystem. Writing works on
-  Windows; read with Python or R instead.
+- `Cozip.LibCozip.read_flat_metadata(source)` verifies the index and returns the
+  `__metadata__` bytes; `Cozip.LibCozip.location_base(source)` returns the GDAL base of
+  the location. Schemes and credentials are those of Python (`python-api.md` sections 5
+  and 8).
+- The manifest is written to a `mktempdir()` and decoded on the one DuckDB connection
+  created in `Cozip.__init__`, guarded by `Cozip._DUCKDB_LOCK`. That connection, shared
+  with the writer, has `autoinstall_known_extensions` and `autoload_known_extensions`
+  off, so no extension is ever installed or loaded. `COZIP_EXTENSION` is ignored.
+- Stored location columns are dropped and `cozip:location` is computed again, as in
+  Python. Hive partitioning is off. Only Flat archives are accepted.
+- On Windows `Cozip.read` throws an `ErrorException` before reading, because the native
+  reader has not been verified there from Julia yet. Writing works on Windows; read with Python or R
+  instead.
 
 ## 7. Errors
 
@@ -111,8 +117,10 @@ Cozip.read(source; columns = nothing, location = true) -> DataFrame
 | `SystemError` | `cozip: row 1 ("d"): source not found: .` |
 | `Cozip.LibCozip.CozipError` | `CozipError [INVALID_ARGUMENT] entry 0 ('e') has a zero-byte payload; FLAT user entries must be non-empty` |
 
-`CozipError` has fields `code`, `name` and `message`. DuckDB errors from `Cozip.read` pass
-through.
+`CozipError` has fields `code`, `name` and `message`. `Cozip.read` raises it for index and
+transport failures, for example `CozipError [PROFILE] read_flat needs a Flat-profile archive
+(profile=1). Got profile=2 in: ...`. DuckDB errors pass through only for an unknown
+`columns` entry.
 
 ## 8. Patterns
 

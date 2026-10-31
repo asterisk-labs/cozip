@@ -3,8 +3,9 @@ name: cozip
 description: >-
   Use cozip or work on its codebase: pack files and a metadata table into a
   Cloud-Optimized ZIP (byte-0 index plus Parquet manifest) from Python, R,
-  Julia or C; read manifests with cozip.read, DuckDB read_flat or the
-  JavaScript reader; open entries by byte range or GDAL /vsisubfile/; build
+  Julia or C; read manifests with cozip.read or the JavaScript reader; query
+  stored files in place with the optional DuckDB extension cozip_reader; open
+  entries by byte range or GDAL /vsisubfile/; build
   GeoParquet manifests; validate archives against SPEC.md; drive the TACO
   profile plan/write ABI; or edit cozip's C core, bindings, tests and releases.
   Do not use for ordinary ZIP work or for TACO dataset semantics.
@@ -31,9 +32,10 @@ differs, trust the installed source and `CHANGELOG` over this file.
 - Writing has two stages. `stage_metadata` returns each file's final offset before anything
   is written; you write the manifest Parquet with any tool and options; `stage_create`
   embeds that file verbatim. `write` runs both stages with default Parquet options.
-- Reading does not use the C library. `read()` in Python, R and Julia runs the DuckDB
-  `cozip` community extension (`read_flat`); JavaScript parses the index itself. Readers
-  add `cozip:location`, a GDAL `/vsisubfile/` path, at read time. It is never stored.
+- Python, R and Julia read the index and `__metadata__` through libcozip and karu.
+  DuckDB decodes the Parquet locally. JavaScript has its own reader. Each reader
+  computes `cozip:location`; the optional cozip_reader extension provides SQL
+  access to stored files.
 - The profile is one byte of the index: 0 none, 1 Flat, 2 TACO. The readers in this
   repository accept only Flat. TACO archives are written by the TACO package through a
   private cozip API.
@@ -60,7 +62,8 @@ with open(archive, "rb") as f:
 ```
 
 Publish the `.zip` on any server or bucket that honours `Range` requests, then read the
-same manifest with `cozip.read("https://...")`, DuckDB or the JavaScript reader.
+same manifest with `cozip.read("https://...")`, the JavaScript reader or the DuckDB
+extension.
 
 ## Choosing an API
 
@@ -69,7 +72,7 @@ same manifest with `cozip.read("https://...")`, DuckDB or the JavaScript reader.
 | Files plus attribute columns | `cozip.write(out, table)`; R `create()`; Julia `Cozip.write` |
 | Manifest written by your own tool or options (geopandas, zstd, row groups) | `stage_metadata`, write the Parquet yourself, `stage_create` |
 | Manifest as a data frame | `read(path_or_url, columns=, location=)` in Python, R or Julia |
-| SQL over one or many archives | DuckDB `read_flat()` |
+| SQL over manifests, or over a Parquet file stored in an archive | the optional DuckDB extension: `read_flat()`, `read_parquet()` on a `cozip:location` |
 | Browser or Node | `read(url)` from `@asterisk-labs/cozip` |
 | One file inside an archive | `cozip:location` in GDAL, or bytes `offset` to `offset + size - 1` |
 | C, or a language without a binding | `cozip_plan_flat` then `cozip_write_flat`, or `cozip_finalize` |
@@ -97,11 +100,11 @@ same manifest with `cozip.read("https://...")`, DuckDB or the JavaScript reader.
   browsers CORS that allows `Range` and exposes `Content-Range`.
 - Archives smaller than 32,819 bytes get a `__cozip_padding__` entry. ZIP tools list it;
   the manifest does not.
-- `read()` accepts only Flat archives and installs the DuckDB extension from the community
-  repository on first use. As of 2026-09-17 the build served for DuckDB 1.5.5 is extension
-  2.0.1, whose SQL spells the option `gdal_vsi :=` and the column `cozip:gdal_vsi`; the
-  Python, R and Julia wrappers normalize both to `cozip:location`, including projected
-  reads made with `columns`.
+- `read()` accepts only Flat archives. Private reads use environment or standard
+  credential files; see `references/python-api.md`.
+- Building libcozip from source, an sdist or the R package needs a C++23 compiler,
+  libcurl 7.83 or newer and OpenSSL 3 for the reader; `-DCOZIP_READER=OFF` builds a
+  writer-only C library.
 - `cozip:location` repeats the path you read from, so a relative path gives a relative
   location. JavaScript returns `offset` and `size` as `BigInt`. Julia exports only
   `create`, `stage_metadata` and `stage_create`: call `Cozip.write` and `Cozip.read`.
@@ -121,9 +124,9 @@ repository and is scoped to cozip 2026.9.27.
 | R: `create`, staging functions, `read`, locale rules | [references/r-api.md](references/r-api.md) |
 | Julia: `Cozip.write`, staging functions, `Cozip.read`, artifacts | [references/julia-api.md](references/julia-api.md) |
 | JavaScript reader for browsers and Node | [references/javascript-api.md](references/javascript-api.md) |
-| DuckDB extension: `read_flat`, versions, SQL recipes, private buckets | [references/duckdb-reader.md](references/duckdb-reader.md) |
+| Optional DuckDB extension: querying stored files in place, `read_flat`, versions, SQL recipes | [references/duckdb-reader.md](references/duckdb-reader.md) |
 | Opening entries with GDAL or byte ranges, publishing, HTTP requirements, dataloaders | [references/access-and-publishing.md](references/access-and-publishing.md) |
 | C ABI: pipeline levels, capacity rules, compiled examples, linking | [references/c-api.md](references/c-api.md) |
 | TACO profile: the plan/write contract and `cozip._taco` | [references/taco-profile.md](references/taco-profile.md) |
 | Repository layout, build, tests, sync rules, spec changes, releases | [references/contributing.md](references/contributing.md) |
-| Error message lookup, library loading, extension drift, hash mismatches | [references/debugging.md](references/debugging.md) |
+| Error message lookup, library loading, reader build requirements, hash mismatches | [references/debugging.md](references/debugging.md) |
