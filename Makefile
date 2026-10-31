@@ -49,11 +49,16 @@ sync:
 	@rm -f $(JL_DIR)/Project.toml.bak
 	@sed -i.bak -E 's/("version": )"[^"]*"/\1"$(VERSION_NPM)"/' $(JS_DIR)/package.json
 	@rm -f $(JS_DIR)/package.json.bak
-	@rm -f $(R_DIR)/src/cozip.c $(R_DIR)/src/cozip.h
+	@rm -f $(R_DIR)/src/cozip.c $(R_DIR)/src/cozip.h $(R_DIR)/src/cozip_read.c
 	@cp $(CORE_DIR)/cozip.c $(R_DIR)/src/cozip.c
 	@cp $(CORE_DIR)/cozip.h $(R_DIR)/src/cozip.h
+	@cp $(CORE_DIR)/cozip_read.c $(R_DIR)/src/cozip_read.c
 	@rsync -a --delete $(CORE_DIR)/libzip/ $(R_DIR)/src/libzip/
 	@rsync -a --delete $(CORE_DIR)/zlib/   $(R_DIR)/src/zlib/
+	@mkdir -p $(R_DIR)/src/karu
+	@rsync -a --delete $(CORE_DIR)/karu/include/ $(R_DIR)/src/karu/include/
+	@rsync -a --delete $(CORE_DIR)/karu/src/     $(R_DIR)/src/karu/src/
+	@cp $(CORE_DIR)/karu/VERSION $(CORE_DIR)/karu/LICENSE $(R_DIR)/src/karu/
 	@VFILE=$$(grep -E '^Version:' $(R_DIR)/DESCRIPTION | sed 's/Version:[[:space:]]*//'); \
 	 [ "$$VFILE" = "$(VERSION)" ] || { echo "check: DESCRIPTION=$$VFILE != $(VERSION)"; exit 1; }
 	@VJL=$$(grep -E '^version = ' $(JL_DIR)/Project.toml | sed -E 's/version = "(.*)"/\1/'); \
@@ -64,8 +69,12 @@ sync:
 	@cmp -s LICENSE $(PY_DIR)/LICENSE || { echo "check: python/LICENSE drift"; exit 1; }
 	@diff -q $(CORE_DIR)/cozip.c $(R_DIR)/src/cozip.c >/dev/null || { echo "check: cozip.c drift"; exit 1; }
 	@diff -q $(CORE_DIR)/cozip.h $(R_DIR)/src/cozip.h >/dev/null || { echo "check: cozip.h drift"; exit 1; }
+	@diff -q $(CORE_DIR)/cozip_read.c $(R_DIR)/src/cozip_read.c >/dev/null || { echo "check: cozip_read.c drift"; exit 1; }
 	@diff -r -q $(CORE_DIR)/libzip $(R_DIR)/src/libzip >/dev/null || { echo "check: libzip/ drift"; exit 1; }
 	@diff -r -q $(CORE_DIR)/zlib $(R_DIR)/src/zlib >/dev/null     || { echo "check: zlib/ drift"; exit 1; }
+	@diff -r -q $(CORE_DIR)/karu/include $(R_DIR)/src/karu/include >/dev/null || { echo "check: karu/include drift"; exit 1; }
+	@diff -r -q $(CORE_DIR)/karu/src $(R_DIR)/src/karu/src >/dev/null         || { echo "check: karu/src drift"; exit 1; }
+	@cmp -s $(CORE_DIR)/karu/VERSION $(R_DIR)/src/karu/VERSION || { echo "check: karu/VERSION drift"; exit 1; }
 	@echo "sync OK $(VERSION)"
 
 python: lib
@@ -109,6 +118,7 @@ clean:
 	rm -f $(R_DIR)/src/*.so $(R_DIR)/src/*.dylib $(R_DIR)/src/*.dll
 	@find $(R_DIR)/src -name '*.o' -delete
 	rm -f $(R_DIR)/src/.DS_Store
+	rm -f $(R_DIR)/src/Makevars $(R_DIR)/src/Makevars.win
 	rm -rf $(PY_DIR)/dist $(PY_DIR)/build $(PY_DIR)/*.egg-info
 	rm -rf $(JS_DIR)/node_modules $(JS_DIR)/types
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

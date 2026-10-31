@@ -1,22 +1,13 @@
-# r/src/Makevars — Unix build (Linux + macOS + WASM via webR)
-#
-# Compiles libcozip + libzip 1.11.4 + zlib 1.3.1 from vendored
-# sources. No system libzip-dev / libz-dev required.
-#
-# Layout:
-#   r/src/cozip.c, cozip.h        ← mirrored from core/ by `make sync-c`
-#   r/src/cozip_glue.c            ← R bindings (.Call shims)
-#   r/src/libzip/                 ← vendored libzip 1.11.4
-#   r/src/zlib/                   ← vendored zlib 1.3.1
-#
-# Sister file: Makevars.win — same logic with Windows-specific
-# libzip sources and -ladvapi32 for the Win32 RNG.
+# Unix build. configure fills in the Karu flags and objects; webR omits them.
 
-PKG_CPPFLAGS = -DCOZIP_BUILDING -I. -Ilibzip -Izlib -DHAVE_CONFIG_H
-PKG_LIBS     =
+@CXX_STD@
+
+PKG_CPPFLAGS = -DCOZIP_BUILDING -I. -Ilibzip -Izlib -DHAVE_CONFIG_H \
+               @READER_CPPFLAGS@
+PKG_LIBS     = @READER_LIBS@
 
 # libzip ships several files for backends we don't enable (Win32
-# I/O, Win32 RNG). Excluded from the Unix build — the Unix
+# I/O, Win32 RNG). Excluded from the Unix build; the Unix
 # counterparts (zip_random_unix.c, zip_source_file_stdio_named.c)
 # stay in.
 LIBZIP_EXCLUDE = \
@@ -32,9 +23,11 @@ ZLIB_C   = $(wildcard zlib/*.c)
 
 OBJECTS = \
     cozip.o \
+    cozip_read.o \
     cozip_glue.o \
     $(LIBZIP_C:.c=.o) \
-    $(ZLIB_C:.c=.o)
+    $(ZLIB_C:.c=.o) \
+    @KARU_OBJECTS@
 
 all: $(SHLIB)
 

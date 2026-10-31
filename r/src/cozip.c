@@ -237,9 +237,13 @@ COZIP_API const char *cozip_status_string(cozip_status_t status) {
         case COZIP_OK:                    return "OK";
         case COZIP_ERR_INVALID_LFH:       return "INVALID_LFH";
         case COZIP_ERR_ARCHIVE_TOO_SMALL: return "ARCHIVE_TOO_SMALL";
+        case COZIP_ERR_INVALID_INDEX:     return "INVALID_INDEX";
+        case COZIP_ERR_PROFILE:           return "PROFILE";
         case COZIP_ERR_INVALID_ARGUMENT:  return "INVALID_ARGUMENT";
         case COZIP_ERR_BUFFER_TOO_SMALL:  return "BUFFER_TOO_SMALL";
         case COZIP_ERR_IO:                return "IO";
+        case COZIP_ERR_NOT_FOUND:         return "NOT_FOUND";
+        case COZIP_ERR_UNSUPPORTED:       return "UNSUPPORTED";
     }
     return "UNKNOWN";
 }

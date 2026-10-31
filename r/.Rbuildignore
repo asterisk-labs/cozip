@@ -5,3 +5,5 @@
 ^src/.*\.dylib$
 ^\.DS_Store$
 ^src/\.DS_Store$
+^src/Makevars$
+^src/Makevars\.win$

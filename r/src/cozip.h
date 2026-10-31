@@ -1,4 +1,4 @@
-/* cozip 1.1 writer C ABI.
+/* cozip 1.1 writer and Flat reader C ABI.
  *
  * Archive names are null-terminated ASCII. Paths are UTF-8. Functions return
  * cozip_status_t and populate err when non-NULL. Outputs are unspecified on
@@ -94,11 +94,15 @@ typedef enum cozip_status {
     /* Format-integrity errors: the archive itself is wrong. */
     COZIP_ERR_INVALID_LFH       = 1,
     COZIP_ERR_ARCHIVE_TOO_SMALL = 2,
+    COZIP_ERR_INVALID_INDEX     = 3,
+    COZIP_ERR_PROFILE           = 4,
 
     /* Caller-side errors. */
     COZIP_ERR_INVALID_ARGUMENT  = 100,
     COZIP_ERR_BUFFER_TOO_SMALL  = 101,
-    COZIP_ERR_IO                = 102
+    COZIP_ERR_IO                = 102,
+    COZIP_ERR_NOT_FOUND         = 103,
+    COZIP_ERR_UNSUPPORTED       = 104
 } cozip_status_t;
 
 typedef struct cozip_error {
@@ -322,6 +326,41 @@ COZIP_API cozip_status_t cozip_write_flat(const char *out_path,
                                           size_t capacity,
                                           const char *metadata_path,
                                           cozip_error_t *err);
+
+
+/* FLAT-profile reader.
+ *
+ * source is a local path, an http(s), s3, s3a, s3n, gs, gcs, az, azure, abfs,
+ * abfss, hf or source URL, or a GDAL /vsi path. Credentials come from the
+ * environment and the standard credential files.
+ *
+ * Messages can name long URLs, so these functions report errors through
+ * *out_error, a string the caller releases with cozip_free. It is NULL on
+ * success, and also when the message itself could not be allocated.
+ */
+
+/* Read and verify the byte-0 index, require profile 1, and return the
+ * __metadata__ Parquet bytes in *out_data, released with cozip_free.
+ * Returns UNSUPPORTED when the library was built without COZIP_READER.
+ */
+COZIP_API cozip_status_t cozip_read_flat_metadata(const char *source,
+                                                  uint8_t **out_data,
+                                                  size_t *out_size,
+                                                  char **out_error);
+
+/* GDAL path of source that cozip:location appends after
+ * "/vsisubfile/<offset>_<size>,". Remote URLs map to /vsicurl/, /vsis3/,
+ * /vsigs/, /vsiaz/ and /vsiadls/; hf:// maps to a /vsicurl/ resolve URL that
+ * keeps an explicit @revision. Anything else, such as a local path, r2:// or
+ * source://, is returned unchanged.
+ * *out_base is released with cozip_free.
+ */
+COZIP_API cozip_status_t cozip_location_base(const char *source,
+                                             char **out_base,
+                                             char **out_error);
+
+/* Release memory returned by the reader. NULL is ignored. */
+COZIP_API void cozip_free(void *ptr);
 
 #ifdef __cplusplus
 }

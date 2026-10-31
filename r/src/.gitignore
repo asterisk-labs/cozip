@@ -3,3 +3,5 @@ version.h
 *.so
 *.dll
 *.dylib
+Makevars
+Makevars.win

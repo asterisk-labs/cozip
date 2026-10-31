@@ -15,7 +15,7 @@ BugReports: https://github.com/asterisk-labs/cozip/issues
 Encoding: UTF-8
 Language: en-US
 Depends:
-    R (>= 4.1)
+    R (>= 4.3)
 Imports:
     arrow (>= 14.0.0),
     bit64,
@@ -27,7 +27,7 @@ Suggests:
     withr,
     sf,
     geoarrow
-SystemRequirements: GNU make
+SystemRequirements: GNU make, C++23, pkg-config, libcurl (>= 7.83.0), OpenSSL (>= 3.0)
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

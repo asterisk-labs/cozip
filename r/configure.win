@@ -1,0 +1,29 @@
+#!/bin/sh
+# Writes src/Makevars.win from src/Makevars.win.in. Rtools provides
+# pkg-config, libcurl and OpenSSL for the Flat reader.
+
+set -eu
+
+if ! command -v pkg-config >/dev/null 2>&1; then
+    echo "configure.win: pkg-config is required to find libcurl and OpenSSL" >&2
+    exit 1
+fi
+if ! pkg-config --exists 'libcurl >= 7.83.0' 'openssl >= 3.0'; then
+    echo "configure.win: libcurl >= 7.83.0 and OpenSSL >= 3.0 are required" >&2
+    exit 1
+fi
+
+karu_version=$(tr -d '[:space:]' < src/karu/VERSION)
+reader_cppflags="-DCOZIP_READER -DKARU_STATIC -DKARU_VERSION_STRING=\\\"$karu_version\\\" -Ikaru/include -Ikaru/src $(pkg-config --cflags libcurl openssl)"
+reader_libs=$(pkg-config --libs libcurl openssl)
+karu_objects=$(CDPATH= cd src && find karu/src -type f -name '*.cpp' | LC_ALL=C sort | sed 's/\.cpp$/.o/' | paste -sd ' ' -)
+
+escape() {
+    printf '%s' "$1" | sed 's/[&|\\]/\\&/g'
+}
+
+sed \
+    -e "s|@READER_CPPFLAGS@|$(escape "$reader_cppflags")|" \
+    -e "s|@READER_LIBS@|$(escape "$reader_libs")|" \
+    -e "s|@KARU_OBJECTS@|$(escape "$karu_objects")|" \
+    src/Makevars.win.in > src/Makevars.win

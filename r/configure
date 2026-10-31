@@ -1,0 +1,46 @@
+#!/bin/sh
+# Writes src/Makevars from src/Makevars.in.
+#
+# The Flat reader compiles the vendored karu (C++23) and links libcurl and
+# OpenSSL, found with pkg-config. webR has neither, so an Emscripten build
+# compiles the writer only and cozip::read() reports that it has no reader.
+
+set -eu
+
+: "${R_HOME:=$(R RHOME)}"
+CC=$("${R_HOME}/bin/R" CMD config CC)
+
+cxx_std=
+reader_cppflags=
+reader_libs=
+karu_objects=
+
+case "$CC" in
+    *emcc*) ;;
+    *)
+        if ! command -v pkg-config >/dev/null 2>&1; then
+            echo "configure: pkg-config is required to find libcurl and OpenSSL" >&2
+            exit 1
+        fi
+        if ! pkg-config --exists 'libcurl >= 7.83.0' 'openssl >= 3.0'; then
+            echo "configure: libcurl >= 7.83.0 and OpenSSL >= 3.0 are required" >&2
+            exit 1
+        fi
+        karu_version=$(tr -d '[:space:]' < src/karu/VERSION)
+        cxx_std="CXX_STD = CXX23"
+        reader_cppflags="-DCOZIP_READER -DKARU_STATIC -D_FILE_OFFSET_BITS=64 -DKARU_VERSION_STRING=\\\"$karu_version\\\" -Ikaru/include -Ikaru/src $(pkg-config --cflags libcurl openssl)"
+        reader_libs="$(pkg-config --libs libcurl openssl) -pthread"
+        karu_objects=$(CDPATH= cd src && find karu/src -type f -name '*.cpp' | LC_ALL=C sort | sed 's/\.cpp$/.o/' | paste -sd ' ' -)
+        ;;
+esac
+
+escape() {
+    printf '%s' "$1" | sed 's/[&|\\]/\\&/g'
+}
+
+sed \
+    -e "s|@CXX_STD@|$(escape "$cxx_std")|" \
+    -e "s|@READER_CPPFLAGS@|$(escape "$reader_cppflags")|" \
+    -e "s|@READER_LIBS@|$(escape "$reader_libs")|" \
+    -e "s|@KARU_OBJECTS@|$(escape "$karu_objects")|" \
+    src/Makevars.in > src/Makevars
