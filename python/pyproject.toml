@@ -91,9 +91,11 @@ exclude = ["cozip/_lib/**"]
 "../core/CMakeLists.txt" = "native/CMakeLists.txt"
 "../core/cozip.c" = "native/cozip.c"
 "../core/cozip.h" = "native/cozip.h"
+"../core/cozip_read.c" = "native/cozip_read.c"
 "../core/version.h.in" = "native/version.h.in"
 "../core/libzip" = "native/libzip"
 "../core/zlib" = "native/zlib"
+"../core/karu" = "native/karu"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -67,7 +67,10 @@ def _compile_native(source_dir: Path, destination: Path) -> None:
     cmake = shutil.which("cmake")
     ninja = shutil.which("ninja")
     if not cmake or not ninja:
-        raise RuntimeError("building cozip from source requires CMake and Ninja")
+        raise RuntimeError(
+            "building cozip from source requires CMake, Ninja, a C++23 "
+            "compiler, libcurl and OpenSSL"
+        )
 
     with tempfile.TemporaryDirectory(prefix="cozip-native-") as temp:
         build_dir = Path(temp)
