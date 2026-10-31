@@ -686,27 +686,146 @@ end
     end
 
 
-    # Reader depends on the cozip DuckDB extension, which crashes on
-    # Windows (DuckDB.jl bug, not ours). On Windows we only check the
-    # guard fires; elsewhere we run the full round-trip.
+    # The reader has not been verified on Windows yet. There we only check
+    # the guard fires; elsewhere we run real reads.
     if Sys.iswindows()
         @testset "Cozip.read is unsupported on Windows" begin
             @test_throws ErrorException Cozip.read("does-not-matter.zip")
         end
     else
-        @testset "read rejects non-ASCII paths before loading extensions" begin
+        @testset "read rejects non-ASCII paths before reading" begin
             @test_throws "ASCII paths and URLs only" Cozip.read("niño.zip")
         end
 
-        @testset "read rejects NUL paths before loading extensions" begin
+        @testset "read rejects NUL paths before reading" begin
             @test_throws "NUL byte" Cozip.read("bad\0.zip")
         end
 
-        @testset "legacy projected reads keep their location source" begin
-            @test Cozip._build_select(
-                ["category"], true, Cozip._LEGACY_LOCATION_COLUMN,
-            ) ==
-                "\"name\", \"offset\", \"size\", \"cozip:gdal_vsi\", \"category\""
+        @testset "projections keep the required columns first" begin
+            @test Cozip._build_select(nothing, true) == "*"
+            @test Cozip._build_select(["category", "taco:location", "cozip:location"], true) ==
+                "\"name\", \"offset\", \"size\", \"cozip:location\", \"category\""
+            @test Cozip._build_select(["category"], false) ==
+                "\"name\", \"offset\", \"size\", \"category\""
+        end
+
+        @testset "read returns every manifest column and a location" begin
+            ctx = archive_ctx()
+            df = Cozip.read(ctx.arc)
+            @test names(df) == ["name", "offset", "size", "category", "cozip:location"]
+            @test df.name == ["a.txt", "b.bin"]
+            @test df[!, "cozip:location"] ==
+                ["/vsisubfile/$(o)_$(s),$(ctx.arc)" for (o, s) in zip(df.offset, df.size)]
+            payload(i) = ctx.arc_bytes[df.offset[i]+1:df.offset[i]+df.size[i]]
+            @test payload(1) == SMALL_CONTENT
+            @test payload(2) == MEDIUM_CONTENT
+        end
+
+        @testset "read honours location and columns" begin
+            ctx = archive_ctx()
+            @test names(Cozip.read(ctx.arc; location=false)) ==
+                ["name", "offset", "size", "category"]
+            @test names(Cozip.read(ctx.arc; columns=["category"], location=false)) ==
+                ["name", "offset", "size", "category"]
+            @test names(Cozip.read(ctx.arc; columns=["category", "taco:location"])) ==
+                ["name", "offset", "size", "cozip:location", "category"]
+        end
+
+        @testset "read ignores key=value directories in the archive path" begin
+            ctx = archive_ctx()
+            nested = joinpath(ctx.fix.tmp, "year=2024")
+            mkdir(nested)
+            cp(ctx.arc, joinpath(nested, "out.zip"))
+            @test names(Cozip.read(joinpath(nested, "out.zip"))) == names(Cozip.read(ctx.arc))
+        end
+
+        @testset "read rejects the TACO profile with the Flat reader's message" begin
+            ctx = archive_ctx()
+            bytes = copy(ctx.arc_bytes)
+            bytes[INDEX_OFFSET + 7] = 0x02
+            hash = fnv1a_64(hash_input(bytes, index_size_from_lfh(bytes)))
+            bytes[44:51] = reinterpret(UInt8, [htol(hash)])
+            taco = joinpath(ctx.fix.tmp, "taco.zip")
+            write(taco, bytes)
+            err = try
+                Cozip.read(taco)
+                nothing
+            catch e
+                e
+            end
+            @test err isa Cozip.LibCozip.CozipError
+            @test err.name == "PROFILE"
+            @test err.message ==
+                "read_flat needs a Flat-profile archive (profile=1). Got profile=2 in: $(taco)"
+        end
+
+        @testset "read rejects a corrupt index and names a missing file" begin
+            ctx = archive_ctx()
+            bytes = copy(ctx.arc_bytes)
+            bytes[44] ⊻= 0xFF
+            corrupt = joinpath(ctx.fix.tmp, "corrupt.zip")
+            write(corrupt, bytes)
+            @test_throws "cozip integrity hash mismatch" Cozip.read(corrupt)
+            missing_path = joinpath(ctx.fix.tmp, "missing.zip")
+            @test_throws missing_path Cozip.read(missing_path)
+        end
+
+        @testset "read names the archive when its manifest is corrupt" begin
+            # Long names make the central directory larger than the hashed
+            # tail, so the manifest footer can be damaged without breaking
+            # the hash.
+            tmp = mktempdir()
+            paths = [joinpath(tmp, "$(i).bin") for i in 1:300]
+            foreach(p -> write(p, "x"), paths)
+            names_ = ["d/" * repeat("n", 190) * lpad(i, 4, '0') * ".bin" for i in 1:300]
+            archive = joinpath(tmp, "long.zip")
+            Cozip.create(archive, DataFrame(name = names_, path = paths))
+            bytes = read(archive)
+            entry = INDEX_OFFSET + 11 + 2 + 12
+            offset = Int(read_u64_le(bytes[entry+1:entry+8]))
+            size = Int(read_u64_le(bytes[entry+9:entry+16]))
+            @test offset > 65536 && offset + size < length(bytes) - HASH_WINDOW
+            bytes[offset+size-3:offset+size] = Vector{UInt8}("XXXX")
+            write(archive, bytes)
+            err = try
+                Cozip.read(archive)
+                nothing
+            catch e
+                e
+            end
+            @test err isa DuckDB.QueryException
+            @test occursin("$(archive)!__metadata__", err.var)
+            @test !occursin(".parquet", err.var)
+        end
+
+        @testset "read loads no DuckDB extension" begin
+            ctx = archive_ctx()
+            Cozip.read(ctx.arc)
+            con = Cozip._duckdb_con()
+            loaded = lock(Cozip._DUCKDB_LOCK) do
+                DataFrame(DBInterface.execute(con,
+                    "SELECT extension_name FROM duckdb_extensions() WHERE loaded")).extension_name
+            end
+            @test !("cozip" in loaded)
+            @test !("httpfs" in loaded)
+            settings = lock(Cozip._DUCKDB_LOCK) do
+                DataFrame(DBInterface.execute(con, string(
+                    "SELECT current_setting('autoload_known_extensions') AS autoload, ",
+                    "current_setting('autoinstall_known_extensions') AS autoinstall")))
+            end
+            @test settings.autoload == [false]
+            @test settings.autoinstall == [false]
+        end
+
+        @testset "location bases map sources to GDAL paths" begin
+            base = Cozip.LibCozip.location_base
+            @test base("data/out.zip") == "data/out.zip"
+            @test base("https://host/out.zip") == "/vsicurl/https://host/out.zip"
+            @test base("s3://bucket/out.zip") == "/vsis3/bucket/out.zip"
+            @test base("az://container/out.zip") == "/vsiaz/container/out.zip"
+            @test base("hf://datasets/owner/repo@v2/out.zip") ==
+                "/vsicurl/https://huggingface.co/datasets/owner/repo/resolve/v2/out.zip"
+            @test_throws "cannot parse hf:// URL" base("hf://owner")
         end
 
         @testset "create + read round-trip with binary column" begin
