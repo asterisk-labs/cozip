@@ -16,7 +16,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: v
         name: Tag must equal VERSION
@@ -91,7 +91,7 @@ jobs:
       VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
       VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.triplet }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # vcpkg builds OpenSSL with perl and unpacks its ports with zip.
       - if: startsWith(matrix.name, 'linux')
@@ -122,7 +122,7 @@ jobs:
           arch: x64
 
       # CMake and Ninja for every runner, including manylinux.
-      - uses: lukka/get-cmake@v4.4.2
+      - uses: lukka/get-cmake@v4.4.5
 
       - uses: lukka/run-vcpkg@v11
         with:
@@ -244,7 +244,7 @@ jobs:
           Copy-Item "$env:VCPKG_INSTALLED_DIR\${{ matrix.triplet }}\share\openssl\copyright" staged\openssl-LICENSE
           Copy-Item README.md                    staged\
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: libcozip-${{ matrix.name }}
           path: staged/
@@ -268,7 +268,7 @@ jobs:
             runner: windows-2022
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -318,15 +318,15 @@ jobs:
             lib_ext: dll
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
 
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: libcozip-${{ matrix.name }}
           path: libcozip-bin/
@@ -353,9 +353,9 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
@@ -425,7 +425,7 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # manylinux has multiple Pythons under /opt/python; one is enough
       # to drive the build (wheel is py3-none, retagged below).
@@ -437,7 +437,7 @@ jobs:
 
       - name: Set up Python (macOS / Windows)
         if: runner.os != 'Linux'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -448,7 +448,7 @@ jobs:
       - if: runner.os == 'macOS'
         run: python -m pip install delocate
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: libcozip-${{ matrix.name }}
           path: libcozip-bin/
@@ -537,7 +537,7 @@ jobs:
           Push-Location $testDir
           try { python -m pytest tests -q } finally { Pop-Location }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.name }}
           path: wheelhouse/*.whl
@@ -549,8 +549,8 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       # A source build compiles the reader, which links libcurl and OpenSSL.
@@ -565,7 +565,7 @@ jobs:
           python -m pip install --no-deps ../sdist-wheel/*.whl
           cd "${RUNNER_TEMP}"
           python -c "import cozip; assert cozip.lib.cozip_status_string(0)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: sdist-out/*.tar.gz
@@ -580,9 +580,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: libcozip-*
           path: artifacts/
@@ -626,7 +626,7 @@ jobs:
           done
 
       # Hyphen in version (2026.5.1-rc1 etc) marks a prerelease.
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: release-files/*
           generate_release_notes: true
@@ -645,12 +645,12 @@ jobs:
       group: regenerate-artifacts-toml
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
 
@@ -694,12 +694,12 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: 'wheel-*'
           merge-multiple: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: sdist
           path: dist
@@ -716,9 +716,9 @@ jobs:
       id-token: write       # OIDC for trusted publishing
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
