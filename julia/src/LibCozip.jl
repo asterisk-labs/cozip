@@ -225,4 +225,46 @@ function write_flat!(out_path::AbstractString,
     return nothing
 end
 
+# Reader errors arrive as heap strings rather than in cozip_error_t.
+function _reader_error(status::Cint, message::Ptr{Cchar})
+    name = cozip_status_string(status)
+    text = message == C_NULL ? name : unsafe_string(message)
+    return CozipError(Int(status), name, text)
+end
+
+_free(ptr::Ptr) = ccall(_symbol(:cozip_free), Cvoid, (Ptr{Cvoid},), ptr)
+
+# The __metadata__ Parquet bytes of a FLAT archive, after the index checks.
+function read_flat_metadata(source::AbstractString)::Vector{UInt8}
+    data = Ref{Ptr{UInt8}}(C_NULL)
+    nbytes = Ref{Csize_t}(0)
+    message = Ref{Ptr{Cchar}}(C_NULL)
+    status = ccall(_symbol(:cozip_read_flat_metadata), Cint,
+                   (Cstring, Ref{Ptr{UInt8}}, Ref{Csize_t}, Ref{Ptr{Cchar}}),
+                   source, data, nbytes, message)
+    try
+        status == 0 || throw(_reader_error(status, message[]))
+        return copy(unsafe_wrap(Vector{UInt8}, data[], Int(nbytes[])))
+    finally
+        _free(data[])
+        _free(message[])
+    end
+end
+
+# The GDAL path that cozip:location appends after "/vsisubfile/<offset>_<size>,".
+function location_base(source::AbstractString)::String
+    base = Ref{Ptr{Cchar}}(C_NULL)
+    message = Ref{Ptr{Cchar}}(C_NULL)
+    status = ccall(_symbol(:cozip_location_base), Cint,
+                   (Cstring, Ref{Ptr{Cchar}}, Ref{Ptr{Cchar}}),
+                   source, base, message)
+    try
+        status == 0 || throw(_reader_error(status, message[]))
+        return unsafe_string(base[])
+    finally
+        _free(base[])
+        _free(message[])
+    end
+end
+
 end # module

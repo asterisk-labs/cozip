@@ -24,12 +24,17 @@ const _DUCKDB_DB   = Ref{Union{Nothing,DuckDB.DB}}(nothing)
 const _DUCKDB_CON  = Ref{Union{Nothing,DuckDB.Connection}}(nothing)
 const _DUCKDB_LOCK = ReentrantLock()
 
+# Cozip only reads and writes local Parquet files, so the connection never
+# installs or loads an extension.
+const _DUCKDB_CONFIG = Dict(
+    "autoinstall_known_extensions" => "false",
+    "autoload_known_extensions" => "false",
+)
+
 
 function _init_duckdb!()
     _DUCKDB_CON[] === nothing || return nothing
-    config = haskey(ENV, "COZIP_EXTENSION") ?
-        Dict("allow_unsigned_extensions" => "true") : []
-    _DUCKDB_DB[]  = DuckDB.DB(config=config)
+    _DUCKDB_DB[]  = DuckDB.DB(config=_DUCKDB_CONFIG)
     _DUCKDB_CON[] = DBInterface.connect(_DUCKDB_DB[])
     return nothing
 end
