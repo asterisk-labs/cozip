@@ -33,6 +33,9 @@ endif()
 
 option(COZIP_INSTALL     "Generate install / export targets" ON)
 option(COZIP_BUILD_TESTS "Build the test suite"              OFF)
+# The Flat reader fetches bytes through the vendored karu, which needs C++23,
+# libcurl and OpenSSL. OFF keeps a writer-only C library with no system deps.
+option(COZIP_READER      "Build the Flat reader"             ON)
 
 
 # ----------------------------------------------------------------------
@@ -68,15 +71,43 @@ configure_file(
 add_subdirectory(zlib)
 add_subdirectory(libzip)
 
+# core/karu/ is a copy of a tagged karu release, a static C++23 library with
+# hidden visibility that links libcurl and OpenSSL.
+if(EMSCRIPTEN)
+    set(COZIP_READER OFF)
+endif()
+if(COZIP_READER)
+    enable_language(CXX)
+    set(KARU_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
+    set(KARU_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(karu EXCLUDE_FROM_ALL)
+endif()
+
 
 # ----------------------------------------------------------------------
 # cozip itself
 # ----------------------------------------------------------------------
 
-add_library(cozip SHARED cozip.c)
+add_library(cozip SHARED cozip.c cozip_read.c)
 add_library(cozip::cozip ALIAS cozip)
 
 target_compile_definitions(cozip PRIVATE COZIP_BUILDING)
+
+# Without the reader, cozip_read.c keeps the location mapping, and reading an
+# archive reports that the build has no reader.
+if(COZIP_READER)
+    target_compile_definitions(cozip PRIVATE COZIP_READER)
+    target_link_libraries(cozip PRIVATE karu::karu)
+    set_target_properties(cozip PROPERTIES LINKER_LANGUAGE CXX)
+
+    # Release builds link curl and OpenSSL statically. Only cozip_* symbols
+    # leave the library, so a host's own copies never bind to ours.
+    if(APPLE)
+        target_link_options(cozip PRIVATE "LINKER:-exported_symbol,_cozip_*")
+    elseif(UNIX)
+        target_link_options(cozip PRIVATE "LINKER:--exclude-libs,ALL")
+    endif()
+endif()
 
 # C standard — applied only to cozip, NOT propagated to vendored deps.
 target_compile_features(cozip PRIVATE c_std_11)
