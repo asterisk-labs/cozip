@@ -1,7 +1,7 @@
 /*
  * cozip R bindings — .Call shims to libcozip.
  *
- * Two entries:
+ * Four entries:
  *
  *   R_cozip_plan(names, sizes) -> list(offset, size)
  *       Plans FLAT user entries and adds the temporary __metadata__
@@ -11,6 +11,13 @@
  *       End-to-end pipeline via cozip_finalize: plan, padding
  *       decision, build index payload, write archive, patch
  *       FNV-1a 64 integrity hash.
+ *
+ *   R_cozip_read_flat_metadata(source) -> raw
+ *       Verifies the byte-0 index of a FLAT archive and returns its
+ *       __metadata__ Parquet bytes.
+ *
+ *   R_cozip_location_base(source) -> character(1)
+ *       The GDAL path that cozip:location appends after the range.
  *
  * The .Call surface is profile-agnostic. Profile-specific logic
  * (FLAT's __metadata__.parquet, TACO's COLLECTION.json + METADATA/)
@@ -94,6 +101,29 @@ static const char *translate_no_nul(SEXP value, const char *who,
                  (long long)(position + 1));
     }
     return Rf_translateCharUTF8(value);
+}
+
+static const char *single_source(SEXP source) {
+    if (TYPEOF(source) != STRSXP || Rf_xlength(source) != 1
+        || STRING_ELT(source, 0) == NA_STRING
+        || Rf_length(STRING_ELT(source, 0)) == 0) {
+        Rf_error("'source' must be a single non-empty string");
+    }
+    return translate_no_nul(STRING_ELT(source, 0), "source", 0);
+}
+
+/* Reader messages are heap strings. Copy one into R's transient pool and
+ * release it before Rf_error jumps out of the .Call. */
+static void throw_reader(cozip_status_t status, char *message) {
+    const char *text = "(no message)";
+    if (message) {
+        size_t len = strlen(message);
+        char *copy = R_alloc(len + 1, 1);
+        memcpy(copy, message, len + 1);
+        text = copy;
+    }
+    cozip_free(message);
+    Rf_error("[cozip:%s] %s", cozip_status_string(status), text);
 }
 
 /* Build a cozip_entry_t array from R-side vectors. Allocates
@@ -247,6 +277,48 @@ SEXP R_cozip_finalize(SEXP out_path, SEXP names, SEXP paths,
     return R_NilValue;
 }
 
+static void free_reader_buffer(SEXP holder) {
+    cozip_free(R_ExternalPtrAddr(holder));
+    R_ClearExternalPtr(holder);
+}
+
+SEXP R_cozip_read_flat_metadata(SEXP source) {
+    const char *path = single_source(source);
+
+    uint8_t *data = NULL;
+    size_t size = 0;
+    char *message = NULL;
+    cozip_status_t s = cozip_read_flat_metadata(path, &data, &size, &message);
+    if (s != COZIP_OK) throw_reader(s, message);
+
+    /* The finalizer releases the C buffer if the raw vector cannot be
+     * allocated and R jumps out of the .Call. */
+    SEXP holder = PROTECT(R_MakeExternalPtr(data, R_NilValue, R_NilValue));
+    R_RegisterCFinalizer(holder, free_reader_buffer);
+    if ((double)size > (double)R_XLEN_T_MAX) {
+        Rf_error("__metadata__ is too large for an R raw vector");
+    }
+    SEXP res = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)size));
+    memcpy(RAW(res), data, size);
+    free_reader_buffer(holder);
+    UNPROTECT(2);
+    return res;
+}
+
+SEXP R_cozip_location_base(SEXP source) {
+    const char *path = single_source(source);
+
+    char *base = NULL;
+    char *message = NULL;
+    cozip_status_t s = cozip_location_base(path, &base, &message);
+    if (s != COZIP_OK) throw_reader(s, message);
+
+    SEXP res = PROTECT(Rf_mkString(base));
+    cozip_free(base);
+    UNPROTECT(1);
+    return res;
+}
+
 
 /* ---- 3. Routine registration ---- */
 
@@ -254,6 +326,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"R_cozip_reserved_names", (DL_FUNC) &R_cozip_reserved_names, 0},
     {"R_cozip_plan",           (DL_FUNC) &R_cozip_plan,           2},
     {"R_cozip_finalize",       (DL_FUNC) &R_cozip_finalize,       6},
+    {"R_cozip_read_flat_metadata", (DL_FUNC) &R_cozip_read_flat_metadata, 1},
+    {"R_cozip_location_base",  (DL_FUNC) &R_cozip_location_base,  1},
     {NULL, NULL, 0}
 };
 

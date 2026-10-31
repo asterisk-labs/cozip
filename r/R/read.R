@@ -1,10 +1,12 @@
 #' Read the manifest of a FLAT-profile cozip archive
 #'
-#' Thin wrapper around the DuckDB cozip extension. `name`, `offset`,
-#' `size` (and `cozip:location` when `location = TRUE`) are always
-#' included; use `columns` to bring extras, `NULL` brings all.
+#' Reads the byte-0 index natively, fetches only the `__metadata__`
+#' Parquet manifest, and decodes it with DuckDB, which loads no
+#' extension. `name`, `offset`, `size` (and `cozip:location` when
+#' `location = TRUE`) are always included; use `columns` to bring
+#' extras, `NULL` brings all.
 #' Archives using any profile other than Flat (`profile = 1`), including TACO
-#' (`profile = 2`), are rejected by `read_flat()`.
+#' (`profile = 2`), are rejected.
 #'
 #' @param source Local path or http(s)/s3/gcs/azure/hf URL to the `.zip`.
 #' @param columns Character vector of extra columns. `NULL` returns
@@ -33,70 +35,51 @@ read <- function(source, columns = NULL, location = TRUE) {
     .cozip_stop("`location` must be TRUE or FALSE")
   }
 
-  local_extension <- Sys.getenv("COZIP_EXTENSION", unset = "")
-  driver <- if (nzchar(local_extension)) {
-    duckdb::duckdb(config = list(allow_unsigned_extensions = "true"))
-  } else {
-    duckdb::duckdb()
-  }
-  con <- duckdb::dbConnect(driver)
-  on.exit(duckdb::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  metadata <- tempfile("cozip-", fileext = ".parquet")
+  on.exit(unlink(metadata), add = TRUE)
+  writeBin(.Call(C_R_cozip_read_flat_metadata, source), metadata)
+  base <- if (location) .Call(C_R_cozip_location_base, source) else ""
 
-  DBI::dbExecute(con, "INSTALL httpfs")
-  DBI::dbExecute(con, "LOAD httpfs")
-  if (nzchar(local_extension)) {
-    DBI::dbExecute(
-      con,
-      paste("LOAD", DBI::dbQuoteString(con, local_extension))
-    )
-  } else {
-    DBI::dbExecute(con, "INSTALL cozip FROM community")
-    DBI::dbExecute(con, "LOAD cozip")
-  }
+  con <- duckdb::dbConnect(.manifest_driver())
+  # Disconnect before the temporary manifest is removed.
+  on.exit(duckdb::dbDisconnect(con, shutdown = TRUE), add = TRUE, after = FALSE)
 
-  enabled <- if (location) "true" else "false"
-  sql <- sprintf("SELECT %s FROM read_flat(?, location := %s)",
-                 .build_select(columns, location), enabled)
-  legacy <- FALSE
+  sql <- sprintf("SELECT %s FROM (%s)",
+                 .build_select(columns, location),
+                 sprintf(.MANIFEST_SQL, if (location) "true" else "false"))
   result <- tryCatch(
-    DBI::dbGetQuery(con, sql, params = list(source)),
+    DBI::dbGetQuery(con, sql, params = list(base, metadata)),
     error = function(err) {
-      message <- conditionMessage(err)
-      if (.legacy_flat_signature(message)) {
-        legacy_sql <- sprintf(
-          "SELECT %s FROM read_flat(?, gdal_vsi := %s)",
-          .build_select(columns, location, .LEGACY_LOCATION_COLUMN),
-          enabled
-        )
-      } else if (.missing_read_flat(message)) {
-        legacy_sql <- sprintf(
-          "SELECT %s FROM read_cozip(?, gdal_vsi := %s)",
-          .build_select(columns, location, .LEGACY_LOCATION_COLUMN),
-          enabled
-        )
-      } else {
-        stop(err)
-      }
-      legacy <<- TRUE
-      DBI::dbGetQuery(con, legacy_sql, params = list(source))
+      text <- conditionMessage(err)
+      if (!grepl(metadata, text, fixed = TRUE)) stop(err)
+      label <- if (grepl("://", source, fixed = TRUE)) "remote archive" else source
+      stop(gsub(metadata, paste0(label, "!__metadata__"), text, fixed = TRUE),
+           call. = FALSE)
     }
   )
   result <- tibble::as_tibble(result)
-  protected <- intersect(.PROTECTED_LOCATION_COLUMNS, names(result))
-  if (legacy && location) {
-    result <- result[setdiff(names(result), protected)]
-  } else if ("taco:location" %in% protected) {
+  if ("taco:location" %in% names(result)) {
     result <- result[setdiff(names(result), "taco:location")]
   }
-  if (legacy && location && .LEGACY_LOCATION_COLUMN %in% names(result)) {
-    names(result)[names(result) == .LEGACY_LOCATION_COLUMN] <- .LOCATION_COLUMN
-  }
   if (!location) {
-    result <- result[setdiff(
-      names(result), c(.LOCATION_COLUMN, .LEGACY_LOCATION_COLUMN)
-    )]
+    result <- result[setdiff(names(result), .LOCATION_COLUMN)]
   }
   result
+}
+
+
+# DuckDB only decodes a local file, so it must never install or load an
+# extension. duckdb 1.5.5 can also refuse extensions outright and stay out of
+# ~/.duckdb, which the manifest read never needs.
+.manifest_driver <- function() {
+  args <- list(config = list(
+    autoinstall_known_extensions = "false",
+    autoload_known_extensions = "false"
+  ))
+  for (option in c("shared_home", "allow_extensions")) {
+    if (option %in% names(formals(duckdb::duckdb))) args[[option]] <- FALSE
+  }
+  do.call(duckdb::duckdb, args)
 }
 
 
@@ -104,11 +87,20 @@ read <- function(source, columns = NULL, location = TRUE) {
 
 
 .LOCATION_COLUMN <- "cozip:location"
-.LEGACY_LOCATION_COLUMN <- "cozip:gdal_vsi"
 
 
-.build_select <- function(columns, location,
-                          source_location_column = .LOCATION_COLUMN) {
+# The body of the read_flat macro in cozip_reader, over the fetched manifest.
+# Hive partitioning stays off so the manifest's path never adds columns.
+.MANIFEST_SQL <- paste(
+  "SELECT COLUMNS(lambda c: c != 'cozip:location' AND c != 'cozip:gdal_vsi'),",
+  "CASE WHEN %s",
+  "THEN '/vsisubfile/' || \"offset\" || '_' || \"size\" || ',' || ?",
+  "ELSE NULL END AS \"cozip:location\"",
+  "FROM read_parquet(?, hive_partitioning = false)"
+)
+
+
+.build_select <- function(columns, location) {
   if (is.null(columns)) {
     return("*")
   }
@@ -116,28 +108,5 @@ read <- function(source, columns = NULL, location = TRUE) {
   if (location) required <- c(required, .LOCATION_COLUMN)
   extras <- setdiff(columns, .PROTECTED_LOCATION_COLUMNS)
   ordered <- c(required, setdiff(extras, required))
-  expressions <- vapply(ordered, function(column) {
-    source <- if (identical(column, .LOCATION_COLUMN)) {
-      source_location_column
-    } else {
-      column
-    }
-    # Keep the legacy name until result cleanup so it remains distinct from
-    # an untrusted cozip:location stored in the manifest.
-    .quote_ident(source)
-  }, character(1))
-  paste(expressions, collapse = ", ")
-}
-
-
-.legacy_flat_signature <- function(message) {
-  grepl("read_flat", message, fixed = TRUE) &&
-    grepl("gdal_vsi", message, fixed = TRUE) &&
-    grepl("does not support the supplied arguments", message, fixed = TRUE)
-}
-
-
-.missing_read_flat <- function(message) {
-  grepl("read_flat", message, fixed = TRUE) &&
-    grepl("does not exist", message, fixed = TRUE)
+  paste(vapply(ordered, .quote_ident, character(1)), collapse = ", ")
 }

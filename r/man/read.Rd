@@ -18,9 +18,11 @@ every column.}
 A tibble.
 }
 \description{
-Thin wrapper around the DuckDB cozip extension. \code{name}, \code{offset},
-\code{size} (and \code{cozip:location} when \code{location = TRUE}) are always
-included; use \code{columns} to bring extras, \code{NULL} brings all.
+Reads the byte-0 index natively, fetches only the \verb{__metadata__}
+Parquet manifest, and decodes it with DuckDB, which loads no
+extension. \code{name}, \code{offset}, \code{size} (and \code{cozip:location} when
+\code{location = TRUE}) are always included; use \code{columns} to bring
+extras, \code{NULL} brings all.
 Archives using any profile other than Flat (\code{profile = 1}), including TACO
-(\code{profile = 2}), are rejected by \code{read_flat()}.
+(\code{profile = 2}), are rejected.
 }
