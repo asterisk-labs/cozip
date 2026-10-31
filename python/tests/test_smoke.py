@@ -2,14 +2,11 @@
 
 import io
 import struct
-import sys
 import zipfile
 from itertools import pairwise
 from pathlib import Path
-from types import SimpleNamespace
 
 import cozip
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -225,17 +222,17 @@ class TestSpecInvariants:
         cozip.write(output, input_table)
         assert output.read_bytes()[:4] == b"PK\x03\x04"
 
-    def test_reader_rejects_non_ascii_source_before_loading_duckdb(
+    def test_reader_rejects_non_ascii_source_before_reading(
         self, tmp_path: Path
     ) -> None:
         with pytest.raises(ValueError, match="ASCII paths and URLs only"):
             cozip.read(tmp_path / "niño.zip")
 
-    def test_reader_rejects_empty_source_before_loading_duckdb(self) -> None:
+    def test_reader_rejects_empty_source_before_reading(self) -> None:
         with pytest.raises(ValueError, match="non-empty ASCII"):
             cozip.read("")
 
-    def test_reader_rejects_nul_before_loading_duckdb(self) -> None:
+    def test_reader_rejects_nul_before_reading(self) -> None:
         with pytest.raises(ValueError, match="NUL byte"):
             cozip.read("bad\0.zip")
 
@@ -247,238 +244,11 @@ class TestSpecInvariants:
             ({"location": "yes"}, "must be a boolean"),
         ],
     )
-    def test_reader_validates_options_before_loading_duckdb(
+    def test_reader_validates_options_before_reading(
         self, kwargs, message
     ) -> None:
         with pytest.raises(TypeError, match=message):
             cozip.read("https://example.test/data.zip", **kwargs)
-
-    def test_reader_projects_requested_columns_and_closes_connection(
-        self, monkeypatch
-    ) -> None:
-        queries = []
-
-        class FakeConnection:
-            closed = False
-
-            def execute(self, sql, params=None):
-                queries.append((sql, params))
-                return self
-
-            def df(self):
-                return pd.DataFrame({"name": ["a.txt"]})
-
-            def close(self):
-                self.closed = True
-
-        con = FakeConnection()
-        monkeypatch.setitem(sys.modules, "duckdb", SimpleNamespace(connect=lambda: con))
-
-        result = cozip.read(
-            "https://example.test/data.zip",
-            columns=["category", 'sensor"name', "category"],
-            location=False,
-        )
-
-        assert list(result.columns) == ["name"]
-        assert queries[-1] == (
-            (
-                'SELECT "name", "offset", "size", "category", '
-                '"sensor""name" FROM read_flat(?, location := false)'
-            ),
-            ["https://example.test/data.zip"],
-        )
-        assert con.closed
-
-    def test_reader_drops_vsi_column_without_an_explicit_projection(
-        self, monkeypatch
-    ) -> None:
-        queries = []
-
-        class FakeConnection:
-            def execute(self, sql, params=None):
-                queries.append(sql)
-                return self
-
-            def df(self):
-                return pd.DataFrame({"name": ["a"], "cozip:location": [None]})
-
-            def close(self):
-                pass
-
-        monkeypatch.setitem(
-            sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
-        )
-        result = cozip.read("local.zip", location=False)
-
-        assert queries[-1] == "SELECT * FROM read_flat(?, location := false)"
-        assert list(result.columns) == ["name"]
-
-    def test_reader_can_load_a_local_extension(self, monkeypatch) -> None:
-        loaded = []
-        connections = []
-
-        class FakeConnection:
-            def load_extension(self, path):
-                loaded.append(path)
-
-            def execute(self, sql, params=None):
-                return self
-
-            def df(self):
-                return pd.DataFrame({"name": ["a.txt"]})
-
-            def close(self):
-                pass
-
-        def connect(**options):
-            connections.append(options)
-            return FakeConnection()
-
-        monkeypatch.setenv("COZIP_EXTENSION", "/tmp/cozip.duckdb_extension")
-        monkeypatch.setitem(sys.modules, "duckdb", SimpleNamespace(connect=connect))
-
-        assert list(cozip.read("local.zip").columns) == ["name"]
-        assert connections == [{"config": {"allow_unsigned_extensions": True}}]
-        assert loaded == ["/tmp/cozip.duckdb_extension"]
-
-    def test_reader_accepts_the_previous_read_flat_signature(self, monkeypatch) -> None:
-        queries = []
-
-        class FakeConnection:
-            def execute(self, sql, params=None):
-                queries.append((sql, params))
-                if "read_flat(" in sql and "location :=" in sql:
-                    raise RuntimeError(
-                        "Binder Error: Macro read_flat() does not support the "
-                        "supplied arguments. Candidate macros: "
-                        "read_flat(p, gdal_vsi := true)"
-                    )
-                return self
-
-            def df(self):
-                return pd.DataFrame(
-                    {"name": ["a.txt"], "cozip:gdal_vsi": ["computed-location"]}
-                )
-
-            def close(self):
-                pass
-
-        monkeypatch.setitem(
-            sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
-        )
-
-        result = cozip.read("local.zip")
-
-        assert queries[-1] == (
-            "SELECT * FROM read_flat(?, gdal_vsi := true)",
-            ["local.zip"],
-        )
-        assert list(result.columns) == ["name", "cozip:location"]
-
-    def test_legacy_reader_keeps_location_with_selected_columns(
-        self, monkeypatch
-    ) -> None:
-        queries = []
-
-        class FakeConnection:
-            def execute(self, sql, params=None):
-                queries.append((sql, params))
-                if "read_flat(" in sql and "location :=" in sql:
-                    raise RuntimeError(
-                        "Binder Error: Macro read_flat() does not support the "
-                        "supplied arguments. Candidate macros: "
-                        "read_flat(p, gdal_vsi := true)"
-                    )
-                return self
-
-            def df(self):
-                return pd.DataFrame(
-                    {
-                        "name": ["a.txt"],
-                        "offset": [127],
-                        "size": [96],
-                        "cozip:gdal_vsi": ["computed-location"],
-                        "category": ["train"],
-                    }
-                )
-
-            def close(self):
-                pass
-
-        monkeypatch.setitem(
-            sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
-        )
-
-        result = cozip.read("local.zip", columns=["category"])
-
-        assert queries[-1] == (
-            'SELECT "name", "offset", "size", "cozip:gdal_vsi", '
-            '"category" FROM read_flat(?, gdal_vsi := true)',
-            ["local.zip"],
-        )
-        assert list(result.columns) == [
-            "name",
-            "offset",
-            "size",
-            "cozip:location",
-            "category",
-        ]
-        assert result["cozip:location"].tolist() == ["computed-location"]
-
-    def test_reader_accepts_an_extension_without_read_flat(self, monkeypatch) -> None:
-        queries = []
-
-        class FakeConnection:
-            def execute(self, sql, params=None):
-                queries.append((sql, params))
-                if "read_flat(" in sql:
-                    raise RuntimeError("Table Function read_flat does not exist")
-                return self
-
-            def df(self):
-                return pd.DataFrame(
-                    {"name": ["a.txt"], "cozip:gdal_vsi": ["computed-location"]}
-                )
-
-            def close(self):
-                pass
-
-        monkeypatch.setitem(
-            sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
-        )
-
-        result = cozip.read("local.zip")
-
-        assert queries[-1] == (
-            "SELECT * FROM read_cozip(?, gdal_vsi := true)",
-            ["local.zip"],
-        )
-        assert list(result.columns) == ["name", "cozip:location"]
-
-    def test_parquet_suffix_still_uses_cozip_reader(self, monkeypatch) -> None:
-        queries = []
-
-        class FakeConnection:
-            def execute(self, sql, params=None):
-                queries.append((sql, params))
-                return self
-
-            def df(self):
-                return pd.DataFrame({"name": ["a.txt"]})
-
-            def close(self):
-                pass
-
-        monkeypatch.setitem(
-            sys.modules, "duckdb", SimpleNamespace(connect=FakeConnection)
-        )
-
-        assert list(cozip.read("not-a-cozip.parquet").columns) == ["name"]
-        assert queries[-1] == (
-            "SELECT * FROM read_flat(?, location := true)",
-            ["not-a-cozip.parquet"],
-        )
 
 
 class TestZipCompatibility:
