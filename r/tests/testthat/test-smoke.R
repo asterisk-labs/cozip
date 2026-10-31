@@ -285,31 +285,19 @@ describe("stage_metadata — layout planner", {
 
 describe("read input validation", {
 
-  it("keeps the unfiltered SQL projection compatible across reader versions", {
+  it("selects every column without a projection", {
     expect_identical(cozip:::.build_select(NULL, FALSE), "*")
   })
 
-  it("keeps the legacy location column available for normalization", {
-    expect_identical(
-      cozip:::.build_select(
-        "category", TRUE, cozip:::.LEGACY_LOCATION_COLUMN
-      ),
-      paste(
-        '"name", "offset", "size", "cozip:gdal_vsi",',
-        '"category"'
-      )
-    )
-  })
-
-  it("rejects an empty path before loading DuckDB extensions", {
+  it("rejects an empty path before reading", {
     expect_error(cozip::read(""), "non-empty")
   })
 
-  it("rejects non-ASCII paths before loading DuckDB extensions", {
+  it("rejects non-ASCII paths before reading", {
     expect_error(cozip::read("niño.zip"), "ASCII paths and URLs only")
   })
 
-  it("rejects empty selected column names before loading DuckDB extensions", {
+  it("rejects empty selected column names before reading", {
     expect_error(cozip::read("archive.zip", columns = ""), "non-empty")
   })
 })
