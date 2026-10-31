@@ -3,6 +3,7 @@
 Python bindings for libcozip. Read a Cloud-Optimized ZIP archive's manifest over HTTP range requests, or write one from a pyarrow Table.
 
 The native `libcozip` binary ships inside the wheel, no C toolchain required.
+Building from source needs CMake, Ninja, a C++23 compiler, libcurl and OpenSSL.
 
 ## Install
 
@@ -57,6 +58,12 @@ train = manifest[manifest["split"] == "train"]
 
 `cozip.read()` supports only Flat-profile archives (`profile = 1`). TACO
 archives (`profile = 2`) and all other profiles are rejected.
+
+`read()` fetches the manifest through libcozip; DuckDB decodes Parquet without
+loading extensions.
+Remote reads use environment or standard credential files. For SQL over stored
+files, use the optional [cozip_reader](https://github.com/asterisk-labs/cozip_reader)
+extension.
 
 ## Versioning
 

@@ -2,7 +2,9 @@
 
 R bindings for libcozip. Read a Cloud-Optimized ZIP archive's manifest over HTTP range requests, or write one from an arrow Table.
 
-`libzip` and `zlib` are vendored under `src/`, so installation compiles everything from source. No system dependencies beyond a working C toolchain.
+`libzip`, `zlib` and `karu` are vendored under `src/`. Building the reader needs
+a C++23 compiler, pkg-config, libcurl 7.83 or newer and OpenSSL 3. On Debian
+and Ubuntu, install `libcurl4-openssl-dev` and `libssl-dev`.
 
 ## Install
 
@@ -57,6 +59,12 @@ train <- manifest[manifest$split == "train", ]
 
 `cozip::read()` supports only Flat-profile archives (`profile = 1`). TACO
 archives (`profile = 2`) and all other profiles are rejected.
+
+`read()` fetches the manifest through libcozip; DuckDB decodes Parquet without
+loading extensions.
+Remote reads use environment or standard credential files. For SQL over stored
+files, use the optional [cozip_reader](https://github.com/asterisk-labs/cozip_reader)
+extension.
 
 ## Versioning
 

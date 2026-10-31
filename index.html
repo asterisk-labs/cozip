@@ -993,8 +993,8 @@
             <div class="feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-10 14h9l-1 8 10-14h-9l1-8Z"></path></svg>
             </div>
-            <h3>Built on DuckDB and libzip.</h3>
-            <p>Writers run on vendored libzip behind a stable C ABI. Readers run on a DuckDB extension for Python, R, Julia, and SQL — plus a standalone JavaScript package for the browser and Node.</p>
+            <h3>Built on libzip and karu.</h3>
+            <p>Writers run on vendored libzip behind a stable C ABI. Python, R and Julia read through the same library, which fetches only the index and the manifest with karu. A standalone JavaScript package reads in the browser and Node, and the optional DuckDB extension queries stored files in SQL.</p>
           </article>
         </div>
       </div>

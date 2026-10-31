@@ -6,6 +6,38 @@ from the repository's `VERSION` file; `make sync` updates the package copies.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 
+## [Unreleased]
+
+### Changed
+
+- Python, R and Julia `read()` fetch the index and `__metadata__` through libcozip
+  and Karu. DuckDB decodes the local Parquet without installing an extension.
+- Remote reads use environment or file credentials instead of DuckDB secrets.
+  `r2://` and account-in-host `abfss://` sources are no longer supported.
+- The reader needs C++23, libcurl and OpenSSL. `COZIP_READER=OFF` builds the
+  writer alone. R now requires R 4.3 and these build dependencies.
+- Release libraries link curl and OpenSSL statically; the Windows DLL also
+  links the C runtime statically. Bundles include their license notices.
+  macOS artifacts are built per architecture rather than as a universal binary.
+
+### Added
+
+- C functions `cozip_read_flat_metadata()`, `cozip_location_base()` and
+  `cozip_free()`, plus reader status codes.
+
+### Fixed
+
+- Reader errors hide credentials in URL userinfo and query strings.
+- The Flat reader rejects indexes with extra priority files.
+- `cozip:location` maps `az://` to `/vsiaz/` and `s3a://` or `s3n://`
+  to `/vsis3/`.
+- A `key=value` directory in an archive path no longer adds a Hive column.
+
+### Removed
+
+- The `duckdb/` submodule, the `COZIP_EXTENSION` override, and the fallbacks
+  to `read_flat(gdal_vsi := ...)` and `read_cozip()`.
+
 ## [2026.9.27] — 2026-09-27
 
 ### Added

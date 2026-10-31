@@ -61,6 +61,11 @@ train = filter(:split => ==("train"), manifest)
 `Cozip.read()` supports only Flat-profile archives (`profile = 1`). TACO
 archives (`profile = 2`) and all other profiles are rejected.
 
+`Cozip.read()` fetches the manifest through libcozip; DuckDB decodes Parquet
+without loading extensions. Remote reads use environment or standard files.
+For SQL over stored files, use the optional
+[cozip_reader](https://github.com/asterisk-labs/cozip_reader) extension.
+
 ## Versioning
 
 `Cozip.jl` tracks the C library. `make sync` keeps `Project.toml` aligned with

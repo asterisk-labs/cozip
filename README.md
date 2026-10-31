@@ -79,17 +79,15 @@ archive. Everything else is optional metadata. The writer adds `offset` and
 | R        | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` | read + write | [r/](r/) |
 | Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | read + write | [julia/](julia/) |
 | JavaScript | `npm install @asterisk-labs/cozip` | **reader** | [javascript/](javascript/) |
-| C        | vendor [`core/`](core/) (libzip + zlib bundled, zero system deps) | **core writer** | [core/](core/) |
-| C++ / DuckDB | `INSTALL cozip FROM community; LOAD cozip;` | **reader** via `read_flat()` | [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) |
+| C        | vendor [`core/`](core/) (libzip, zlib and karu bundled; the reader links libcurl and OpenSSL) | **core writer + Flat reader** | [core/](core/) |
+| DuckDB (optional) | `INSTALL cozip FROM community; LOAD cozip;` | **SQL** over stored files | [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) |
 
-The C library at [`core/`](core/) is the writer core. Its public API also
-provides the two-stage TACO layout/write path described in
-[`docs/taco-writer-internal.md`](docs/taco-writer-internal.md). Python, R, and
-Julia use libcozip for layout and ZIP serialization. Two readers live outside that C path:
-the DuckDB community extension at
-[asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader)
-exposes `read_flat(url)` to SQL, and [`javascript/`](javascript/) reads HTTP
-archives in browser and server runtimes. All follow the same [SPEC.md](SPEC.md).
+[`core/`](core/) writes archives and reads Flat manifests through the vendored
+[karu](https://github.com/asterisk-labs/karu). Python, R and Julia use that
+library; [`javascript/`](javascript/) has its own HTTP reader. The optional
+[cozip_reader](https://github.com/asterisk-labs/cozip_reader) extension queries
+stored files with SQL. The C API also supports [TACO writing](docs/taco-writer-internal.md).
+All follow [SPEC.md](SPEC.md).
 
 ## Spec
 
