@@ -24,13 +24,10 @@ Pkg.add("Cozip")
 ```
 
 - Julia 1.10 or newer. Dependencies: DataFrames, DuckDB, DBInterface.
-- libcozip is a lazy artifact (`julia/Artifacts.toml`): the matching
-  `libcozip-<version>-<platform>.tar.gz` from the GitHub release downloads on first load.
-  Platforms: Linux x86-64 and aarch64 (glibc), macOS aarch64 and x86-64, Windows x86-64.
-  Releases built from this tree ship one macOS archive per architecture with the reader
-  and static libcurl and OpenSSL; the `Artifacts.toml` for 2026.9.27 still points both
-  macOS architectures at the older universal build, which has no reader. Use
-  `COZIP_LIB_PATH` with a local build until the next release.
+- libcozip is a lazy artifact (`julia/Artifacts.toml`), downloaded from the matching
+  GitHub release on first load. Platforms: Linux x86-64 and aarch64 (glibc), macOS
+  aarch64 and x86-64, Windows x86-64. The macOS libraries include the reader and
+  link libcurl and OpenSSL statically.
 - `COZIP_LIB_PATH=/abs/path/cozip.dylib` overrides the artifact. It is read in
   `LibCozip.__init__`, so set it before `using Cozip`.
 - `Cozip.LibCozip.cozip_version()` returns the loaded library's version.

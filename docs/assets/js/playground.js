@@ -7,7 +7,7 @@
 // CRS assumption: geometries are longitude and latitude, the GeoParquet
 // default (OGC:CRS84).
 
-import { read } from 'https://esm.sh/@asterisk-labs/cozip@2026.9.27';
+import { read } from 'https://esm.sh/@asterisk-labs/cozip@2026.11.23';
 
 const $ = id => document.getElementById(id);
 const $form = $('play-form'), $url = $('url'), $go = $('go'), $picks = $('picks'),

@@ -26,7 +26,7 @@ npm install @asterisk-labs/cozip
 - Dependencies: `hyparquet` and `hyparquet-compressors`, so manifests compressed with
   Snappy, gzip, Brotli, zstd or LZ4 decode.
 - No bundler step is needed in the browser:
-  `import { read } from "https://esm.sh/@asterisk-labs/cozip@2026.9.27"` is what
+  `import { read } from "https://esm.sh/@asterisk-labs/cozip@2026.11.23"` is what
   `docs/assets/js/playground.js` does.
 
 ## 2. `read(url, options)`
