@@ -15,7 +15,8 @@ test or install step loads it.
 - Edit only `core/cozip.c`, `core/cozip_read.c` and `core/cozip.h`. `make sync` copies
   them, the vendored libzip, zlib and karu, `VERSION` and `LICENSE` into `r/src/` and the
   packages; never edit `r/src/cozip.{c,h}`, `r/src/cozip_read.c`, `r/src/libzip/`,
-  `r/src/zlib/`, `r/src/karu/`, `python/VERSION` or `python/LICENSE` by hand.
+  `r/src/zlib/`, `r/src/karu/`, `python/VERSION`, `python/LICENSE` or
+  `javascript/LICENSE` by hand.
   `core/karu/` is a copy of a tagged karu release; update it whole, never patch it.
 - Enforce physical rules shared by every writer (names, sizes, sources, layout, profile
   name rules) in the C core. Bindings check types, tables and Parquet contents, and keep
@@ -27,9 +28,10 @@ test or install step loads it.
   names are ASCII, and every profile keeps the `.zip` extension.
 - DuckDB extension changes go to cozip_reader. The bindings decode the fetched manifest
   with DuckDB itself, with extension autoloading and autoinstall turned off.
-- Treat `core/build*/`, `python/cozip/_lib/`, `dist/`, `javascript/types/`, `r/man/`,
-  `r/NAMESPACE`, `r/src/Makevars`, `r/src/Makevars.win` and `julia/Artifacts.toml` as
-  generated. `index.html`, `playground.html` and `docs/*.html` are hand-maintained source.
+- Treat `core/build*/`, `python/cozip/_lib/`, `dist/`, `_site/`, `javascript/types/`,
+  `r/man/`, `r/NAMESPACE`, `r/src/Makevars`, `r/src/Makevars.win`, `r/src/version.h` and
+  `julia/Artifacts.toml` as generated. `docs/` is the hand-maintained website source,
+  described in `docs/README.md`; `make docs` renders `SPEC.md` into it and checks links.
 - `VERSION` is the only version source.
 
 ## Validation
@@ -40,9 +42,10 @@ test or install step loads it.
   `python -m pytest python/tests` with `COZIP_LIB_PATH` pointing at a fresh build. R, Julia
   and JavaScript: `make r`, `make julia`, `make javascript`.
 - Rebuild the library before testing a binding after C changes, and run `make sync` before
-  committing them.
+  committing them. `make check` compares every copy without writing and fails on drift.
 - For planning, layout, verification or hashing changes, also run the C and Python suites
-  under ASan and UBSan and write a real archive above 4 GiB.
+  under ASan and UBSan (`-DCOZIP_SANITIZE=ON` for the C suite) and write a real archive
+  above 4 GiB.
 
 Detailed usage, format, binding, TACO, release and debugging procedures live in the
 repository's `cozip` skill. Load the relevant reference from that skill instead of

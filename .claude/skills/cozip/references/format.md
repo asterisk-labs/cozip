@@ -156,7 +156,9 @@ to UTF-16.
   bytes, or slightly larger when the shortfall is below the 110 bytes of headers the
   padding entry itself adds.
 - Flat and profile 0 append the padding after every other entry, so it follows
-  `__metadata__`. TACO inserts it immediately before the final priority block.
+  `__metadata__`. TACO inserts it immediately before the final priority block. The one
+  exception is a Central Directory at byte `0xFFFFFFFF` (section 8), where the padding
+  goes before a final `__metadata__`.
 - The padding entry is never indexed and never appears in a Flat manifest, but ZIP tools
   list it. Readers treat it as an ordinary entry without meaning.
 
@@ -168,6 +170,13 @@ to UTF-16.
   `0xFFFFFFFF`, so `payload_offset = lfh_offset + 30 + len(name) + 20`.
 - A payload of exactly `0xFFFFFFFF` bytes is refused (`cannot be represented in a ZIP local
   header`): the vendored libzip writes an unreadable header at that one size.
+- The vendored libzip also mishandles a local header or the Central Directory starting
+  at byte `0xFFFFFFFF`, and an archive of exactly 65,535 entries: it writes the ZIP32
+  sentinel without the ZIP64 value. `cozip_write_archive` refuses those layouts.
+  `cozip_finalize` steps around them with a `__cozip_padding__` entry: one more entry
+  fixes the count, and the padding goes before a final indexed entry (`__metadata__`, or
+  the TACO block) to move the Central Directory or a header inside that block. A header
+  at that byte before any such position cannot move and is refused.
 - When offsets pass 4 GiB the archive also gets the ZIP64 end record and locator.
   Verified: a 4.29 GiB entry followed by a small file gave payload offsets 149 and
   4,294,979,829, and both the reader and `scripts/check_cozip.py` accepted the archive.

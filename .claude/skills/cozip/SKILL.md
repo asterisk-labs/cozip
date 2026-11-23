@@ -20,7 +20,7 @@ and any columns you add. A reader fetches the index and the manifest, filters ro
 reads each file as one byte range. Entries are stored uncompressed, so
 `[offset, offset + size)` is exactly the original file, and `unzip` still works.
 
-This skill describes **cozip 2026.9.27** (SPEC.md 0.1.0, binary format version 1). Check
+This skill describes **cozip 2026.11.23** (SPEC.md 0.1.0, binary format version 1). Check
 `cozip.__version__`, `packageVersion("cozip")` or `Cozip.LibCozip.cozip_version()`. If it
 differs, trust the installed source and `CHANGELOG` over this file.
 
@@ -31,7 +31,7 @@ differs, trust the installed source and `CHANGELOG` over this file.
   writes the entries, re-reads the headers it wrote and patches the integrity hash.
 - Writing has two stages. `stage_metadata` returns each file's final offset before anything
   is written; you write the manifest Parquet with any tool and options; `stage_create`
-  embeds that file verbatim. `write` runs both stages with default Parquet options.
+  embeds that file verbatim. `write` runs both stages and writes a compressed manifest.
 - Python, R and Julia read the index and `__metadata__` through libcozip and karu.
   DuckDB decodes the Parquet locally. JavaScript has its own reader. Each reader
   computes `cozip:location`; the optional cozip_reader extension provides SQL
@@ -77,7 +77,8 @@ extension.
 | One file inside an archive | `cozip:location` in GDAL, or bytes `offset` to `offset + size - 1` |
 | C, or a language without a binding | `cozip_plan_flat` then `cozip_write_flat`, or `cozip_finalize` |
 | TACO dataset container | the TACO package, which calls `cozip._taco` over `cozip_plan_taco` and `cozip_write_taco` |
-| Is this file a conforming cozip? | `python scripts/check_cozip.py archive.zip` ([scripts/check_cozip.py](scripts/check_cozip.py)) |
+| Check the byte-0 access path, any profile, local or remote | `cozip.verify(source)` (also R `verify()`, Julia `Cozip.verify`, JS `verify(url)`, C `cozip_verify`): header, index, names, ranges, hash and end record; payloads are not checked |
+| Is this local file a conforming cozip, Central Directory included? | `python scripts/check_cozip.py archive.zip` ([scripts/check_cozip.py](scripts/check_cozip.py)) |
 
 ## Invariants and pitfalls
 
@@ -115,7 +116,7 @@ extension.
 ## Reference map
 
 Read only the reference relevant to the current task. Each one names its sources in the
-repository and is scoped to cozip 2026.9.27.
+repository and is scoped to cozip 2026.11.23.
 
 | Task | Read |
 | --- | --- |

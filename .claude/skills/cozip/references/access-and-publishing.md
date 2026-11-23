@@ -1,6 +1,6 @@
 # Opening entries and publishing archives
 
-Sources: `SPEC.md` 13.4 and Appendix A, `docs/python.html`, the public fixtures in
+Sources: `SPEC.md` 13.4 and Appendix A, `docs/api.html`, the public fixtures in
 `asterisk-labs/cozip-api-fixtures`. Every snippet ran against a local archive or the
 fixture at `https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip`
 (also served from `https://data.source.coop/asterisk-labs/cozip-api-fixtures/data/cities.zip`).
@@ -142,8 +142,8 @@ key you will read by (split, tile, time) before `stage_metadata`.
 
 ## 5. Publishing
 
-- The archive is a single immutable object; upload it with any tool. `docs/python.html`
-  shows `boto3.upload_file` to Source Cooperative's S3 bucket and reading it back from
+- The archive is a single immutable object; upload it with any tool, for example
+  `boto3.upload_file` to Source Cooperative's S3 bucket, then read it back from
   `https://data.source.coop/...`. Hugging Face datasets serve it from
   `https://huggingface.co/datasets/<org>/<repo>/resolve/<revision>/<path>`.
 - Never modify or replace an archive in place. Readers may hold its manifest, and every
@@ -155,7 +155,7 @@ key you will read by (split, tile, time) before `stage_metadata`.
   `partition_size` option does. Each keeps its own manifest and can be rebuilt alone;
   concatenate the `read()` results, or combine them in SQL with the DuckDB extension and
   `UNION ALL BY NAME`.
-- Once public, the playground (`playground.html`) renders a manifest from its URL, and
+- Once public, the playground (`docs/playground.html`) renders a manifest from its URL, and
   a GeoParquet manifest on a map.
 
 ## 6. HTTP requirements

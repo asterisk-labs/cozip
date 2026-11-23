@@ -1,6 +1,6 @@
 # R API
 
-Everything here is the `cozip` R package 2026.9.27 as implemented in `r/R/cozip.R`,
+Everything here is the `cozip` R package 2026.11.23 as implemented in `r/R/cozip.R`,
 `r/R/read.R`, `r/R/zzz.R`, `r/src/cozip_glue.c` and the native reader
 `r/src/cozip_read.c`. Examples were run with R 4.6,
 arrow 24, duckdb 1.5.5, sf 1.1, geoarrow 0.4 and terra 1.9 in a UTF-8 locale.
@@ -47,11 +47,13 @@ create(out_path, table, temp_dir = NULL)
 
 - `table` must be an `arrow::Table` with `name` and `path` columns; convert a data frame
   with `arrow::as_arrow_table(df)`. Other columns go into the manifest.
-- Runs `stage_metadata()`, writes the manifest with `arrow::write_parquet()` defaults to a
-  temporary file in `temp_dir` (default `tempdir()`), calls
-  `stage_create(validate = FALSE)` and deletes the temporary file.
-- Returns `normalizePath(out_path, mustWork = FALSE)`, computed before writing. For a new
-  file this is the path as given (still relative); for an existing file it is absolute.
+- Plans the table once, writes the manifest with `arrow::write_parquet()` (zstd, and dictionary encoding
+  only for the columns it makes smaller on the first 10,000 rows) to a
+  temporary file in `temp_dir` (default `tempdir()`), writes the archive with the planned
+  sizes and deletes the temporary file. The C writer stats every source again and stops
+  with `source is N bytes, but the planned payload size is M` when one changed.
+- Returns the absolute path of the written archive (`normalizePath(mustWork = TRUE)`
+  after writing). Source, metadata and output paths go through `path.expand()`.
 
 ## 3. `stage_metadata()`
 
@@ -63,6 +65,9 @@ res$paths      # data.frame(name, path), row-aligned with res$metadata
 
 - Validates in R: arrow Table, required and reserved columns, no rows, NA values, reserved
   names (read from libcozip at load time), duplicates, missing files, non-regular files.
+  Column names are compared without case, as DuckDB compares them: two columns that differ
+  only in case are refused, and so is any case of `offset`, `size`, `cozip:location` or
+  `taco:location`. `name` must be a string (or factor) column.
 - Sizes come from `file.size()`; offsets from `cozip_plan_flat()` in C, which also
   enforces name syntax, ASCII and non-empty files.
 - Schema metadata on `table` is copied to `metadata`.
@@ -75,13 +80,13 @@ stage_create(out_path, paths, metadata_parquet, validate = TRUE)
 
 - `paths` is a data frame with character `name` and `path` columns and no NA, in manifest
   row order. `validate` must be a single `TRUE` or `FALSE`.
-- The Parquet must exist, be a non-empty regular file, contain `name`, `offset`, `size`
-  and contain neither `path` nor a location column. That check always runs.
-- `validate = TRUE` compares names, offsets and sizes with a new plan (as doubles, so
-  int64 columns also pass).
+- The Parquet must exist, be a non-empty regular file, contain `name` (string), `offset`
+  and `size` (uint64, spec 13.3), no two columns that differ only in case, and neither
+  `path` nor a location column in any case. That check always runs.
+- `validate = TRUE` compares names, offsets and sizes with a new plan.
 - Writes through `cozip_finalize()` with the Flat profile. The Parquet is embedded
   verbatim, so compression and schema metadata written by arrow, sf or geoarrow survive.
-- Returns `normalizePath(out_path, mustWork = FALSE)`, as `create()` does.
+- Returns the absolute path of the written archive, as `create()` does.
 
 ## 5. `read()`
 
@@ -91,8 +96,9 @@ read(source, columns = NULL, location = TRUE)
 
 - `source`: a single non-empty ASCII string, local path or URL; the accepted schemes and
   credentials are those of Python (`python-api.md` sections 5 and 8).
-- `columns`: `NULL` for every column, otherwise extra column names; `name`, `offset`,
-  `size` (and `cozip:location` when enabled) are always included.
+- `columns`: `NULL` for every column, otherwise extra column names, matched exactly;
+  `name`, `offset`, `size` (and `cozip:location` when enabled) are always included, an
+  unknown name is an error and location names are ignored in any case.
 - Returns a tibble. `offset` and `size` are doubles (DuckDB maps `UBIGINT` to double in R),
   exact up to 2^53 bytes.
 - `.Call(C_R_cozip_read_flat_metadata, source)` verifies the index and returns the
@@ -105,6 +111,10 @@ read(source, columns = NULL, location = TRUE)
 - Stored location columns are dropped and `cozip:location` is computed again, as in
   Python. Hive partitioning is off.
 - Only Flat archives are accepted.
+- `verify(source)` checks the access path of any profile without decoding its manifest, as
+  `cozip.verify` does (`python-api.md` section 5), through `.Call(C_R_cozip_verify,
+  source)`. It returns `NULL` invisibly or stops with `[cozip:NAME] ...`. `read()` and
+  `verify()` share `.check_source()`.
 
 ## 6. Errors
 
@@ -117,8 +127,9 @@ read(source, columns = NULL, location = TRUE)
   be non-empty`. The entry index is zero-based there and one-based in R-side messages.
 - Reader failures also carry the status name, for example
   `[cozip:PROFILE] read_flat needs a Flat-profile archive (profile=1). Got profile=2 in:
-  ...` or `[cozip:IO] /path/missing.zip: No such file or directory`. DuckDB errors pass
-  through only for an unknown `columns` entry.
+  ...` or `[cozip:IO] /path/missing.zip: No such file or directory`. An unknown `columns`
+  entry, or manifest columns that differ only in case, are R errors with a `cozip:`
+  prefix.
 
 ## 7. Locale and encodings
 
@@ -137,7 +148,10 @@ names must be ASCII`. Check with `Sys.getlocale("LC_CTYPE")`.
 ```r
 library(geoarrow)                    # registers the sf to GeoArrow conversion
 res <- cozip::stage_metadata(tbl)
-md <- sf::st_sf(as.data.frame(res$metadata), geometry = geometries)   # an sfc with a CRS
+md_sf <- sf::st_sf(as.data.frame(res$metadata), geometry = geometries)   # an sfc with a CRS
+md <- arrow::as_arrow_table(md_sf)
+md$offset <- md$offset$cast(arrow::uint64())   # the data frame round trip leaves numbers
+md$size <- md$size$cast(arrow::uint64())       # that stage_create refuses (spec 13.3)
 arrow::write_parquet(md, "metadata.parquet")
 cozip::stage_create("dataset.zip", res$paths, "metadata.parquet")
 ```

@@ -1,6 +1,6 @@
 # JavaScript reader
 
-Everything here is `@asterisk-labs/cozip` 2026.9.27 as implemented in
+Everything here is `@asterisk-labs/cozip` 2026.11.23 as implemented in
 `javascript/src/index.js`, run on Node 24 with hyparquet 1.25.8. The package only reads;
 there is no JavaScript writer.
 
@@ -26,8 +26,8 @@ npm install @asterisk-labs/cozip
 - Dependencies: `hyparquet` and `hyparquet-compressors`, so manifests compressed with
   Snappy, gzip, Brotli, zstd or LZ4 decode.
 - No bundler step is needed in the browser:
-  `import { read } from "https://esm.sh/@asterisk-labs/cozip@2026.9.9"` is what
-  `playground.html` does.
+  `import { read } from "https://esm.sh/@asterisk-labs/cozip@2026.9.27"` is what
+  `docs/assets/js/playground.js` does.
 
 ## 2. `read(url, options)`
 
@@ -42,22 +42,28 @@ const rows = await read("https://example.org/dataset.zip", {
 
 - `url`: non-empty ASCII string starting with `http://` or `https://`. `s3://`, `gs://`,
   `file://` and local paths are refused; use a public or presigned HTTPS URL.
-- `options` must be a plain object. `columns` is an array of non-empty strings;
+- `options` must be an object, not an array. `columns` is an array of non-empty strings;
   `cozip:location` and `taco:location` in it are ignored. `location` must be a boolean.
 - Only Flat archives (profile 1) are accepted.
+- `verify(url)` checks the access path of any profile, as `cozip_verify` does
+  (`c-api.md` section 3). It resolves to `undefined` or rejects with a rule
+  code. It fetches the head, the hash suffix if needed, and index bytes beyond
+  64 KiB. It does not inspect payloads or profile metadata.
 
 ## 3. Requests it makes
 
-1. `Range: bytes=0-65535`, which yields the archive size from `Content-Range` and usually
-   the whole index.
-2. One more range when the index extends past the first 64 KiB.
-3. The last 32 KiB for the integrity hash, unless the first response already covered it.
-4. The `__metadata__` range.
+1. `Range: bytes=0-65535` gives the archive size and 41-byte Flat index. Header,
+   profile and index-shape checks run before another request.
+2. The last 32 KiB for the integrity hash, unless the first response already covered it.
+3. The `__metadata__` range, only when neither response holds it, starting up to 1,066
+   bytes earlier so the manifest's local header comes along and can be checked
+   (`MISSING_ENTRY` when it does not match the index).
 
-Measured: the 32,819-byte public fixture took 2 requests; a 203,661-byte archive took 3
-(`0-65535`, `170893-203660`, `200884-202455`). The reader validates the local header,
-every index section, names, ranges and the integrity hash before it uses any offset, and
-fails if the archive size changes between responses.
+The 32,819-byte public fixture takes one request, as does a `200` response with the
+whole object. Later requests send a strong ETag as `If-Match` when available. Without
+one, size and manifest-header checks detect some changes but not every same-size
+replacement. Archive errors carry `code` (spec section 9, plus `INVALID_INDEX`);
+messages omit URL credentials, queries and fragments.
 
 ## 4. Rows and types
 
@@ -133,4 +139,4 @@ npm test         # node --test; several tests fetch a fixture from raw.githubuse
 ```
 
 `make javascript` runs the same steps after `make sync` and packs a tarball into `dist/`.
-The package version is the first three components of `VERSION`.
+The package version is `VERSION`, which `make check` requires to be CalVer `YYYY.M.D`.

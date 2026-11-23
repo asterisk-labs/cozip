@@ -1,6 +1,6 @@
 # Debugging
 
-Messages below were captured from cozip 2026.9.27 with the native reader (Python, R,
+Messages below were captured from cozip 2026.11.23 with the native reader (Python, R,
 Julia and C), the JavaScript reader and the DuckDB community extension 2.0.1 on DuckDB
 1.5.5. libcozip messages, the reader's included, are the same in every binding; Python
 shows them as `CozipError: [NAME] message`, R as `[cozip:NAME] message`, Julia as
@@ -34,6 +34,9 @@ shows them as `CozipError: [NAME] message`, R as `[cozip:NAME] message`, Julia a
 | `output path is also the source path for entry 0 ('a')` | output would overwrite an input (same spelling or same file) | write elsewhere |
 | `entry 0 ('a') source is 12 bytes, but the planned payload size is 10` | a source changed size between planning and writing inside one call (C callers: between `cozip_plan` and `cozip_write_archive`) | write from files nothing else modifies |
 | `entry 0 payload size 0xFFFFFFFF cannot be represented in a ZIP local header` | a file of exactly 4,294,967,295 bytes, the one size the bundled libzip cannot write | store that file with any other size (split, pad or re-encode it) |
+| `entry N ('...') would start at byte 4294967295, which libzip cannot record` | a local header planned at that exact byte, before any entry the padding can move | reorder the entries or rename one before it |
+| `the Central Directory would start at byte 4294967295, which libzip cannot record` | the last payload ends at that byte and the last entry is a data entry (profile 0 or the low-level calls) | end the archive with an indexed entry, or change one size or name |
+| `an archive of exactly 65535 entries cannot be recorded by libzip` | `cozip_write_archive` with that count; `cozip_finalize` adds a padding entry instead | add or remove one entry, or use `cozip_finalize` |
 | `[IO] cannot stat 'path': No such file or directory` | missing source (C and TACO paths) | fix the path |
 | `'path' is not a regular file` or binding `source is not a regular file` | directory, FIFO, device | pass files |
 | `[IO] zip_close failed (Failure to create temporary file: No such file or directory)` | output directory missing or not writable | create it; check permissions and free space |
@@ -59,7 +62,7 @@ Binding-side input errors (Python wording; R and Julia are equivalent):
 | --- | --- | --- |
 | `cozip: name mismatch at row 0: parquet='a', paths='b'` | Parquet rows and `paths` are in different orders | apply the same sort to both, or stage again |
 | `cozip: offset mismatch at row 0 ('a'): parquet=0, plan=127` | offsets edited, or computed for another order or names | write the Parquet from `stage_metadata` output |
-| `cozip: size mismatch at row 0 ('a'): parquet=10, plan=12` (or an offset mismatch on a later row) | a source changed after `stage_metadata` | stage again; with `validate=False` this goes unnoticed and the manifest is wrong |
+| `cozip: size mismatch at row 0 ('a'): parquet=10, plan=12` (or an offset mismatch on a later row) | a source changed after `stage_metadata` | stage again; `stage_create(validate=False)` lets it through and the manifest is wrong, while `write` refuses it (`... did the file change after planning?`) |
 | `cozip: metadata parquet has 1 rows, paths has 2` | filtered one side only | filter before `stage_metadata` |
 | `cozip: metadata parquet has NULL name at row 1` | nulls in required columns | fill or drop rows before staging |
 | `cozip: metadata parquet must not contain a 'path' column. ...` | `path` written into the manifest | drop it |
@@ -80,7 +83,7 @@ Python, R and Julia (`read()`):
 | `[PROFILE] read_flat needs a Flat-profile archive (profile=1). Got profile=2 in: ...` | TACO archive (`profile=0` for profile 0) | read TACO with the TACO package |
 | `[INVALID_LFH] LFH does not match cozip layout: ...` or `[INVALID_LFH] byte 0 is not a ZIP Local File Header: ...` | a plain ZIP, a bare Parquet file or another file | not a cozip |
 | `[ARCHIVE_TOO_SMALL] cozip archive too small (minimum is 32819 bytes): ...` | wrong object, an HTML error page, a truncated upload | check the URL and object size |
-| `[INVALID_INDEX] cozip integrity hash mismatch: ...` | modified or re-encoded bytes | section 5 |
+| `[HASH_MISMATCH] cozip integrity hash mismatch: ...` | modified or re-encoded bytes | section 5 |
 | `[INVALID_INDEX] cozip index has no entry named '__metadata__': ...` | profile byte 1 without a Flat index | rebuild the archive |
 | `[IO] /path/missing.zip: No such file or directory` | wrong local path | relative paths resolve against the process working directory |
 | `[NOT_FOUND] https://host/missing.zip: HTTP 404: ...` | wrong URL or revision | fix the URL |
@@ -125,7 +128,8 @@ ones the writer produced:
 3. The copy is truncated or mixes versions: an interrupted upload, or a cache serving a
    different object for some ranges.
 
-Diagnose on a local copy: `python scripts/check_cozip.py archive.zip`, compare its size and
+Check the remote copy itself with `cozip.verify(url)`, which reads only the head and the
+tail. Diagnose on a local copy: `python scripts/check_cozip.py archive.zip`, compare its size and
 SHA-256 with the file that was written, and compare `Content-Length` with the local size.
 Rebuild with cozip rather than patching; the hash cannot be repaired in place without
 rewriting it as the writer does.

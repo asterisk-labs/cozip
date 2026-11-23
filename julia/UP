@@ -1,63 +1,30 @@
 # Releasing Cozip.jl
 
-A short guide for releasing a new version. Follow the steps in order. The Julia binding has more moving parts than the others, but it's mechanical once you know it.
+Cozip.jl uses libcozip binaries from the GitHub release. Register the Julia package only after the release workflow adds the new `julia/Artifacts.toml` to `main`.
 
-## The five steps
+## Steps
 
-### 1. Bump the version
+1. Set the root `VERSION` to today's CalVer value, run `make sync` and complete the local tests.
+2. Commit the release, tag that commit `v<version>` and push `main`. After the pre-release checks pass, push that tag. The tag starts `release.yml`.
+3. Wait for every release job, including `regenerate-artifacts-toml`, to pass. That last job pushes an `Artifacts.toml` commit to `main`.
+4. Fetch that commit and update the local checkout:
 
-Edit `VERSION` at the repo root and set the new CalVer release.
+   ```bash
+   git fetch origin main
+   git merge --ff-only origin/main
+   ```
 
-```
-2026.9.3
-```
+5. Register the Julia package from the repo root:
 
-### 2. Commit and tag
+   ```bash
+   julia -e 'using Pkg; Pkg.Registry.update("AsteriskRegistry"); using LocalRegistry; register("./julia"; registry="AsteriskRegistry", push=true)'
+   ```
 
-```bash
-VERSION="$(tr -d '[:space:]' < VERSION)"
-git add VERSION
-git commit -m "release ${VERSION}"
-git tag "v${VERSION}"
-git push origin main --tags
-```
+The registry must point to the commit containing the new `Artifacts.toml`; registering the tagged commit would keep the previous release's binaries.
 
-The tag is what triggers the release workflow.
+## Verify
 
-### 3. Wait for the workflow
-
-The workflow has to finish before you register the package. The job to watch is `regenerate-artifacts-toml`. It adds a follow-up commit to main with the new `julia/Artifacts.toml`, and you need that commit before step 5.
-
-The pipeline takes around ten minutes. Make tea.
-
-Watch it from the Actions tab on GitHub. When `regenerate-artifacts-toml` goes green, move on.
-
-### 4. Pull the bot commit
-
-```bash
-git pull origin main
-```
-
-This pulls down the commit the workflow just pushed. The message looks like
-`chore(julia): regenerate Artifacts.toml for v<version>`.
-
-Skip this and step 5 will register a version that downloads outdated binaries. It won't error, it'll just be wrong. Pull.
-
-### 5. Register in AsteriskRegistry
-
-Run this from the repo root.
-
-```bash
-julia -e 'using Pkg; Pkg.Registry.update("AsteriskRegistry"); using LocalRegistry; register("./julia"; registry="AsteriskRegistry", push=true)'
-```
-
-This takes the tree hash of `julia/` at the current commit (the one you just pulled), adds the entry to AsteriskRegistry, and pushes.
-
-Done.
-
-## Verifying the release
-
-Try this in a fresh Julia session.
+In a fresh Julia environment, install the registered package and check the loaded library version:
 
 ```julia
 using Pkg
@@ -68,30 +35,4 @@ using Cozip
 Cozip.LibCozip.cozip_version()
 ```
 
-The version it prints should match the `VERSION` file. If it doesn't, the package is loading binaries from an older release. The usual cause is that you skipped step 4.
-
-## Common errors
-
-### `ERROR: Unknown package julia`
-
-You wrote `register("julia"; ...)` instead of `register("./julia"; ...)`. LocalRegistry sees a plain string and looks for a package called "julia". Adding `./` makes it a path.
-
-### `ERROR: no path or url specified for registry`
-
-On Julia 1.12 and up, `Pkg.Registry.add` doesn't take URLs as plain strings anymore. Wrap the URL in a `RegistrySpec`, or hit `]` to enter package mode where URLs work directly.
-
-### `! [rejected] main -> main (fetch first)`
-
-Someone pushed to AsteriskRegistry between your local pull and your push. LocalRegistry resets your local clone for you, so nothing is broken. Just retry.
-
-### `Pkg.add("Cozip")` says nothing changed
-
-AsteriskRegistry isn't loaded in this depot. Add it first with `Pkg.Registry.add(Pkg.RegistrySpec(url="..."))`, then retry.
-
-## Why the order matters
-
-The tag points at the commit where you bumped `VERSION`. The workflow then adds one more commit on top, with the new `Artifacts.toml`. LocalRegistry reads whatever is in your working directory right now. If you register before pulling, you save a tree hash for a directory that still has the old `Artifacts.toml`.
-
-No error. The user just gets a package that downloads old binaries. The worst kind of bug, because it works.
-
-Pull before you register.
+The result should equal `VERSION`. If the registry already exists in the Julia depot, update it instead of adding it again.

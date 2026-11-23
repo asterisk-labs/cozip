@@ -1,6 +1,6 @@
 # Julia API
 
-Everything here is `Cozip.jl` 2026.9.27 as implemented in `julia/src/Cozip.jl`,
+Everything here is `Cozip.jl` 2026.11.23 as implemented in `julia/src/Cozip.jl`,
 `LibCozip.jl`, `Writer.jl` and `Reader.jl`. Examples were run with Julia 1.12,
 DataFrames 1 and DuckDB.jl on macOS.
 
@@ -23,7 +23,7 @@ Pkg.Registry.add(Pkg.RegistrySpec(url = "https://github.com/asterisk-labs/Asteri
 Pkg.add("Cozip")
 ```
 
-- Julia 1.10 or newer. Dependencies: DataFrames, DuckDB, DBInterface, Tables.
+- Julia 1.10 or newer. Dependencies: DataFrames, DuckDB, DBInterface.
 - libcozip is a lazy artifact (`julia/Artifacts.toml`): the matching
   `libcozip-<version>-<platform>.tar.gz` from the GitHub release downloads on first load.
   Platforms: Linux x86-64 and aarch64 (glibc), macOS aarch64 and x86-64, Windows x86-64.
@@ -38,7 +38,7 @@ Pkg.add("Cozip")
 ## 2. Names and exports
 
 - Exported: `create`, `stage_metadata`, `stage_create`.
-- Not exported: `Cozip.write` (`const write = create`) and `Cozip.read`. After
+- Not exported: `Cozip.write` (`const write = create`), `Cozip.read` and `Cozip.verify`. After
   `using Cozip`, a bare `write` or `read` is still `Base.write` or `Base.read`; qualify them.
 
 ## 3. `Cozip.write` and `create`
@@ -49,12 +49,20 @@ Cozip.write(out_path, table; temp_dir = nothing) -> String
 
 - `table` is any Tables.jl source with `name` and `path` columns; it is copied into a
   `DataFrame`. Other columns go into the manifest.
-- The temporary manifest is written by DuckDB (`COPY ... (FORMAT parquet)`) into
-  `temp_dir` (default `tempdir()`) with explicit types: `UInt64` becomes `UBIGINT`,
-  `Vector{UInt8}` becomes `BLOB`, `Int*`, `UInt*`, `Float*`, `Bool`, `String`, `Date` and
-  `DateTime` map to their DuckDB types, `missing` becomes NULL, and any other element type
-  is written as `VARCHAR` through `string`. Table-level `DataFrames.metadata` is stored as
-  Parquet key-value metadata, so a `geo` entry survives.
+- The table is planned once. The temporary manifest is the DataFrame registered with
+  DuckDB (`register_data_frame`) and written with `COPY ... (FORMAT parquet, COMPRESSION zstd)`, as Parquet version 1 or 2
+  depending on which writes the first 10,000 rows smaller, into
+  `temp_dir` (default `tempdir()`): `UInt64` becomes `UBIGINT`, `Vector{UInt8}` `BLOB`
+  (scanned as hex and decoded with `unhex()`, since DuckDB.jl before 1.5.5 cannot scan
+  a `Vector{UInt8}` column),
+  integers, floats (NaN and Inf included), `Bool`, `String`, `Date` and `DateTime` keep
+  their types, `missing` becomes NULL, and an element type DuckDB.jl cannot store, such as
+  `Vector{Int}`, raises `ArgumentError` instead of being stringified. Table-level
+  `DataFrames.metadata` is stored as Parquet key-value metadata, so a `geo` entry survives.
+- The archive is written with the planned sizes; the C writer stops when a source changed
+  size since planning.
+- Column names are compared without case, as DuckDB compares them, and `name` values must
+  be strings.
 - Returns `abspath(out_path)`.
 
 ## 4. `stage_metadata`
@@ -108,19 +116,23 @@ Cozip.read(source; columns = nothing, location = true) -> DataFrame
 - On Windows `Cozip.read` throws an `ErrorException` before reading, because the native
   reader has not been verified there from Julia yet. Writing works on Windows; read with Python or R
   instead.
+- `Cozip.verify(source) -> nothing` checks the access path of any profile without decoding its
+  manifest, as `cozip.verify` does (`python-api.md` section 5), through
+  `Cozip.LibCozip.verify_archive`. It throws `CozipError` named after the broken rule,
+  shares `_check_source` with `read`, and has the same Windows guard.
 
 ## 7. Errors
 
 | Type | Example |
 | --- | --- |
 | `ArgumentError` | `cozip: duplicate name "x" at row 2` |
-| `SystemError` | `cozip: row 1 ("d"): source not found: .` |
+| `ArgumentError` | `cozip: row 1 ("d"): source is not a regular file: .` |
 | `Cozip.LibCozip.CozipError` | `CozipError [INVALID_ARGUMENT] entry 0 ('e') has a zero-byte payload; FLAT user entries must be non-empty` |
 
 `CozipError` has fields `code`, `name` and `message`. `Cozip.read` raises it for index and
 transport failures, for example `CozipError [PROFILE] read_flat needs a Flat-profile archive
-(profile=1). Got profile=2 in: ...`. DuckDB errors pass through only for an unknown
-`columns` entry.
+(profile=1). Got profile=2 in: ...`. An unknown `columns` entry, matched exactly, or
+manifest columns that differ only in case raise `ArgumentError`.
 
 ## 8. Patterns
 

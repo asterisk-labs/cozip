@@ -71,7 +71,7 @@ Byte 0 of the archive is the first byte of the Local File Header of the index en
 The top-level layout is:
 
 ```text
-[LFH for __cozip__][cozip index payload] 
+[LFH for __cozip__][cozip index payload]
 [file entry 1]
 [file entry 2]
 ...

@@ -1,97 +1,76 @@
 <div align="center">
-  <img src="images/banner.svg" alt="cozip" width="700"/>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/cozip-banner-dark.svg">
+    <img src="images/cozip-banner-light.svg" alt="cozip" width="436">
+  </picture>
   <p>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-EAB308?style=flat-square" alt="License MIT"/></a>
-    <a href="https://pypi.org/project/cozip"><img src="https://img.shields.io/pypi/v/cozip?label=python&logo=python&logoColor=white&color=3776AB&style=flat-square" alt="PyPI"/></a>
-    <a href="https://asterisk-labs.r-universe.dev/cozip"><img src="https://img.shields.io/badge/r--universe-cozip-276DC3?logo=r&logoColor=white&style=flat-square" alt="R"/></a>
+    <a href="https://pypi.org/project/cozip"><img src="https://img.shields.io/pypi/v/cozip?label=python&logo=python&logoColor=white&color=3776AB&style=flat-square" alt="Python"/></a>
+    <a href="https://asterisk-labs.r-universe.dev/cozip"><img src="https://asterisk-labs.r-universe.dev/badges/cozip" alt="R-universe"/></a>
     <a href="https://github.com/asterisk-labs/AsteriskRegistry"><img src="https://img.shields.io/badge/julia-Cozip.jl-9558B2?logo=julia&logoColor=white&style=flat-square" alt="Julia"/></a>
-    <a href="https://www.npmjs.com/package/@asterisk-labs/cozip"><img src="https://img.shields.io/npm/v/@asterisk-labs/cozip?label=javascript&logo=javascript&logoColor=black&color=F7DF1E&style=flat-square" alt="npm"/></a>
-    <a href="SPEC.md"><img src="https://img.shields.io/badge/spec-stable-A8B9CC?style=flat-square" alt="Spec"/></a>
-    <a href="https://github.com/asterisk-labs/cozip_reader"><img src="https://img.shields.io/badge/duckdb-cozip__reader-FFF000?logo=duckdb&logoColor=black&style=flat-square" alt="DuckDB extension"/></a>
+    <a href="https://www.npmjs.com/package/@asterisk-labs/cozip"><img src="https://img.shields.io/npm/v/%40asterisk-labs%2Fcozip?label=npm&logo=npm&style=flat-square" alt="npm"/></a>
+    <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-0078D6?style=flat-square" alt="Linux, macOS and Windows"/>
+    <a href="#license"><img src="https://img.shields.io/badge/license-MIT-2b8a3e?style=flat-square" alt="MIT license"/></a>
   </p>
 </div>
 
 ---
 
-Open a ZIP like a table.
+cozip opens a ZIP like a table. It stores a Parquet manifest with one row per file
+inside an ordinary ZIP, and a small index at byte 0 that says where the manifest
+is, so a reader filters the manifest and fetches only the files it needs.
 
-cozip adds a Parquet manifest to an ordinary ZIP and puts a small fixed index
-at byte 0. A reader fetches the index and manifest first, then requests only
-the payload bytes it needs.
+## Features
 
-<div align="center">
-  <img src="images/cozip_animation.svg" alt="how cozip works" width="500"/>
-</div>
-
-A cozip remains a valid ZIP file: `unzip`, `zipfile.ZipFile`, and ordinary ZIP
-tools still work.
-
-## Example
-
-```python
-import tempfile
-from pathlib import Path
-
-import numpy as np
-import pyarrow as pa
-import rasterio
-import cozip
-
-
-# 1. Three tiny GeoTIFFs: all-zeros, all-ones, all-twos. (your dataset)
-tmp = Path(tempfile.mkdtemp())
-labels = ["zeros", "ones", "twos"]
-paths = [tmp / f"{label}.tif" for label in labels]
-
-profile = dict(driver="GTiff", dtype="uint8", count=1, width=64, height=64,
-               crs="EPSG:4326", transform=rasterio.Affine.identity())
-for v, p in enumerate(paths):
-    with rasterio.open(p, "w", **profile) as dst:
-        dst.write(np.full((64, 64), v, "uint8"), 1)
-
-# 2. Pack with a table.
-archive = str(tmp / "dataset.zip")
-cozip.write(archive, pa.table({
-    "path":  [str(p) for p in paths],
-    "name":  [p.name for p in paths],
-    "split": ["train", "val", "train"],
-    "label": labels,
-}))
-
-# 3. Read manifest
-manifest = cozip.read(archive)
-for _, row in manifest[manifest["split"] == "train"].iterrows():
-    with rasterio.open(row["cozip:location"]) as src:
-        print(row["name"], src.read(1).mean())
-```
-
-`path` says where each file lives on disk. `name` is how it appears inside the
-archive. Everything else is optional metadata. The writer adds `offset` and
-`size`; the reader can also add `cozip:location`, a
-[GDAL VSI](https://gdal.org/en/stable/user/virtual_file_systems.html) path.
-
+- **Still a ZIP**, with every file stored as it is, so `unzip`, `zipfile` and any ZIP
+  tool list and extract it.
+- **An index at byte 0** that gives the offset and size of the manifest, so readers
+  never parse the Central Directory.
+- **A Parquet manifest** with `name`, `offset` and `size` for every file, plus any
+  columns you add, compressed and ready for DuckDB, pandas or Polars.
+- **One range per file**, since each row gives the exact bytes of its file.
+  `cozip:location` writes that range in
+  [GDAL VSI](https://gdal.org/en/stable/user/virtual_file_systems.html) syntax.
+- **Reads from anywhere** through [Karu](https://github.com/asterisk-labs/karu),
+  whether the archive sits on a local disk, behind HTTP, in S3, GCS, Azure, Hugging
+  Face or Source Cooperative.
+- **An integrity hash** over the index and the end of the archive, so a truncated or
+  rewritten archive fails before any offset is used.
+- **Writing in two stages**, so you can plan the offsets first and write the manifest
+  with any Parquet tool, GeoParquet included.
+- **A C API** in `cozip.h`, so other languages can bind the same core.
 
 ## Bindings
 
 | Language | Install | Role | Docs |
 |----------|---------|------|------|
-| Python   | `pip install cozip` | read + write | [python/](python/) |
-| R        | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` | read + write | [r/](r/) |
-| Julia    | `Pkg.Registry.add("https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | read + write | [julia/](julia/) |
-| JavaScript | `npm install @asterisk-labs/cozip` | **reader** | [javascript/](javascript/) |
-| C        | vendor [`core/`](core/) (libzip, zlib and karu bundled; the reader links libcurl and OpenSSL) | **core writer + Flat reader** | [core/](core/) |
-| DuckDB (optional) | `INSTALL cozip FROM community; LOAD cozip;` | **SQL** over stored files | [asterisk-labs/cozip_reader](https://github.com/asterisk-labs/cozip_reader) |
+| Python | `pip install cozip` | read and write | [README](python/README.md) |
+| R | `install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")` | read and write | [README](r/README.md) |
+| Julia | `Pkg.Registry.add(url="https://github.com/asterisk-labs/AsteriskRegistry"); Pkg.add("Cozip")` | read and write | [README](julia/README.md) |
+| JavaScript | `npm install @asterisk-labs/cozip` | read | [README](javascript/README.md) |
+| C | [`core/`](core/), with libzip, zlib and Karu bundled | read and write | [API](https://asterisk.coop/cozip/api-c.html) |
 
-[`core/`](core/) writes archives and reads Flat manifests through the vendored
-[karu](https://github.com/asterisk-labs/karu). Python, R and Julia use that
-library; [`javascript/`](javascript/) has its own HTTP reader. The optional
-[cozip_reader](https://github.com/asterisk-labs/cozip_reader) extension queries
-stored files with SQL. The C API also supports [TACO writing](docs/taco-writer-internal.md).
-All follow [SPEC.md](SPEC.md).
+Python, R and Julia call the C library in [`core/`](core/), and JavaScript has its own
+reader for browsers and Node. The optional
+[cozip_reader](https://github.com/asterisk-labs/cozip_reader) DuckDB extension queries
+the stored files with SQL. See the [guide](https://asterisk.coop/cozip/), the
+[specification](SPEC.md) and the [changelog](CHANGELOG).
 
-## Spec
+## Quick start
 
-See [SPEC.md](SPEC.md). Any conforming reader handles any conforming writer.
+```python
+import pyarrow as pa
+import cozip
+
+table = pa.table({
+    "name": ["tiles/a.tif", "tiles/b.tif"],   # names inside the archive
+    "path": ["data/a.tif", "data/b.tif"],     # files on disk
+    "split": ["train", "val"],                # any other column
+})
+cozip.write("tiles.zip", table)
+
+manifest = cozip.read("tiles.zip")            # also s3://, https:// and other URLs
+train = manifest[manifest["split"] == "train"]
+```
 
 ## AI agent skill
 
@@ -101,9 +80,17 @@ Install the [cozip skill](https://github.com/asterisk-labs/cozip/blob/main/.clau
 npx skills add asterisk-labs/cozip
 ```
 
+## Development
+
+```bash
+make lib        # build the C library
+make python     # Python suite
+make help       # R, Julia, JavaScript, docs and sync checks
+```
+
 ## License
 
-MIT.
+MIT. See [`LICENSE`](LICENSE).
 
 <div align="center">
   <br>

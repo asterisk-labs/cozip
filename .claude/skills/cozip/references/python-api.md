@@ -1,6 +1,6 @@
 # Python API
 
-Everything here is `cozip` 2026.9.27 as implemented in `python/cozip/__init__.py`,
+Everything here is `cozip` 2026.11.23 as implemented in `python/cozip/__init__.py`,
 `_core.py`, `_writer.py` and `_reader.py`, with the native reader in `core/cozip_read.c`.
 Examples and messages were captured from that build with pyarrow 24, pandas 3 and DuckDB
 1.5.5.
@@ -45,9 +45,10 @@ Public names: `write`, `create`, `stage_metadata`, `stage_create`, `read`, `Cozi
 cozip.write(out_path, table, temp_dir=None) -> str
 ```
 
-Runs `stage_metadata(table)`, writes the manifest with `pyarrow.parquet.write_table`
-defaults into a temporary file under `temp_dir` (created if missing; system temp dir by
-default), calls `stage_create(..., validate=False)` and deletes the temporary file.
+Plans once, writes a temporary manifest with `pyarrow.parquet.write_table` (zstd, and per column the
+smallest of dictionary, plain, byte stream split or delta on the first 10,000 rows),
+then packs the archive with those offsets. The C writer checks source sizes again and
+raises `CozipError` if one changed. The temporary manifest is deleted on return.
 
 | Argument | Meaning |
 | --- | --- |
@@ -58,9 +59,9 @@ default), calls `stage_create(..., validate=False)` and deletes the temporary fi
 Returns the resolved absolute output path. Use the staging functions when the manifest
 needs its own writer or options (geopandas, zstd, row group size).
 
-libzip writes to a temporary file and renames it over `out_path` only after success, so a
-failure before that point leaves an existing file untouched. If the post-write check or the
-hash patch fails after the rename, the new file is removed.
+The archive is verified and hashed under a temporary name. Only then does
+`cozip_finalize` rename it over `out_path`; a failed write leaves an existing output
+untouched.
 
 ## 3. `stage_metadata`
 
@@ -82,11 +83,14 @@ Checks, in order: `name` and `path` present; none of `offset`, `size`, `cozip:lo
 a regular file. The C planner (`cozip_plan_flat`) then enforces name syntax and ASCII and
 rejects zero-byte files.
 
-Sizes are read with `stat()` at this point, and `stage_create` stats the files again. With
+Sizes are read with `stat()` at this point. `stage_create` stats the files again; with
 `validate=True` a file that changed in between surfaces as an offset or size mismatch.
-With `validate=False`, which `write` uses internally, the archive is written with the new
-sizes while the manifest keeps the old offsets (verified), so leave sources untouched until
-the call returns.
+
+Column names are compared without case, as DuckDB, which decodes manifests, compares
+them: two columns that differ only in case (`label` and `Label`) are refused, and so is
+any case of `offset`, `size`, `cozip:location` or `taco:location`. Columns pandas adds for
+an unnamed index (`__index_level_0__`) and the `pandas` schema key are dropped from the
+manifest; a pandas `DataFrame` passed directly raises `TypeError` with the conversion.
 
 Offsets for a given table (verified):
 
@@ -111,12 +115,12 @@ cozip.stage_create(out_path, paths, metadata_parquet, validate=True) -> str
 | `metadata_parquet` | Existing, non-empty Parquet file embedded byte for byte as `__metadata__`. |
 | `validate` | `bool`. `True` reads `name`, `offset`, `size` from the Parquet and compares them with a fresh plan. |
 
-- Always checked, whatever `validate` says: the Parquet has `name`, `offset` and `size`,
-  and has neither `path` nor a location column.
+- Always checked, whatever `validate` says: the Parquet has `name` (string), `offset`
+  and `size` (uint64, spec 13.3), no two columns that differ only in case, and neither
+  `path` nor a location column in any case. An int64 `offset` is refused; keep the uint64
+  columns `stage_metadata` returns when you rebuild the table.
 - With `validate=True` a NULL, a row count difference or any name, offset or size mismatch
-  raises `ValueError` naming the first bad row. The comparison casts `offset` and `size`
-  to uint64, so int64 columns pass; spec 13.3 asks for uint64, which `stage_metadata`
-  produces, so keep that type when you rebuild the table.
+  raises `ValueError` naming the first bad row.
 - `validate=False` skips only the value comparison. A wrong manifest then produces a valid
   ZIP whose rows point at the wrong bytes.
 - The Parquet is never parsed beyond these columns or rewritten: compression, row groups,
@@ -130,34 +134,46 @@ cozip.read(source, columns=None, location=True) -> pandas.DataFrame
 
 | Argument | Meaning |
 | --- | --- |
-| `source` | Local path, `file://`, `http(s)://`, `s3://` (also `s3a://`, `s3n://`), `gs://`, `gcs://`, `az://`, `azure://`, `abfs://`, `abfss://`, `hf://` or `source://` URL, or a GDAL `/vsi` path. `r2://` is not readable. Non-empty, ASCII, no NUL. A leading `~/` is expanded to fetch the bytes but stays in the location. |
-| `columns` | `None` returns every column. A list returns `name`, `offset`, `size`, the location column when enabled, then the listed extras without duplicates; `cozip:location` and `taco:location` in the list are ignored. |
+| `source` | Local path, `file://`, `http(s)://`, `s3://` (also `s3a://`, `s3n://`), `gs://`, `gcs://`, `az://`, `azure://`, `abfs://`, `abfss://`, `hf://` or `source://` URL, or a GDAL `/vsi` path. `r2://` is not readable. Non-empty, ASCII, no NUL. A leading `~/` is expanded, for the bytes and in the location. |
+| `columns` | `None` returns every column. A list returns `name`, `offset`, `size`, the location column when enabled, then the listed extras without duplicates. Names match exactly; an unknown name raises `ValueError`; `cozip:location`, `taco:location` and `cozip:gdal_vsi` in the list are ignored in any case. |
 | `location` | `bool`. `False` omits `cozip:location`. |
 
-- libcozip reads the byte-0 index through karu, verifies it (LFH, integrity hash,
-  sections, names, ranges, profile 1) and fetches only `__metadata__`. A typical archive
-  costs two range requests, the first 64 KiB and the last 32 KiB, and a manifest stored in
-  either is not fetched again. Later reads are pinned to the first response's strong ETag.
-- The manifest goes to a temporary file that a new in-memory DuckDB connection decodes,
-  with `autoinstall_known_extensions` and `autoload_known_extensions` off and Hive
-  partitioning off, so a `key=value` directory in the path adds no column. The connection
-  is closed on return.
-- Stored `cozip:location`, `cozip:gdal_vsi` and `taco:location` columns are dropped and the
-  location is computed again.
+- libcozip reads the byte-0 index through karu, verifies it (LFH, magic and version,
+  the Flat shape, the integrity hash, the end record, the manifest range) and fetches only
+  `__metadata__`. The first 64 KiB and the last 32 KiB are requested at once; a manifest in
+  either, or in both when they meet, is not fetched again. Otherwise one more range reads
+  the manifest with the local header before it, which must match the index
+  (`MISSING_ENTRY`). Later reads use `If-Match` when the first response has a strong ETag.
+- The manifest goes to a temporary file that a per-process in-memory DuckDB database
+  decodes through a cursor of its own, with `autoinstall_known_extensions` and
+  `autoload_known_extensions` off and Hive partitioning off, so a `key=value` directory in
+  the path adds no column. A forked child opens its own database.
+- Stored `cozip:location`, `cozip:gdal_vsi` and `taco:location` columns are dropped in any
+  case and the location is computed again. A manifest whose remaining columns differ only
+  in case raises `ValueError`, since DuckDB cannot tell them apart.
 - Only Flat archives are read. Profile 0 and TACO archives raise `CozipError`
   (`[PROFILE] read_flat needs a Flat-profile archive (profile=1). Got profile=2 in: ...`).
 - Types follow DuckDB. `offset` and `size` are `uint64`, strings use the pandas string
   dtype, integer and boolean columns with nulls use pandas nullable dtypes such as `Int32`
   and `boolean`, and binary columns and GeoParquet geometry arrive as `bytearray` WKB
   without CRS.
-- The location repeats `source` as given: `cozip.read("w1/out.zip")` yields
+- The location repeats a relative `source` as given: `cozip.read("w1/out.zip")` yields
   `/vsisubfile/127_96,w1/out.zip`. Remote sources map to `/vsicurl/`, `/vsis3/`, `/vsigs/`,
   `/vsiaz/` and `/vsiadls/` (table in `duckdb-reader.md` section 6); `hf://` becomes a
-  `/vsicurl/` `resolve` URL that keeps an explicit `@revision`. Unlike the DuckDB
-  extension, `read()` also maps `az://` to `/vsiaz/` and `s3a://` and `s3n://` to
-  `/vsis3/`. `source://`, `r2://`, `file://` and `/vsi` paths stay unchanged.
+  `/vsicurl/` `resolve` URL that keeps an explicit `@revision` and percent-encodes the
+  file path; `source://` becomes `/vsicurl/https://data.source.coop/...`; `file://` becomes
+  the local path and `~/` the expanded one. Unlike the DuckDB extension, `read()` also maps
+  `az://` to `/vsiaz/`, `abfs://` to `/vsiadls/` and `s3a://` and `s3n://` to `/vsis3/`.
+  `r2://` and `/vsi` paths stay unchanged.
 
 Argument errors are raised before anything is read.
+
+`cozip.verify(source) -> None` checks the access path of any profile without decoding its
+manifest: header, archive size, index sections, names, ranges, integrity hash and end
+record (`c-api.md` section 3). It takes the sources and argument checks of `read`
+(`cozip.verify: ...` messages), lives in `cozip/_verify.py` with no pandas or DuckDB
+import, returns `None` and raises `CozipError` named after the broken rule. Over HTTP
+it makes two range requests, the head and the tail, plus one for an index past 64 KiB.
 
 ## 6. Errors
 
@@ -165,13 +181,15 @@ Argument errors are raised before anything is read.
 `e.code` (int), `e.name` (`INVALID_ARGUMENT`, `IO`, `INVALID_LFH`, ...) and `e.message`.
 Everything the binding checks itself raises `TypeError`, `ValueError` or
 `FileNotFoundError` with a `cozip: ` prefix. `read()` raises `CozipError` for index and
-transport problems (`PROFILE`, `INVALID_INDEX`, `INVALID_LFH`, `ARCHIVE_TOO_SMALL`,
-`NOT_FOUND`, `IO`) and lets DuckDB's `BinderException` through for an unknown `columns`
-entry. The full message table is in `debugging.md`; the common ones:
+transport problems, named as in spec section 9 where the spec names them (`INVALID_LFH`,
+`ARCHIVE_TOO_SMALL`, `INVALID_MAGIC`, `UNSUPPORTED_VERSION`, `TRUNCATED_INDEX`,
+`HASH_MISMATCH`, `INVALID_OFFSET`, `MISSING_ENTRY`, `INVALID_ZIP_STRUCTURE`), plus
+`PROFILE` for a non-Flat archive, `INVALID_INDEX` for an index that is not the 41-byte
+Flat index, `NOT_FOUND` and `IO`. An unknown `columns` entry raises `ValueError`. The full message table is in `debugging.md`; the common ones:
 
 | Message (excerpt) | Fix |
 | --- | --- |
-| `AttributeError: 'DataFrame' object has no attribute 'column_names'` | pass a `pyarrow.Table`, not pandas |
+| `TypeError: cozip: table must be a pyarrow.Table, got DataFrame; convert it with pyarrow.Table.from_pandas(df, preserve_index=False)` | pass a `pyarrow.Table` |
 | `ValueError: cozip: input table is missing required column(s): ['path']` | add `name` and `path` |
 | `ValueError: cozip: input table must not contain reserved column(s) ['offset']` | drop `offset`, `size` and location columns from the input |
 | `CozipError: [INVALID_ARGUMENT] entry 0 ('e') has a zero-byte payload; FLAT user entries must be non-empty` | drop empty files |
@@ -184,7 +202,7 @@ entry. The full message table is in `debugging.md`; the common ones:
 
 - `cozip.lib` exposes every C function through a hand-written cffi `cdef` in `_core.py`
   (ABI mode, nothing checks it against `cozip.h`). Strings come back as `char *` cdata:
-  `cozip.ffi.string(cozip.lib.cozip_version_string()).decode()` gives `'2026.9.27'`.
+  `cozip.ffi.string(cozip.lib.cozip_version_string()).decode()` gives `'2026.11.23'`.
 - Status, profile and source constants are plain integers in `cozip._core`
   (`COZIP_OK`, `COZIP_ERR_INVALID_ARGUMENT` = 100, `COZIP_ERR_IO` = 102,
   `COZIP_PROFILE_FLAT` = 1, `COZIP_SOURCE_PATH` = 1, ...), not attributes of `lib`.
@@ -295,6 +313,6 @@ GDAL needs its own credentials to open the resulting locations.
 ### Version checks
 
 ```python
-cozip.__version__                                         # package metadata, '2026.9.27'
+cozip.__version__                                         # package metadata, '2026.11.23'
 cozip.ffi.string(cozip.lib.cozip_version_string()).decode()  # loaded native library
 ```

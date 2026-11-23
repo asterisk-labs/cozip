@@ -4,7 +4,7 @@ The public header is `core/cozip.h`; the writer is `core/cozip.c`, linked static
 against the vendored libzip 1.11.4 and zlib 1.3.1, and the Flat reader is
 `core/cozip_read.c`, which fetches bytes through the vendored karu 0.4.0 (C++23, libcurl,
 OpenSSL). The examples below compiled with `-std=c11 -Wall -Wextra` and ran against a
-2026.9.27 build on macOS arm64.
+2026.11.23 build on macOS arm64.
 
 ## Contents
 
@@ -71,8 +71,17 @@ ctest --test-dir core/build-tests --output-on-failure
 | `COZIP_OK` | 0 | success |
 | `COZIP_ERR_INVALID_LFH` | 1 | the written archive did not match the plan (post-write check); the output was removed |
 | `COZIP_ERR_ARCHIVE_TOO_SMALL` | 2 | hash patch or read of a file below 32,819 bytes |
-| `COZIP_ERR_INVALID_INDEX` | 3 | reader: index payload, integrity hash, sections, names or ranges invalid, or no `__metadata__` |
+| `COZIP_ERR_INVALID_INDEX` | 3 | reader: not the 41-byte Flat index with one entry, `__metadata__` |
 | `COZIP_ERR_PROFILE` | 4 | reader: the profile byte is not 1 |
+| `COZIP_ERR_INVALID_MAGIC` | 5 | reader: the index does not start with `CZIP` (spec 9) |
+| `COZIP_ERR_UNSUPPORTED_VERSION` | 6 | reader: index version 0 or above 1 |
+| `COZIP_ERR_HASH_MISMATCH` | 7 | reader: the integrity hash does not match |
+| `COZIP_ERR_TRUNCATED_INDEX` | 8 | reader: the index payload does not fit the archive |
+| `COZIP_ERR_DUPLICATE_NAME` | 9 | `cozip_verify`: two indexed entries share a name |
+| `COZIP_ERR_INVALID_NAME` | 10 | `cozip_verify`: an indexed name breaks spec 5.3 or is reserved |
+| `COZIP_ERR_MISSING_ENTRY` | 11 | reader: the local header before `__metadata__` does not match the index |
+| `COZIP_ERR_INVALID_OFFSET` | 12 | reader: the manifest range is empty, inside the index or past the end |
+| `COZIP_ERR_INVALID_ZIP_STRUCTURE` | 13 | reader: the archive does not end with a comment-free EOCD |
 | `COZIP_ERR_INVALID_ARGUMENT` | 100 | names, sizes, sources, capacity, profile rules, plan drift; reader: malformed URI, unknown scheme or incomplete `hf://` path |
 | `COZIP_ERR_BUFFER_TOO_SMALL` | 101 | index output buffer too small |
 | `COZIP_ERR_IO` | 102 | open, stat, read, write, libzip, allocation or cleanup failure; reader: transport failure, including a missing local file |
@@ -92,14 +101,26 @@ The reader reports LFH errors as `COZIP_ERR_INVALID_LFH`.
 | TACO profile | `cozip_plan_taco`, `cozip_write_taco` | TACO writers (`taco-profile.md`) |
 | Primitives | `cozip_plan`, `cozip_index_payload_size`, `cozip_build_index_payload`, `cozip_build_extra_field`, `cozip_write_archive`, `cozip_patch_integrity_hash`, `cozip_predict_zip32_archive_size`, `cozip_required_padding_payload` | a custom pipeline; `cozip_finalize` is the reference composition |
 | Accessors | `cozip_version_string`, `cozip_status_string`, `cozip_index_name`, `cozip_padding_name`, `cozip_flat_metadata_name` | bindings that avoid macros |
-| Flat reader | `cozip_read_flat_metadata`, `cozip_location_base`, `cozip_free` | reading a manifest; Python, R and Julia `read()` |
+| Reader | `cozip_verify`, `cozip_read_flat_metadata`, `cozip_location_base`, `cozip_free` | checking any archive, reading a Flat manifest; Python, R and Julia `verify()` and `read()` |
 
 `cozip_finalize` runs: optional TACO block check, `cozip_plan`, size prediction and
 padding, `cozip_build_index_payload`, `cozip_write_archive` (libzip write plus post-write
-verification), `cozip_patch_integrity_hash`. With `COZIP_PROFILE_FLAT` it records the
-profile byte but checks no names: an index that lists files other than `__metadata__`
-is written without complaint and is not a conforming Flat archive. Use
-`cozip_write_flat` for Flat.
+verification), `cozip_patch_integrity_hash`. It enforces the profile rules: exactly one
+`__metadata__` priority file for Flat (spec 13.2), and `COLLECTION.json` with every
+`METADATA/*.parquet` as one final block for TACO (spec 14.2); profiles 3 to 255 are
+refused. `cozip_write_flat` also sets up the Flat manifest slot.
+
+`cozip_verify(source, &error)` checks the access path of any profile, as spec 8.5 and 7
+describe: the 51-byte header, the archive size, the index header and its five sections
+(`TRUNCATED_INDEX` when short, `INVALID_INDEX` when bytes follow the last section),
+every indexed name against 5.3 (`INVALID_NAME`, including `__cozip__` and
+`__cozip_padding__`), repeats (`DUPLICATE_NAME`, the first repeat in index order),
+every range (`INVALID_OFFSET`), the integrity hash and the end record. It accepts any
+profile value (7.1). It reads the first 64 KiB and the last 32 KiB at once and the rest
+of the index only past 64 KiB. It does not parse the Central Directory, check payloads
+or compare the index with the ZIP entries (`MISSING_ENTRY`); `scripts/check_cozip.py`
+does, for local files. The writer and the reader share the 5.3 rules through
+`cozip_internal_name_problem` in `cozip.c`.
 
 ## 4. `cozip_entry_t`, capacity and what gets mutated
 
@@ -218,15 +239,11 @@ Before the output is opened:
 
 While writing:
 
-- libzip writes to a temporary file and renames it over the output only when `zip_close`
-  succeeds, so earlier failures leave an existing file untouched.
-- The archive is then re-read: the 51-byte `__cozip__` header, every local header at its
-  planned offset (signature, flags, STORE, sizes or ZIP64 extra, name), contiguity, and a
-  comment-free EOCD. A mismatch removes the file and returns `COZIP_ERR_INVALID_LFH`.
-- The hash patch touches bytes 43-50 only and checks `fclose`; a failure removes the file.
-- If removal itself fails the call returns `COZIP_ERR_IO` with `invalid output may remain`.
-- Two calls must not write the same output path at the same time, and nothing is
-  `fsync`ed; give each writer its own temporary path and rename it yourself.
+- `cozip_finalize` writes under a temporary name beside the output. It checks the
+  index header, planned local headers, ZIP end records and hash before renaming.
+- A failure removes the temporary file and preserves any existing output. Failed
+  cleanup returns `COZIP_ERR_IO` with `invalid output may remain`.
+- Concurrent writes to one output race; the last rename wins. Nothing is `fsync`ed.
 
 ## 8. Constants
 
