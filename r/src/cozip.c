@@ -183,15 +183,51 @@ static int cozip_remove(const char *path) {
 /* Replace `to` with `from` in one step, as rename(2) does on POSIX. */
 static int cozip_replace(const char *from, const char *to) {
     wchar_t *wide_from = cozip_utf8_to_wide(from);
+    if (!wide_from) return -1;
     wchar_t *wide_to = cozip_utf8_to_wide(to);
+    if (!wide_to) {
+        free(wide_from);
+        return -1;
+    }
     int result = -1;
-    if (wide_from && wide_to &&
-        MoveFileExW(wide_from, wide_to,
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    DWORD error = 0;
+    const DWORD flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+    if (MoveFileExW(wide_from, wide_to, flags)) {
         result = 0;
+    } else {
+        error = GetLastError();
+        if (error == ERROR_ACCESS_DENIED) {
+            DWORD attrs = GetFileAttributesW(wide_to);
+            if (attrs != INVALID_FILE_ATTRIBUTES &&
+                (attrs & FILE_ATTRIBUTE_READONLY)) {
+                DWORD writable = attrs & ~FILE_ATTRIBUTE_READONLY;
+                if (!writable) writable = FILE_ATTRIBUTE_NORMAL;
+                if (SetFileAttributesW(wide_to, writable)) {
+                    if (MoveFileExW(wide_from, wide_to, flags)) {
+                        result = 0;
+                    } else {
+                        error = GetLastError();
+                        SetFileAttributesW(wide_to, attrs);
+                    }
+                } else {
+                    error = GetLastError();
+                }
+            }
+        }
     }
     free(wide_from);
     free(wide_to);
+    if (result != 0) {
+        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+            errno = ENOENT;
+        else if (error == ERROR_ACCESS_DENIED ||
+                 error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION)
+            errno = EACCES;
+        else if (error == ERROR_DISK_FULL)
+            errno = ENOSPC;
+        else
+            errno = EIO;
+    }
     return result;
 }
 

@@ -768,7 +768,13 @@ end
             tbl.count = Union{Missing,UInt16}[missing, 9]
             tbl.day = [Date(2024, 1, 2), Date(2025, 3, 4)]
             out = Cozip.create(joinpath(fix.tmp, "values.zip"), tbl)
-            df = Cozip.read(out)
+            pq = joinpath(fix.tmp, "values.parquet")
+            write(pq, extract_metadata_payload(read(out)))
+            con = Cozip._duckdb_con()
+            df = lock(Cozip._DUCKDB_LOCK) do
+                DataFrame(DBInterface.execute(con,
+                    "SELECT score, small, count, day FROM read_parquet(?)", [pq]))
+            end
             @test isnan(df.score[1])
             @test df.score[2] == -Inf
             @test eltype(df.small) <: Union{Missing,Int8}
