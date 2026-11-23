@@ -13,6 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from cozip._core import (
+    COZIP_ERR_HASH_MISMATCH,
     COZIP_ERR_INVALID_INDEX,
     COZIP_ERR_PROFILE,
     COZIP_SOURCE_PATH,
@@ -127,7 +128,7 @@ class TestLocalReads:
         ]
 
     def test_unknown_projected_column_fails(self, archive: Path) -> None:
-        with pytest.raises(duckdb.BinderException, match="missing"):
+        with pytest.raises(ValueError, match=r"unknown column\(s\) \['missing'\]"):
             cozip.read(archive, columns=["missing"])
 
     def test_accepts_path_objects_and_relative_paths(
@@ -208,7 +209,8 @@ class TestRejections:
         corrupt.write_bytes(bytes(data))
         with pytest.raises(cozip.CozipError, match="cozip integrity hash mismatch") as excinfo:
             cozip.read(corrupt)
-        assert excinfo.value.code == COZIP_ERR_INVALID_INDEX
+        assert excinfo.value.code == COZIP_ERR_HASH_MISMATCH
+        assert excinfo.value.name == "HASH_MISMATCH"
         with pytest.raises(cozip.CozipError) as excinfo:
             cozip.read(f"{range_server.url}/{corrupt.name}?sig=TOPSECRET")
         assert "TOPSECRET" not in str(excinfo.value)

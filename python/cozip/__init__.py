@@ -18,6 +18,7 @@ __all__ = [
     "read",
     "stage_create",
     "stage_metadata",
+    "verify",
     "write",
 ]
 
@@ -40,6 +41,11 @@ def __getattr__(name: str):
 
         globals()["read"] = read
         return read
+    if name == "verify":
+        from ._verify import verify
+
+        globals()["verify"] = verify
+        return verify
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

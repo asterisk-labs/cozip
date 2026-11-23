@@ -6,7 +6,6 @@ using Libdl
 
 # Must match cozip.h.
 const COZIP_SOURCE_PATH        = Cint(1)
-const COZIP_SOURCE_BUFFER      = Cint(2)
 const COZIP_ERROR_MESSAGE_SIZE = 192
 
 mutable struct cozip_error_t
@@ -35,15 +34,6 @@ function entry_from_path(arc_name::Ptr{Cchar}, payload_size::Integer,
     cozip_entry_t(
         arc_name, UInt64(payload_size), in_index, ntuple(_ -> UInt8(0), 7),
         COZIP_SOURCE_PATH, Cint(0), path, Csize_t(0),
-        UInt64(0), UInt64(0), UInt64(0),
-    )
-end
-
-function entry_from_buffer(arc_name::Ptr{Cchar}, in_index::Bool,
-                           data::Ptr{Cvoid}, size::Integer)
-    cozip_entry_t(
-        arc_name, UInt64(size), in_index, ntuple(_ -> UInt8(0), 7),
-        COZIP_SOURCE_BUFFER, Cint(0), data, Csize_t(size),
         UInt64(0), UInt64(0), UInt64(0),
     )
 end
@@ -102,10 +92,13 @@ end
 
 Base.showerror(io::IO, e::CozipError) = print(io, "CozipError [$(e.name)] $(e.message)")
 
+# The message is the bytes before the first NUL. Cchar is Int8 on most
+# platforms, so the bytes are reinterpreted rather than converted.
 function CozipError(err::cozip_error_t)
     code = Int(err.code)
-    msg_bytes = UInt8[UInt8(c) for c in err.message if c != 0]
-    msg = String(msg_bytes)
+    bytes = UInt8[c % UInt8 for c in err.message]
+    stop = findfirst(iszero, bytes)
+    msg = String(stop === nothing ? bytes : bytes[1:stop-1])
     name_ptr = ccall(_symbol(:cozip_status_string), Cstring, (Cint,), err.code)
     name = unsafe_string(name_ptr)
     return CozipError(code, name, msg)
@@ -126,72 +119,6 @@ cozip_padding_name()       = PADDING_NAME[]
 cozip_flat_metadata_name() = METADATA_NAME[]
 
 # Ref(err) aliases err in place; C writes go straight through, no copy-back.
-function plan!(entries::AbstractVector{cozip_entry_t}, err::cozip_error_t)
-    err_ref = Ref(err)
-    GC.@preserve entries err_ref begin
-        status = ccall(_symbol(:cozip_plan), Cint,
-                       (Ptr{cozip_entry_t}, Csize_t, Ptr{cozip_error_t}),
-                       pointer(entries), length(entries), err_ref)
-    end
-    status == 0 || throw(CozipError(err))
-    return nothing
-end
-
-function index_payload_size(entries::AbstractVector{cozip_entry_t}, err::cozip_error_t)
-    out = Ref{Csize_t}(0)
-    err_ref = Ref(err)
-    GC.@preserve entries err_ref begin
-        status = ccall(_symbol(:cozip_index_payload_size), Cint,
-                       (Ptr{cozip_entry_t}, Csize_t, Ptr{Csize_t}, Ptr{cozip_error_t}),
-                       pointer(entries), length(entries), out, err_ref)
-    end
-    status == 0 || throw(CozipError(err))
-    return Int(out[])
-end
-
-function build_index_payload(entries::AbstractVector{cozip_entry_t},
-                             profile::Integer, err::cozip_error_t)
-    sz = index_payload_size(entries, err)
-    buf = Vector{UInt8}(undef, sz)
-    err_ref = Ref(err)
-    GC.@preserve entries buf err_ref begin
-        status = ccall(_symbol(:cozip_build_index_payload), Cint,
-                       (Ptr{cozip_entry_t}, Csize_t, Cint, Ptr{UInt8}, Csize_t,
-                        Ptr{cozip_error_t}),
-                       pointer(entries), length(entries), Cint(profile),
-                       buf, Csize_t(sz), err_ref)
-    end
-    status == 0 || throw(CozipError(err))
-    return buf
-end
-
-function write_archive!(out_path::AbstractString,
-                        entries::AbstractVector{cozip_entry_t},
-                        payload::Vector{UInt8}, err::cozip_error_t)
-    err_ref = Ref(err)
-    GC.@preserve entries payload err_ref begin
-        status = ccall(_symbol(:cozip_write_archive), Cint,
-                       (Cstring, Ptr{cozip_entry_t}, Csize_t,
-                        Ptr{UInt8}, Csize_t, Ptr{cozip_error_t}),
-                       out_path, pointer(entries), length(entries),
-                       payload, Csize_t(length(payload)), err_ref)
-    end
-    status == 0 || throw(CozipError(err))
-    return nothing
-end
-
-function patch_integrity_hash!(archive_path::AbstractString,
-                               payload_size::Integer, err::cozip_error_t)
-    err_ref = Ref(err)
-    GC.@preserve err_ref begin
-        status = ccall(_symbol(:cozip_patch_integrity_hash), Cint,
-                       (Cstring, Csize_t, Ptr{cozip_error_t}),
-                       archive_path, Csize_t(payload_size), err_ref)
-    end
-    status == 0 || throw(CozipError(err))
-    return nothing
-end
-
 # plan_flat!  needs length(entries) == n_users + 1   (slot for __metadata__)
 # write_flat! needs length(entries) == n_users + 2   (slots for __metadata__ + padding)
 function plan_flat!(entries::AbstractVector{cozip_entry_t},
@@ -249,6 +176,20 @@ function read_flat_metadata(source::AbstractString)::Vector{UInt8}
         _free(data[])
         _free(message[])
     end
+end
+
+# Verifies the byte-0 index and the integrity hash of an archive of any
+# profile; a broken archive throws the reader's CozipError.
+function verify_archive(source::AbstractString)::Nothing
+    message = Ref{Ptr{Cchar}}(C_NULL)
+    status = ccall(_symbol(:cozip_verify), Cint,
+                   (Cstring, Ref{Ptr{Cchar}}), source, message)
+    try
+        status == 0 || throw(_reader_error(status, message[]))
+    finally
+        _free(message[])
+    end
+    return nothing
 end
 
 # The GDAL path that cozip:location appends after "/vsisubfile/<offset>_<size>,".

@@ -6,6 +6,7 @@
 
 using Test
 using DataFrames
+using Dates
 using DuckDB
 using Cozip
 
@@ -223,6 +224,40 @@ function _write_parquet(df::DataFrame, pq_path::AbstractString)
 end
 
 
+# Packs `md` as the manifest through the C writer alone, without the
+# binding's manifest checks, as another producer could. The offsets stay
+# right because the manifest is the last entry.
+function forge_archive(tmp, tbl, md::DataFrame; rename = nothing)
+    plan = Cozip._plan_flat(tbl)
+    pq = joinpath(tmp, "forged.parquet")
+    _write_parquet(md, pq)
+    rename === nothing || rename_parquet_column!(pq, rename...)
+    out = joinpath(tmp, "forged.zip")
+    Cozip._write_entries(out, plan.entries, plan.keepalive, length(plan.paths), pq)
+    return out
+end
+
+# Renames a column in the Parquet footer in place. DuckDB, which writes the
+# test files, would rename a column that differs from another only in case.
+function rename_parquet_column!(pq, from::String, to::String)
+    @assert sizeof(from) == sizeof(to)
+    bytes = read(pq)
+    hits = findall(Vector{UInt8}(from), bytes)
+    @assert !isempty(hits)
+    for r in hits
+        bytes[r] = Vector{UInt8}(to)
+    end
+    write(pq, bytes)
+end
+
+caught(f) = try
+    f()
+    nothing
+catch e
+    e
+end
+
+
 @testset "cozip" begin
 
     @testset "Spec invariants" begin
@@ -277,6 +312,21 @@ end
             meta = entries["__metadata__"]
             @test 0 < meta.offset < length(b)
             @test 0 < meta.size  <= length(b) - meta.offset
+        end
+
+        @testset "manifest is compressed with zstd" begin
+            ctx = archive_ctx()
+            b  = ctx.arc_bytes
+            sz = index_size_from_lfh(b)
+            meta = parse_index(b[INDEX_OFFSET+1:INDEX_OFFSET+sz])["__metadata__"]
+            pq = joinpath(mktempdir(), "manifest.parquet")
+            write(pq, b[meta.offset+1:meta.offset+meta.size])
+            con = Cozip._duckdb_con()
+            codecs = lock(Cozip._DUCKDB_LOCK) do
+                DataFrame(DBInterface.execute(con,
+                    "SELECT DISTINCT compression FROM parquet_metadata(?)", [pq]))
+            end
+            @test codecs.compression == ["ZSTD"]
         end
     end
 
@@ -406,6 +456,55 @@ end
             @test_throws "reserved" stage_metadata(bad)
         end
 
+        @testset "rejects reserved columns in any case" begin
+            fix = make_fixtures()
+            for column in ("Offset", "SIZE", "COZIP:LOCATION", "Taco:Location")
+                bad = DataFrame(name = ["a.txt"], path = [fix.small])
+                bad[!, column] = ["x"]
+                @test_throws "reserved column(s) [\"$column\"]" stage_metadata(bad)
+                @test_throws "names are compared without case" stage_metadata(bad)
+            end
+        end
+
+        @testset "rejects input columns that differ only in case" begin
+            fix = make_fixtures()
+            bad = DataFrame(name = ["a.txt"], path = [fix.small], Tag = ["x"], tag = ["y"])
+            @test_throws(
+                "differ only in case: \"Tag\" and \"tag\"; DuckDB, which reads manifests, cannot tell them apart",
+                stage_metadata(bad),
+            )
+            bad = DataFrame(name = ["a.txt"], path = [fix.small], NAME = ["x"])
+            @test_throws "\"name\" and \"NAME\"" stage_metadata(bad)
+        end
+
+        @testset "rejects names that are not strings" begin
+            fix = make_fixtures()
+            bad = DataFrame(name = [1], path = [fix.small])
+            @test_throws "row 1 name must be a string, got Int64" stage_metadata(bad)
+            @test_throws "row 1 name must be a string" Cozip.create(
+                joinpath(fix.tmp, "n.zip"), bad)
+            @test_throws "paths[1] name must be a string, got Int64" stage_create(
+                joinpath(fix.tmp, "n.zip"), [(1, fix.small)], write_meta(fix.tmp, make_input_table(fix)))
+        end
+
+        @testset "names a missing or non-regular source without errno text" begin
+            fix = make_fixtures()
+            for (path, message) in ((fix.tmp, "source is not a regular file: $(fix.tmp)"),
+                                    (joinpath(fix.tmp, "nope.bin"), "source not found"))
+                err = caught(() -> stage_metadata(DataFrame(name = ["d"], path = [path])))
+                @test err isa ArgumentError
+                @test occursin(message, err.msg)
+                @test !occursin("error: 0", lowercase(err.msg))
+                err = caught(() -> stage_create(joinpath(fix.tmp, "out.zip"), [("d", path)],
+                                                write_meta(fix.tmp, make_input_table(fix))))
+                @test err isa ArgumentError
+                @test occursin(message, err.msg)
+            end
+            err = caught(() -> stage_create(joinpath(fix.tmp, "out.zip"), make_paths_arg(make_input_table(fix)), fix.tmp))
+            @test err isa ArgumentError
+            @test occursin("metadata parquet is not a regular file", err.msg)
+        end
+
         @testset "rejects zero-byte sources" begin
             fix = make_fixtures()
             empty = joinpath(fix.tmp, "empty.bin")
@@ -501,6 +600,63 @@ end
             end
         end
 
+        @testset "rejects reader-owned columns in parquet in any case" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            md = stage_metadata(tbl).metadata
+            md[!, "COZIP:LOCATION"] = fill("x", nrow(md))
+            pq = joinpath(fix.tmp, "upper.parquet")
+            _write_parquet(md, pq)
+            @test_throws "reader-owned column(s): [\"COZIP:LOCATION\"]" stage_create(
+                joinpath(fix.tmp, "out.zip"), make_paths_arg(tbl), pq)
+        end
+
+        @testset "rejects parquet columns that differ only in case" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            md = stage_metadata(tbl).metadata
+            md.Qffset = UInt64[1, 2]
+            pq = joinpath(fix.tmp, "case.parquet")
+            _write_parquet(md, pq)
+            rename_parquet_column!(pq, "Qffset", "Offset")
+            @test_throws(
+                "metadata parquet has columns that differ only in case: \"offset\" and \"Offset\"",
+                stage_create(joinpath(fix.tmp, "out.zip"), make_paths_arg(tbl), pq),
+            )
+        end
+
+        @testset "requires a string name and UInt64 offset and size" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            md = stage_metadata(tbl).metadata
+            cases = (
+                (DataFrame(name = [1, 2], offset = md.offset, size = md.size),
+                 "column 'name' must be a string, got INT64 (INT_64)"),
+                (DataFrame(name = md.name, offset = Int64.(md.offset), size = md.size),
+                 "column 'offset' must be UInt64 (cozip spec 13.3), got INT64 (INT_64)"),
+                (DataFrame(name = md.name, offset = md.offset, size = Float64.(md.size)),
+                 "column 'size' must be UInt64 (cozip spec 13.3), got DOUBLE"),
+            )
+            for (bad, message) in cases
+                pq = joinpath(fix.tmp, "typed.parquet")
+                _write_parquet(bad, pq)
+                @test_throws message stage_create(
+                    joinpath(fix.tmp, "out.zip"), make_paths_arg(tbl), pq; validate=false)
+            end
+        end
+
+        @testset "ignores key=value directories above the parquet" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            dir = joinpath(fix.tmp, "size=7", "name=x")
+            mkpath(dir)
+            pq = joinpath(dir, "meta.parquet")
+            _write_parquet(stage_metadata(tbl).metadata, pq)
+            out = stage_create(joinpath(fix.tmp, "out.zip"), make_paths_arg(tbl), pq)
+            assert_valid_cozip(read(out))
+            @test extract_metadata_payload(read(out)) == read(pq)
+        end
+
         @testset "rejects parquet missing required columns" begin
             fix = make_fixtures()
             tbl = make_input_table(fix)
@@ -583,6 +739,97 @@ end
                 make_paths_arg(tbl),
                 pq,
             )
+        end
+    end
+
+
+    @testset "create" begin
+
+        @testset "fails when a source changes size after planning" begin
+            fix = make_fixtures()
+            plan = Cozip._plan_flat(make_input_table(fix))
+            open(fix.small, "a") do io
+                write(io, "grown")
+            end
+            out = joinpath(fix.tmp, "out.zip")
+            err = caught(() -> Cozip._create_planned(out, plan, nothing))
+            @test err isa Cozip.LibCozip.CozipError
+            @test occursin(
+                "source is $(length(SMALL_CONTENT) + 5) bytes, but the planned " *
+                "payload size is $(length(SMALL_CONTENT))", err.message)
+            @test !isfile(out)
+        end
+
+        @testset "keeps NaN, Inf, missing and integer widths" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            tbl.score = [NaN, -Inf]
+            tbl.small = Int8[-3, 4]
+            tbl.count = Union{Missing,UInt16}[missing, 9]
+            tbl.day = [Date(2024, 1, 2), Date(2025, 3, 4)]
+            out = Cozip.create(joinpath(fix.tmp, "values.zip"), tbl)
+            df = Cozip.read(out)
+            @test isnan(df.score[1])
+            @test df.score[2] == -Inf
+            @test eltype(df.small) <: Union{Missing,Int8}
+            @test collect(df.small) == Int8[-3, 4]
+            @test eltype(df.count) <: Union{Missing,UInt16}
+            @test ismissing(df.count[1]) && df.count[2] == 9
+            @test collect(df.day) == tbl.day
+        end
+
+        @testset "keeps row order and table metadata" begin
+            fix = make_fixtures()
+            n = 150_000
+            md = DataFrame(name = ["n$(i)" for i in n:-1:1],
+                           offset = UInt64.(1:n), size = UInt64.(1:n))
+            DataFrames.metadata!(md, "asterisk:tag", "kept"; style=:default)
+            pq = joinpath(fix.tmp, "rows.parquet")
+            Cozip._write_metadata_parquet(md, pq)
+            con = Cozip._duckdb_con()
+            back, kv = lock(Cozip._DUCKDB_LOCK) do
+                (DataFrame(DBInterface.execute(con,
+                    "SELECT name FROM read_parquet(?)", [pq])),
+                 DataFrame(DBInterface.execute(con,
+                    "SELECT decode(key) AS k, decode(value) AS v FROM parquet_kv_metadata(?)", [pq])))
+            end
+            @test back.name == md.name
+            @test Dict(zip(String.(kv.k), String.(kv.v)))["asterisk:tag"] == "kept"
+        end
+
+        @testset "rejects element types DuckDB.jl cannot store" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            tbl.bands = [[1, 2], [3]]
+            out = joinpath(fix.tmp, "vectors.zip")
+            @test_throws(
+                "column \"bands\" has element type Vector{Int64}, which DuckDB.jl cannot store",
+                Cozip.create(out, tbl),
+            )
+            @test !isfile(out)
+        end
+
+        @testset "returns the absolute path" begin
+            fix = make_fixtures()
+            out = cd(fix.tmp) do
+                Cozip.create("relative.zip", make_input_table(fix))
+            end
+            @test isabspath(out)
+            @test realpath(out) == realpath(joinpath(fix.tmp, "relative.zip"))
+        end
+    end
+
+
+    @testset "CozipError" begin
+        @testset "stops at the first NUL and keeps non-ASCII bytes" begin
+            err = Cozip.LibCozip.cozip_error_t()
+            err.code = Cint(100)
+            text = Vector{UInt8}("ni\u00f1o\0stale")
+            bytes = vcat(text, zeros(UInt8, Cozip.LibCozip.COZIP_ERROR_MESSAGE_SIZE - length(text)))
+            err.message = ntuple(i -> bytes[i] % Cchar, Cozip.LibCozip.COZIP_ERROR_MESSAGE_SIZE)
+            e = Cozip.LibCozip.CozipError(err)
+            @test e.message == "ni\u00f1o"
+            @test e.name == "INVALID_ARGUMENT"
         end
     end
 
@@ -702,11 +949,80 @@ end
         end
 
         @testset "projections keep the required columns first" begin
-            @test Cozip._build_select(nothing, true) == "*"
-            @test Cozip._build_select(["category", "taco:location", "cozip:location"], true) ==
-                "\"name\", \"offset\", \"size\", \"cozip:location\", \"category\""
-            @test Cozip._build_select(["category"], false) ==
-                "\"name\", \"offset\", \"size\", \"category\""
+            stored = ["name", "offset", "size", "category", "tag"]
+            @test Cozip._manifest_columns(stored, nothing) ==
+                (head = stored, extras = String[])
+            @test Cozip._manifest_columns(
+                stored, ["tag", "Taco:Location", "COZIP:LOCATION", "cozip:gdal_vsi",
+                         "category", "tag", "size"]) ==
+                (head = ["name", "offset", "size"], extras = ["tag", "category"])
+            @test Cozip._manifest_sql((head = ["name"], extras = ["a\"b"]), false) ==
+                "SELECT \"name\", \"a\"\"b\" FROM read_parquet(?, hive_partitioning = false)"
+        end
+
+        @testset "read drops stored location columns in any case" begin
+            ctx = archive_ctx()
+            md = stage_metadata(ctx.tbl).metadata
+            md[!, "COZIP:LOCATION"] = fill("forged", nrow(md))
+            md[!, "Taco:Location"] = fill("forged", nrow(md))
+            md[!, "cozip:GDAL_VSI"] = fill("forged", nrow(md))
+            arc = forge_archive(ctx.fix.tmp, ctx.tbl, md)
+            df = Cozip.read(arc)
+            @test names(df) == ["name", "offset", "size", "category", "cozip:location"]
+            @test df[!, "cozip:location"] ==
+                ["/vsisubfile/$(o)_$(s),$(arc)" for (o, s) in zip(df.offset, df.size)]
+            @test names(Cozip.read(arc; location=false)) ==
+                ["name", "offset", "size", "category"]
+            @test names(Cozip.read(arc; columns=["COZIP:LOCATION", "category"], location=false)) ==
+                ["name", "offset", "size", "category"]
+        end
+
+        @testset "read rejects manifest columns that differ only in case" begin
+            ctx = archive_ctx()
+            md = stage_metadata(ctx.tbl).metadata
+            md.Qffset = UInt64[7, 7]
+            arc = forge_archive(ctx.fix.tmp, ctx.tbl, md; rename = ("Qffset", "Offset"))
+            @test_throws(
+                "cozip: the manifest has columns that differ only in case: \"offset\" " *
+                "and \"Offset\"; DuckDB, which decodes the manifest, cannot tell them apart",
+                Cozip.read(arc),
+            )
+        end
+
+        @testset "read requires the exact required column names" begin
+            ctx = archive_ctx()
+            md = stage_metadata(ctx.tbl).metadata
+            rename!(md, "size" => "SIZE")
+            arc = forge_archive(ctx.fix.tmp, ctx.tbl, md)
+            @test_throws "cozip: the manifest lacks required column(s) [\"size\"]" Cozip.read(arc)
+        end
+
+        @testset "read rejects unknown columns, matched exactly" begin
+            ctx = archive_ctx()
+            @test_throws(
+                "cozip: unknown column(s) [\"Category\", \"missing\"]; the manifest has " *
+                "[\"name\", \"offset\", \"size\", \"category\"]",
+                Cozip.read(ctx.arc; columns=["Category", "missing", "category"]),
+            )
+        end
+
+        @testset "read orders requested columns and drops duplicates" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            tbl.tag = ["t1", "t2"]
+            arc = make_archive(fix.tmp, tbl)
+            df = Cozip.read(arc; columns=["tag", "Cozip:Location", "category", "tag", "size", "name"])
+            @test names(df) == ["name", "offset", "size", "cozip:location", "tag", "category"]
+        end
+
+        @testset "read ignores a key=value directory named like a column" begin
+            ctx = archive_ctx()
+            nested = joinpath(ctx.fix.tmp, "size=7")
+            mkdir(nested)
+            cp(ctx.arc, joinpath(nested, "out.zip"))
+            df = Cozip.read(joinpath(nested, "out.zip"))
+            @test df.size == Cozip.read(ctx.arc).size
+            @test !any(==(7), df.size)
         end
 
         @testset "read returns every manifest column and a location" begin
@@ -757,6 +1073,61 @@ end
             @test err.name == "PROFILE"
             @test err.message ==
                 "read_flat needs a Flat-profile archive (profile=1). Got profile=2 in: $(taco)"
+        end
+
+        @testset "verify checks archives of any profile" begin
+            ctx = archive_ctx()
+            @test Cozip.verify(ctx.arc) === nothing
+            rehashed(bytes) = begin
+                hash = fnv1a_64(hash_input(bytes, index_size_from_lfh(bytes)))
+                bytes[44:51] = reinterpret(UInt8, [htol(hash)])
+                bytes
+            end
+            for profile in (0x00, 0x02, 0x07)
+                bytes = copy(ctx.arc_bytes)
+                bytes[INDEX_OFFSET + 7] = profile
+                other = joinpath(ctx.fix.tmp, "profile.zip")
+                write(other, rehashed(bytes))
+                @test Cozip.verify(other) === nothing
+            end
+            failure(path) = try
+                Cozip.verify(path)
+                nothing
+            catch e
+                e
+            end
+
+            bytes = copy(ctx.arc_bytes)
+            bytes[44] ⊻= 0x01
+            corrupt = joinpath(ctx.fix.tmp, "corrupt.zip")
+            write(corrupt, bytes)
+            err = failure(corrupt)
+            @test err isa Cozip.LibCozip.CozipError
+            @test err.name == "HASH_MISMATCH"
+            @test err.message == "cozip integrity hash mismatch: $(corrupt)"
+
+            bytes = copy(ctx.arc_bytes)
+            bytes[end - 1] = 0x01
+            commented = joinpath(ctx.fix.tmp, "commented.zip")
+            write(commented, rehashed(bytes))
+            @test failure(commented).name == "INVALID_ZIP_STRUCTURE"
+
+            bytes = copy(ctx.arc_bytes)
+            bytes[INDEX_OFFSET + 14] = UInt8('/')
+            absolute = joinpath(ctx.fix.tmp, "absolute.zip")
+            write(absolute, rehashed(bytes))
+            err = failure(absolute)
+            @test err.name == "INVALID_NAME"
+            @test occursin("entry 0 name must be relative", err.message)
+
+            small = joinpath(ctx.fix.tmp, "small.zip")
+            write(small, ctx.arc_bytes[1:INDEX_OFFSET + HASH_WINDOW - 1])
+            @test failure(small).name == "ARCHIVE_TOO_SMALL"
+
+            @test failure(joinpath(ctx.fix.tmp, "missing.zip")).name in ("IO", "NOT_FOUND")
+            @test_throws "non-empty string" Cozip.verify("")
+            @test_throws "NUL byte" Cozip.verify("a\0.zip")
+            @test_throws "ASCII paths and URLs only" Cozip.verify("niño.zip")
         end
 
         @testset "read rejects a corrupt index and names a missing file" begin
@@ -843,6 +1214,17 @@ end
             @test df.name == ["a.txt", "b.bin"]
             @test df.geometry[1] == tbl.geometry[1]
             @test df.geometry[2] == tbl.geometry[2]
+        end
+
+        @testset "binary column keeps empty and missing values" begin
+            fix = make_fixtures()
+            tbl = make_input_table(fix)
+            tbl.blob = Union{Missing,Vector{UInt8}}[UInt8[], missing]
+            out = joinpath(fix.tmp, "out.zip")
+            Cozip.create(out, tbl)
+            df = Cozip.read(out)
+            @test df.blob[1] == UInt8[]
+            @test ismissing(df.blob[2])
         end
 
 

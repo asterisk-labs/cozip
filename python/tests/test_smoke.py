@@ -153,6 +153,30 @@ class TestSpecInvariants:
         assert 0 < offset < len(data)
         assert 0 < size <= len(data) - offset
 
+    def test_manifest_is_zstd(self, archive: Path) -> None:
+        meta = pq.ParquetFile(io.BytesIO(extract_metadata_payload(archive.read_bytes()))).metadata
+        codecs = {meta.row_group(0).column(i).compression for i in range(meta.num_columns)}
+        assert codecs == {"ZSTD"}
+
+    def test_manifest_encodings(self, tmp_path: Path) -> None:
+        src = tmp_path / "one.bin"
+        src.write_bytes(b"x")
+        n = 500
+        kinds = ["a", "b"] * (n // 2)
+        table = pa.table({
+            "name": [f"{i:04d}.bin" for i in range(n)],
+            "path": [str(src)] * n,
+            "kind": pa.array(kinds).dictionary_encode(),
+        })
+        out = cozip.write(tmp_path / "many.zip", table)
+        payload = extract_metadata_payload(Path(out).read_bytes())
+        group = pq.ParquetFile(io.BytesIO(payload)).metadata.row_group(0)
+        encodings = {group.column(i).path_in_schema: group.column(i).encodings
+                     for i in range(group.num_columns)}
+        assert "DELTA_BINARY_PACKED" in encodings["offset"]
+        assert pq.read_table(io.BytesIO(payload)).column("kind").to_pylist() == kinds
+        assert list(cozip.read(out)["kind"]) == kinds
+
     def test_rejects_zero_byte_user_file(self, tmp_path: Path) -> None:
         empty = tmp_path / "empty.bin"
         empty.touch()

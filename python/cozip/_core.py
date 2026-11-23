@@ -12,6 +12,15 @@ COZIP_ERR_INVALID_LFH = 1
 COZIP_ERR_ARCHIVE_TOO_SMALL = 2
 COZIP_ERR_INVALID_INDEX = 3
 COZIP_ERR_PROFILE = 4
+COZIP_ERR_INVALID_MAGIC = 5
+COZIP_ERR_UNSUPPORTED_VERSION = 6
+COZIP_ERR_HASH_MISMATCH = 7
+COZIP_ERR_TRUNCATED_INDEX = 8
+COZIP_ERR_DUPLICATE_NAME = 9
+COZIP_ERR_INVALID_NAME = 10
+COZIP_ERR_MISSING_ENTRY = 11
+COZIP_ERR_INVALID_OFFSET = 12
+COZIP_ERR_INVALID_ZIP_STRUCTURE = 13
 COZIP_ERR_INVALID_ARGUMENT = 100
 COZIP_ERR_BUFFER_TOO_SMALL = 101
 COZIP_ERR_IO = 102
@@ -101,6 +110,7 @@ int cozip_write_flat(const char*, cozip_entry_t*, size_t, size_t,
                      const char*, cozip_error_t*);
 
 int cozip_read_flat_metadata(const char*, uint8_t**, size_t*, char**);
+int cozip_verify(const char*, char**);
 int cozip_location_base(const char*, char**, char**);
 void cozip_free(void*);
 """)

@@ -2,13 +2,20 @@
 
 import os
 import tempfile
+import threading
 from collections.abc import Sequence
 
 import pandas as pd
 
+from ._verify import check_source
+
 
 _LOCATION_COLUMN = "cozip:location"
-_PROTECTED_LOCATION_COLUMNS = frozenset({_LOCATION_COLUMN, "taco:location"})
+# Columns a reader computes. A stored column with one of these names is
+# dropped in any case: DuckDB compares names without case, so a stored
+# 'COZIP:LOCATION' would otherwise pass for the location (spec 12.3).
+_READER_OWNED_COLUMNS = frozenset({_LOCATION_COLUMN, "taco:location", "cozip:gdal_vsi"})
+_REQUIRED_COLUMNS = ("name", "offset", "size")
 
 # DuckDB only decodes the fetched manifest from a local file, so it needs no
 # extension and must never install or load one.
@@ -17,42 +24,80 @@ _DUCKDB_CONFIG = {
     "autoload_known_extensions": False,
 }
 
-# The body of the read_flat macro in cozip_reader, over the fetched manifest.
-# Hive partitioning stays off so the manifest's path never adds columns.
-_MANIFEST_SQL = (
-    "SELECT COLUMNS(lambda c: c != 'cozip:location' AND c != 'cozip:gdal_vsi'), "
-    "CASE WHEN {location} "
-    "THEN '/vsisubfile/' || \"offset\" || '_' || \"size\" || ',' || ? "
-    'ELSE NULL END AS "cozip:location" '
-    "FROM read_parquet(?, hive_partitioning = false)"
-)
+# One in-memory DuckDB database per process; each read takes its own cursor.
+# DuckDB is not fork-safe, so a child process opens a database of its own.
+_DB = None
+_DB_PID = None
+_DB_LOCK = threading.Lock()
+
+
+def _cursor():
+    import duckdb
+
+    global _DB, _DB_PID
+    with _DB_LOCK:
+        if _DB is None or _DB_PID != os.getpid():
+            _DB = duckdb.connect(config=_DUCKDB_CONFIG)
+            _DB_PID = os.getpid()
+        return _DB.cursor()
 
 
 def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
-def _selected_columns(
-    columns: Sequence[str] | None, location: bool
-) -> list[str] | None:
+def _stored_columns(con, metadata: str) -> list[str]:
+    """Top-level column names of the manifest, spelled as stored."""
+    rows = con.execute(
+        "SELECT name, num_children FROM parquet_schema(?)", [metadata]
+    ).fetchall()
+    names: list[str] = []
+    i = 1
+    for _ in range(rows[0][1] or 0):
+        names.append(rows[i][0])
+        # Skip the subtree of a nested column.
+        pending = 1
+        while pending:
+            pending += (rows[i][1] or 0) - 1
+            i += 1
+    return names
+
+
+def _manifest_columns(
+    stored: list[str], columns: Sequence[str] | None
+) -> tuple[list[str], list[str]]:
+    """The columns to return around the location: (before, after)."""
+    kept = [c for c in stored if c.lower() not in _READER_OWNED_COLUMNS]
+    missing = [c for c in _REQUIRED_COLUMNS if c not in kept]
+    if missing:
+        raise ValueError(f"cozip.read: the manifest lacks required column(s) {missing}")
+    first: dict[str, str] = {}
+    for column in kept:
+        other = first.setdefault(column.lower(), column)
+        if other != column:
+            raise ValueError(
+                "cozip.read: the manifest has columns that differ only in case: "
+                f"{other!r} and {column!r}; DuckDB, which decodes the manifest, "
+                "cannot tell them apart"
+            )
     if columns is None:
-        return None
-    required = ["name", "offset", "size"]
-    if location:
-        required.append(_LOCATION_COLUMN)
-    extras = [
-        column
-        for column in columns
-        if column not in _PROTECTED_LOCATION_COLUMNS
-    ]
-    return list(dict.fromkeys([*required, *extras]))
-
-
-def _projection(columns: Sequence[str] | None, location: bool) -> str:
-    selected = _selected_columns(columns, location)
-    if selected is None:
-        return "*"
-    return ", ".join(_quote_identifier(column) for column in selected)
+        return kept, []
+    extras: list[str] = []
+    unknown: list[str] = []
+    for column in columns:
+        if column.lower() in _READER_OWNED_COLUMNS:
+            continue
+        if column in _REQUIRED_COLUMNS or column in extras:
+            continue
+        if column not in kept:
+            unknown.append(column)
+            continue
+        extras.append(column)
+    if unknown:
+        raise ValueError(
+            f"cozip.read: unknown column(s) {unknown}; the manifest has {kept}"
+        )
+    return list(_REQUIRED_COLUMNS), extras
 
 
 def _fetch_metadata(source: str, destination: str) -> None:
@@ -98,13 +143,25 @@ def _read_flat_archive(
         metadata = os.path.join(directory, "__metadata__.parquet")
         _fetch_metadata(source, metadata)
         base = _location_base(source) if location else ""
-        sql = (
-            f"SELECT {_projection(columns, location)} FROM ("
-            f"{_MANIFEST_SQL.format(location='true' if location else 'false')})"
-        )
-        con = duckdb.connect(config=_DUCKDB_CONFIG)
+        con = _cursor()
         try:
-            df = con.execute(sql, [base, metadata]).df()
+            before, after = _manifest_columns(_stored_columns(con, metadata), columns)
+            parts = [_quote_identifier(column) for column in before]
+            params = [metadata]
+            if location:
+                # The body of the read_flat macro in cozip_reader.
+                parts.append(
+                    "'/vsisubfile/' || \"offset\" || '_' || \"size\" || ',' || ? "
+                    f"AS {_quote_identifier(_LOCATION_COLUMN)}"
+                )
+                params = [base, metadata]
+            parts.extend(_quote_identifier(column) for column in after)
+            # Hive partitioning stays off so the manifest's path never adds columns.
+            sql = (
+                f"SELECT {', '.join(parts)} "
+                "FROM read_parquet(?, hive_partitioning = false)"
+            )
+            return con.execute(sql, params).df()
         except duckdb.Error as exc:
             text = str(exc)
             if metadata not in text:
@@ -113,11 +170,6 @@ def _read_flat_archive(
             raise type(exc)(text.replace(metadata, f"{label}!__metadata__")) from None
         finally:
             con.close()
-    if "taco:location" in df.columns:
-        df = df.drop(columns=["taco:location"])
-    if not location and _LOCATION_COLUMN in df.columns:
-        df = df.drop(columns=[_LOCATION_COLUMN])
-    return df
 
 
 def read(
@@ -127,24 +179,14 @@ def read(
 ) -> pd.DataFrame:
     """Read the manifest of a Flat-profile cozip archive.
 
-    ``columns`` selects extra manifest columns; the required ``name``,
-    ``offset``, and ``size`` columns remain. Set ``location=False`` to omit
-    the synthetic ``cozip:location`` column. Archives using any profile other
-    than Flat (profile 1), including TACO (profile 2), are rejected with a
+    ``columns`` selects extra manifest columns by exact name; the required
+    ``name``, ``offset``, and ``size`` columns remain, and an unknown name
+    raises ``ValueError``. Set ``location=False`` to omit the synthetic
+    ``cozip:location`` column. Archives using any profile other than Flat
+    (profile 1), including TACO (profile 2), are rejected with a
     ``CozipError``.
     """
-    source = os.fspath(source)
-    if not isinstance(source, str):
-        raise TypeError("cozip.read: source must be a string path or URL")
-    if not source:
-        raise ValueError("cozip.read: source must be a non-empty ASCII path or URL")
-    if "\0" in source:
-        raise ValueError("cozip.read: source contains a NUL byte")
-    if not source.isascii():
-        raise ValueError(
-            "cozip.read: source contains non-ASCII characters; "
-            "cozip supports ASCII paths and URLs only"
-        )
+    source = check_source(source, "cozip.read")
     if isinstance(columns, (str, bytes)) or (
         columns is not None
         and (

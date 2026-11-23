@@ -18,6 +18,23 @@ write_rehashed <- function(bytes, path) {
   path
 }
 
+# Packs an edited manifest through the C writer alone, without the R
+# manifest checks, as another producer could. The offsets stay right
+# because the manifest is the last entry.
+forge_archive <- function(tmp, edit, table = make_input_table(make_fixtures(tmp))) {
+  res <- cozip::stage_metadata(table)
+  pq <- file.path(tmp, "forged.parquet")
+  arrow::write_parquet(edit(res$metadata), pq)
+  out <- file.path(tmp, "forged.zip")
+  .Call(cozip:::C_R_cozip_finalize, out,
+        c(res$paths$name, "__metadata__"),
+        c(res$paths$path, pq),
+        c(file.size(res$paths$path), file.size(pq)),
+        c(rep(FALSE, nrow(res$paths)), TRUE),
+        1L)
+  normalizePath(out)
+}
+
 
 describe("read", {
 
@@ -89,6 +106,121 @@ describe("read", {
       names(cozip::read(file.path(nested, "out.zip"))),
       names(cozip::read(archive))
     )
+  })
+
+  it("drops stored location columns in any case", {
+    tmp <- withr::local_tempdir()
+    archive <- forge_archive(tmp, function(md) {
+      md[["COZIP:LOCATION"]] <- arrow::Array$create(c("forged", "forged"))
+      md[["Taco:Location"]] <- arrow::Array$create(c("forged", "forged"))
+      md[["cozip:GDAL_VSI"]] <- arrow::Array$create(c("forged", "forged"))
+      md
+    })
+    result <- cozip::read(archive)
+    expect_identical(
+      names(result),
+      c("name", "offset", "size", "category", "cozip:location")
+    )
+    expect_identical(
+      result[["cozip:location"]],
+      expected_location(result$offset, result$size, archive)
+    )
+    expect_identical(
+      names(cozip::read(archive, location = FALSE)),
+      c("name", "offset", "size", "category")
+    )
+    expect_identical(
+      names(cozip::read(archive, columns = c("COZIP:LOCATION", "category"),
+                        location = FALSE)),
+      c("name", "offset", "size", "category")
+    )
+  })
+
+  it("rejects manifest columns that differ only in case", {
+    tmp <- withr::local_tempdir()
+    archive <- forge_archive(tmp, function(md) {
+      md$Offset <- arrow::Array$create(c(7, 7))
+      md
+    })
+    expect_error(
+      cozip::read(archive),
+      paste0(
+        "cozip: the manifest has columns that differ only in case: ",
+        "'offset' and 'Offset'; DuckDB, which decodes the manifest, ",
+        "cannot tell them apart"
+      ),
+      fixed = TRUE
+    )
+  })
+
+  it("requires the exact required column names", {
+    tmp <- withr::local_tempdir()
+    archive <- forge_archive(tmp, function(md) {
+      arrow::arrow_table(name = md$name, offset = md$offset, SIZE = md$size)
+    })
+    expect_error(
+      cozip::read(archive),
+      "cozip: the manifest lacks required column(s) 'size'",
+      fixed = TRUE
+    )
+  })
+
+  it("skips nested children when listing columns", {
+    tmp <- withr::local_tempdir()
+    archive <- forge_archive(tmp, function(md) {
+      md$bands <- arrow::Array$create(list(c(1, 2), 3))
+      md$extent <- data.frame(name = c("x", "y"), size = c(1, 2))
+      md
+    })
+    result <- cozip::read(archive)
+    expect_identical(
+      names(result),
+      c("name", "offset", "size", "category", "bands", "extent", "cozip:location")
+    )
+    expect_identical(
+      names(cozip::read(archive, columns = "extent")),
+      c("name", "offset", "size", "cozip:location", "extent")
+    )
+  })
+
+  it("rejects unknown columns, matched exactly", {
+    tmp <- withr::local_tempdir()
+    archive <- make_archive(tmp, make_input_table(make_fixtures(tmp)))
+    expect_error(
+      cozip::read(archive, columns = c("Category", "missing", "category")),
+      paste0(
+        "cozip: unknown column(s) 'Category', 'missing'; ",
+        "the manifest has 'name', 'offset', 'size', 'category'"
+      ),
+      fixed = TRUE
+    )
+  })
+
+  it("orders requested columns and drops duplicates", {
+    tmp <- withr::local_tempdir()
+    table <- make_input_table(make_fixtures(tmp))
+    table$tag <- c("t1", "t2")
+    archive <- make_archive(tmp, table)
+    result <- cozip::read(
+      archive,
+      columns = c("tag", "Cozip:Location", "category", "tag", "size", "name",
+                  "cozip:gdal_vsi")
+    )
+    expect_identical(
+      names(result),
+      c("name", "offset", "size", "cozip:location", "tag", "category")
+    )
+  })
+
+  it("ignores a key=value directory named like a manifest column", {
+    tmp <- withr::local_tempdir()
+    archive <- make_archive(tmp, make_input_table(make_fixtures(tmp)))
+    nested <- file.path(tmp, "size=7")
+    dir.create(nested)
+    file.copy(archive, nested)
+    result <- cozip::read(file.path(nested, "out.zip"))
+    expect_identical(result$size, cozip::read(archive)$size)
+    expect_false(any(result$size == 7))
   })
 
   it("rejects the TACO profile with the Flat reader's message", {

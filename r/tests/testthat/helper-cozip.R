@@ -38,10 +38,10 @@ read_u64_le <- function(b) {
 # ---- FNV-1a 64 ----
 
 fnv1a_64 <- function(data) {
-  hi <- 0xCBF29CE4    # 3421674724 — high 32 of offset basis
-  lo <- 0x84222325    # 2216829733 — low  32 of offset basis
-  ph <- 0x00000100    # 256        — high 32 of prime (prime = 2^40 + 435)
-  pl <- 0x000001B3    # 435        — low  32 of prime
+  hi <- 0xCBF29CE4    # 3421674724: high 32 of offset basis
+  lo <- 0x84222325    # 2216829733: low  32 of offset basis
+  ph <- 0x00000100    # 256:        high 32 of prime (prime = 2^40 + 435)
+  pl <- 0x000001B3    # 435:        low  32 of prime
   TWO32 <- 4294967296
 
   for (byte in as.integer(data)) {

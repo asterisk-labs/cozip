@@ -299,6 +299,10 @@ class TestPlan:
 
 
 class TestWrite:
+    def test_written_archive_verifies(self, taco_archive: Path) -> None:
+        # cozip.verify checks any profile; the Flat reader would refuse this.
+        assert cozip.verify(taco_archive) is None
+
     def test_profile_and_priority_index(self, taco_archive: Path) -> None:
         profile, index = _parse_index(taco_archive.read_bytes())
         assert profile == 2
@@ -443,7 +447,7 @@ class TestWrite:
         self, layout: Plan, physical_files: dict[str, Path]
     ) -> None:
         before = physical_files["image"].read_bytes()
-        with pytest.raises(CozipError, match="also source path"):
+        with pytest.raises(CozipError, match="also the source path"):
             _write_fixture(physical_files["image"], layout, physical_files)
         assert physical_files["image"].read_bytes() == before
 

@@ -6,9 +6,9 @@
 #' Central Directory.
 #'
 #' The writer has three public functions:
-#' - [create()] — all-in-one writer for the FLAT profile.
-#' - [stage_metadata()] — plans offsets after checking the source files.
-#' - [stage_create()] — packs an archive from source files and a
+#' - [create()]: all-in-one writer for the FLAT profile.
+#' - [stage_metadata()]: plans offsets after checking the source files.
+#' - [stage_create()]: packs an archive from source files and a
 #'   user-written parquet, embedded verbatim.
 #'
 #' @keywords internal

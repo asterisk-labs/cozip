@@ -1,7 +1,8 @@
 /*
- * cozip R bindings — .Call shims to libcozip.
+ * cozip R bindings: .Call shims to libcozip.
  *
- * Four entries:
+ *   R_cozip_reserved_names() -> named character
+ *       The reserved entry names, cached by R/zzz.R at load time.
  *
  *   R_cozip_plan(names, sizes) -> list(offset, size)
  *       Plans FLAT user entries and adds the temporary __metadata__
@@ -10,7 +11,8 @@
  *   R_cozip_finalize(out_path, names, paths, sizes, in_idx, profile) -> NULL
  *       End-to-end pipeline via cozip_finalize: plan, padding
  *       decision, build index payload, write archive, patch
- *       FNV-1a 64 integrity hash.
+ *       FNV-1a 64 integrity hash. The writer checks each source
+ *       against its planned size.
  *
  *   R_cozip_read_flat_metadata(source) -> raw
  *       Verifies the byte-0 index of a FLAT archive and returns its
@@ -19,9 +21,12 @@
  *   R_cozip_location_base(source) -> character(1)
  *       The GDAL path that cozip:location appends after the range.
  *
- * The .Call surface is profile-agnostic. Profile-specific logic
- * (FLAT's __metadata__.parquet, TACO's COLLECTION.json + METADATA/)
- * lives in R/cozip.R.
+ *   R_cozip_verify(source) -> NULL
+ *       Verifies the byte-0 index and the integrity hash of an archive
+ *       of any profile; a broken archive raises the reader's error.
+ *
+ * The Flat-specific logic (the __metadata__ entry, the manifest checks)
+ * lives in R/cozip.R and R/read.R.
  *
  * Memory: cozip_entry_t arrays and intermediate buffers are
  * allocated via R_alloc, so they free automatically on .Call return
@@ -128,16 +133,13 @@ static void throw_reader(cozip_status_t status, char *message) {
 
 /* Build a cozip_entry_t array from R-side vectors. Allocates
  * `capacity` slots from R's transient pool but only fills the first
- * `n`. The extra slots stay zeroed; cozip_finalize uses one of them
- * for a possible __cozip_padding__ entry.
+ * `n`. The extra slots stay zeroed; cozip_plan_flat uses one for the
+ * __metadata__ placeholder and cozip_finalize one for a possible
+ * __cozip_padding__ entry.
  *
  * `paths` may be R_NilValue, in which case source.kind stays
  * COZIP_SOURCE_NONE. `in_idx` may also be R_NilValue, which leaves
  * every entry outside the index.
- *
- * NA in `paths[i]` also leaves source.kind = NONE for that entry.
- * cozip::create uses this for the __metadata__ placeholder slot
- * during the first plan call.
  */
 static cozip_entry_t* build_entries(SEXP names, SEXP paths,
                                     SEXP sizes, SEXP in_idx,
@@ -167,10 +169,10 @@ static cozip_entry_t* build_entries(SEXP names, SEXP paths,
 
         if (paths != R_NilValue) {
             SEXP path_sxp = STRING_ELT(paths, i);
-            if (path_sxp != NA_STRING) {
-                entries[i].source.kind   = COZIP_SOURCE_PATH;
-                entries[i].source.u.path = translate_no_nul(path_sxp, "paths", i);
-            }
+            if (path_sxp == NA_STRING)
+                Rf_error("NA in 'paths' at index %lld", (long long)(i + 1));
+            entries[i].source.kind   = COZIP_SOURCE_PATH;
+            entries[i].source.u.path = translate_no_nul(path_sxp, "paths", i);
         }
     }
     return entries;
@@ -252,19 +254,10 @@ SEXP R_cozip_finalize(SEXP out_path, SEXP names, SEXP paths,
     check_logicals(in_idx, n, "in_idx");
 
     /* +1 capacity leaves room for the optional __cozip_padding__
-     * entry that cozip_finalize appends on small archives. */
+     * entry that cozip_finalize appends on small archives. Every entry,
+     * __metadata__ included, has a path here. */
     cozip_entry_t *entries =
         build_entries(names, paths, sizes, in_idx, n, n + 1);
-
-    /* Every user entry must have a path at finalize time. The R-side
-     * create() guarantees this (the __metadata__ placeholder gets
-     * its real path patched in before this call). */
-    for (R_xlen_t i = 0; i < n; i++) {
-        if (entries[i].source.kind == COZIP_SOURCE_NONE) {
-            Rf_error("Entry %lld ('%s') has no path",
-                     (long long)(i + 1), entries[i].arc_name);
-        }
-    }
 
     cozip_error_t err = {0};
     cozip_profile_t p = (cozip_profile_t)INTEGER(profile)[0];
@@ -319,6 +312,15 @@ SEXP R_cozip_location_base(SEXP source) {
     return res;
 }
 
+SEXP R_cozip_verify(SEXP source) {
+    const char *path = single_source(source);
+
+    char *message = NULL;
+    cozip_status_t s = cozip_verify(path, &message);
+    if (s != COZIP_OK) throw_reader(s, message);
+    return R_NilValue;
+}
+
 
 /* ---- 3. Routine registration ---- */
 
@@ -328,6 +330,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"R_cozip_finalize",       (DL_FUNC) &R_cozip_finalize,       6},
     {"R_cozip_read_flat_metadata", (DL_FUNC) &R_cozip_read_flat_metadata, 1},
     {"R_cozip_location_base",  (DL_FUNC) &R_cozip_location_base,  1},
+    {"R_cozip_verify",         (DL_FUNC) &R_cozip_verify,         1},
     {NULL, NULL, 0}
 };
 

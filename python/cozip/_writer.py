@@ -21,6 +21,7 @@ from ._core import (
     ffi,
     lib,
 )
+from ._parquet import manifest_options
 
 # Reserved entry names; source of truth is libcozip.
 _INDEX_NAME = ffi.string(lib.cozip_index_name()).decode("ascii")
@@ -29,8 +30,12 @@ _METADATA_NAME = ffi.string(lib.cozip_flat_metadata_name()).decode("ascii")
 _RESERVED_NAMES = frozenset({_INDEX_NAME, _METADATA_NAME, _PADDING_NAME})
 
 # Columns owned by the writer or reader; producers must never persist them.
+# They are compared without case, as DuckDB, which decodes manifests, does.
 _PROTECTED_LOCATION_COLUMNS = frozenset({"cozip:location", "taco:location"})
 _RESERVED_INPUT_COLUMNS = frozenset({"offset", "size"}) | _PROTECTED_LOCATION_COLUMNS
+
+# Columns pandas adds for an unnamed index; never part of a manifest.
+_PANDAS_INDEX_PREFIX = "__index_level_"
 
 # Columns required in the metadata parquet that goes into the archive.
 _REQUIRED_METADATA_COLUMNS = frozenset({"name", "offset", "size"})
@@ -63,19 +68,46 @@ def _validate_name_value(value: Any, *, context: str) -> str:
     return value
 
 
+def _check_column_names(names: list[str], *, what: str) -> None:
+    """Column names must stay distinct when compared without case."""
+    first: dict[str, str] = {}
+    for name in names:
+        other = first.setdefault(name.lower(), name)
+        if other == name and names.count(name) > 1:
+            raise ValueError(f"cozip: {what} has the column {name!r} more than once")
+        if other != name:
+            raise ValueError(
+                f"cozip: {what} has columns that differ only in case: {other!r} "
+                f"and {name!r}; DuckDB, which reads manifests, cannot tell them apart"
+            )
+
+
 def _validate_input_table(table: pa.Table) -> None:
     """Validate a (name, path, ...) input table for stage_metadata / create."""
+    if not isinstance(table, pa.Table):
+        hint = (
+            "; convert it with pyarrow.Table.from_pandas(df, preserve_index=False)"
+            if type(table).__name__ == "DataFrame"
+            else ""
+        )
+        raise TypeError(
+            f"cozip: table must be a pyarrow.Table, got {type(table).__name__}{hint}"
+        )
+    _check_column_names(table.column_names, what="input table")
     cols = set(table.column_names)
     missing = {"name", "path"} - cols
     if missing:
         raise ValueError(
             f"cozip: input table is missing required column(s): {sorted(missing)}"
         )
-    reserved_in_input = sorted(_RESERVED_INPUT_COLUMNS & cols)
+    reserved_in_input = sorted(
+        c for c in table.column_names if c.lower() in _RESERVED_INPUT_COLUMNS
+    )
     if reserved_in_input:
         raise ValueError(
             f"cozip: input table must not contain reserved column(s) "
-            f"{reserved_in_input}; the binding computes them"
+            f"{reserved_in_input}; the binding computes them (names are "
+            "compared without case)"
         )
     if len(table) == 0:
         raise ValueError("cozip: empty entry list")
@@ -153,9 +185,11 @@ def _alloc_entries(
     names: list[str],
     paths: list[str],
     n_extra: int,
+    sizes: list[int] | None = None,
 ) -> tuple[Any, list[Any]]:
     """Allocate cozip_entry_t[len(names) + n_extra] with user slots filled
 
+    Sizes come from `sizes` when given, else from a stat of each path.
     Returns (entries, keepalive). `keepalive` owns every cdata that
     libcozip reads through pointers in `entries` and must remain alive
     across every C call.
@@ -165,10 +199,12 @@ def _alloc_entries(
     keepalive: list[Any] = []
     for i in range(n):
         name_c = ffi.new("char[]", names[i].encode("utf-8"))
-        path_c = ffi.new("char[]", paths[i].encode("utf-8"))
+        path_c = ffi.new("char[]", os.fsencode(paths[i]))
         keepalive.extend((name_c, path_c))
         entries[i].arc_name = name_c
-        entries[i].payload_size = Path(paths[i]).stat().st_size
+        entries[i].payload_size = (
+            sizes[i] if sizes is not None else os.stat(paths[i]).st_size
+        )
         entries[i].in_index = False
         entries[i].source.kind = COZIP_SOURCE_PATH
         entries[i].source.u.path = path_c
@@ -192,6 +228,7 @@ def _check_parquet_schema(parquet_path: str) -> None:
     not be in `__metadata__`.
     """
     schema = pq.read_schema(parquet_path)
+    _check_column_names(schema.names, what="metadata parquet")
     cols = set(schema.names)
 
     if "path" in cols:
@@ -201,7 +238,7 @@ def _check_parquet_schema(parquet_path: str) -> None:
             "archive. Drop it before writing the parquet."
         )
 
-    protected = sorted(_PROTECTED_LOCATION_COLUMNS & cols)
+    protected = sorted(c for c in cols if c.lower() in _PROTECTED_LOCATION_COLUMNS)
     if protected:
         raise ValueError(
             "cozip: metadata parquet must not contain reader-owned column(s): "
@@ -213,6 +250,20 @@ def _check_parquet_schema(parquet_path: str) -> None:
         raise ValueError(
             f"cozip: metadata parquet is missing required column(s): {sorted(missing)}"
         )
+
+    # Spec 13.3: name is a string, offset and size are uint64.
+    name_type = schema.field("name").type
+    if not (pa.types.is_string(name_type) or pa.types.is_large_string(name_type)):
+        raise ValueError(
+            f"cozip: metadata parquet column 'name' must be a string, got {name_type}"
+        )
+    for column in ("offset", "size"):
+        column_type = schema.field(column).type
+        if column_type != pa.uint64():
+            raise ValueError(
+                f"cozip: metadata parquet column {column!r} must be uint64 "
+                f"(cozip spec 13.3), got {column_type}"
+            )
 
 
 def _validate_parquet_values(
@@ -235,10 +286,10 @@ def _validate_parquet_values(
     exp_off = pa.array(expected_offsets, type=pa.uint64())
     exp_sz = pa.array(expected_sizes, type=pa.uint64())
 
-    # Cast the parquet integer columns to uint64.
+    # _check_parquet_schema has already required string and uint64 columns.
     pq_names = table.column("name")
-    pq_off = pc.cast(table.column("offset"), pa.uint64())
-    pq_sz = pc.cast(table.column("size"), pa.uint64())
+    pq_off = table.column("offset")
+    pq_sz = table.column("size")
 
     def _check(field: str, pq_col, exp_col, exp_list) -> None:
         if pq_col.null_count:
@@ -268,6 +319,41 @@ def _validate_parquet_values(
 # Public API
 
 
+def _plan(table: pa.Table) -> tuple[pa.Table, list[str], list[str], list[int]]:
+    """Validate the input table, plan it, and build the manifest table.
+
+    Returns (manifest table, names, source paths, planned sizes).
+    """
+    _validate_input_table(table)
+
+    n_users = len(table)
+    names = table.column("name").to_pylist()
+    src_paths = table.column("path").to_pylist()
+
+    entries, _keepalive = _alloc_entries(names, src_paths, n_extra=1)
+    err = ffi.new("cozip_error_t*")
+    _check(lib.cozip_plan_flat(entries, n_users, err), err)
+
+    offsets = [int(entries[i].payload_offset) for i in range(n_users)]
+    sizes = [int(entries[i].payload_size) for i in range(n_users)]
+
+    # An unnamed pandas index becomes __index_level_N__ columns and a
+    # 'pandas' schema key that would describe the dropped path column.
+    dropped = ["path"] + [
+        c for c in table.column_names if c.startswith(_PANDAS_INDEX_PREFIX)
+    ]
+    out = (
+        table.drop_columns(dropped)
+        .append_column("offset", pa.array(offsets, type=pa.uint64()))
+        .append_column("size", pa.array(sizes, type=pa.uint64()))
+    )
+    metadata = dict(out.schema.metadata or {})
+    metadata.pop(b"pandas", None)
+    out = out.replace_schema_metadata(metadata or None)
+    rest = [c for c in out.column_names if c not in ("name", "offset", "size")]
+    return out.select(["name", "offset", "size", *rest]), names, src_paths, sizes
+
+
 def stage_metadata(
     table: pa.Table,
 ) -> tuple[pa.Table, list[tuple[str, str]]]:
@@ -289,39 +375,49 @@ def stage_metadata(
         table: pyarrow.Table with at least `name` (str) and `path`
             (str) columns. Extras are preserved in the returned table.
             Reserved columns `offset` or `size` in the input are
-            rejected.
+            rejected, compared without case.
 
     Returns:
         Tuple of:
           * pyarrow.Table with `name`, `offset`, `size`, then any user
             extras. `path` is dropped because filesystem paths do not
-            belong inside the archive.
+            belong inside the archive, and so are the columns pandas adds
+            for an unnamed index.
           * list of (name, path) tuples, aligned with the table rows,
             ready to pass to `stage_create`.
     """
-    _validate_input_table(table)
+    metadata_table, names, src_paths, _sizes = _plan(table)
+    return metadata_table, list(zip(names, src_paths))
 
-    n_users = len(table)
-    names = table.column("name").to_pylist()
-    src_paths = table.column("path").to_pylist()
 
-    entries, _keepalive = _alloc_entries(names, src_paths, n_extra=1)
+def _write(
+    out_path: str,
+    names: list[str],
+    src_paths: list[str],
+    sizes: list[int] | None,
+    parquet_str: str,
+) -> str:
+    """Write the archive around a checked manifest Parquet.
+
+    With `sizes`, the entries keep the sizes planned earlier, and the C
+    writer, which stats every source, refuses a file that changed since.
+    """
+    n_users = len(names)
+    # Capacity = n_users + 2 leaves room for __metadata__ and the
+    # optional padding slot that cozip_write_flat may append.
+    entries, keepalive = _alloc_entries(names, src_paths, n_extra=2, sizes=sizes)
     err = ffi.new("cozip_error_t*")
     _check(lib.cozip_plan_flat(entries, n_users, err), err)
-
-    offsets = [int(entries[i].payload_offset) for i in range(n_users)]
-    sizes = [int(entries[i].payload_size) for i in range(n_users)]
-
-    out = (
-        table.drop_columns(["path"])
-        .append_column("offset", pa.array(offsets, type=pa.uint64()))
-        .append_column("size", pa.array(sizes, type=pa.uint64()))
+    meta_path_c = ffi.new("char[]", os.fsencode(parquet_str))
+    out_path_c = ffi.new("char[]", os.fsencode(out_path))
+    keepalive.extend((meta_path_c, out_path_c))
+    _check(
+        lib.cozip_write_flat(
+            out_path_c, entries, n_users, n_users + 2, meta_path_c, err
+        ),
+        err,
     )
-    rest = [c for c in out.column_names if c not in ("name", "offset", "size")]
-    metadata_table = out.select(["name", "offset", "size", *rest])
-
-    paths = list(zip(names, src_paths))
-    return metadata_table, paths
+    return out_path
 
 
 def stage_create(
@@ -378,28 +474,16 @@ def stage_create(
     names, src_paths = _validate_paths_arg(paths)
     n_users = len(names)
 
-    # Capacity = n_users + 2 leaves room for __metadata__ and the
-    # optional padding slot that cozip_write_flat may append.
-    entries, keepalive = _alloc_entries(names, src_paths, n_extra=2)
-    err = ffi.new("cozip_error_t*")
-    _check(lib.cozip_plan_flat(entries, n_users, err), err)
-
+    sizes = None
     if validate:
+        entries, _keepalive = _alloc_entries(names, src_paths, n_extra=1)
+        err = ffi.new("cozip_error_t*")
+        _check(lib.cozip_plan_flat(entries, n_users, err), err)
+        sizes = [int(entries[i].payload_size) for i in range(n_users)]
         planned_offsets = [int(entries[i].payload_offset) for i in range(n_users)]
-        planned_sizes = [int(entries[i].payload_size) for i in range(n_users)]
-        _validate_parquet_values(parquet_str, names, planned_offsets, planned_sizes)
+        _validate_parquet_values(parquet_str, names, planned_offsets, sizes)
 
-    meta_path_c = ffi.new("char[]", parquet_str.encode("utf-8"))
-    out_path_c = ffi.new("char[]", out_path_str.encode("utf-8"))
-    keepalive.extend((meta_path_c, out_path_c))
-
-    _check(
-        lib.cozip_write_flat(
-            out_path_c, entries, n_users, n_users + 2, meta_path_c, err
-        ),
-        err,
-    )
-    return out_path_str
+    return _write(out_path_str, names, src_paths, sizes, parquet_str)
 
 
 def create(
@@ -419,13 +503,15 @@ def create(
     Returns:
         Absolute path of the created archive.
     """
-    metadata_table, paths = stage_metadata(table)
+    out_path_str = str(Path(_path_text(out_path, context="out_path")).resolve())
+    metadata_table, names, src_paths, sizes = _plan(table)
 
     tmp = _temp_parquet_path(temp_dir)
     try:
-        pq.write_table(metadata_table, tmp)
-        # validate=False because we just generated the parquet from the
-        # same plan; redundant to re-validate against itself.
-        return stage_create(out_path, paths, tmp, validate=False)
+        pq.write_table(metadata_table, tmp, **manifest_options(metadata_table))
+        # The manifest comes from this plan, so it is written with the
+        # planned sizes: one stat per source here, and one in the C writer,
+        # which refuses a source that changed size in between.
+        return _write(out_path_str, names, src_paths, sizes, str(tmp))
     finally:
         tmp.unlink(missing_ok=True)

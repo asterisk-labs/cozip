@@ -9,10 +9,13 @@ read(source, columns = NULL, location = TRUE)
 \arguments{
 \item{source}{Local path or http(s)/s3/gcs/azure/hf URL to the \code{.zip}.}
 
-\item{columns}{Character vector of extra columns. \code{NULL} returns
-every column.}
+\item{columns}{\code{NULL} returns every manifest column. Otherwise a
+character vector of extra columns, matched exactly; \code{name}, \code{offset}
+and \code{size} always come first, then \code{cozip:location} when enabled,
+then the extras in the order given. An unknown name is an error;
+location names are ignored in any case.}
 
-\item{location}{Include the \code{cozip:location} column.}
+\item{location}{Include the computed \code{cozip:location} column.}
 }
 \value{
 A tibble.
@@ -20,9 +23,9 @@ A tibble.
 \description{
 Reads the byte-0 index natively, fetches only the \verb{__metadata__}
 Parquet manifest, and decodes it with DuckDB, which loads no
-extension. \code{name}, \code{offset}, \code{size} (and \code{cozip:location} when
-\code{location = TRUE}) are always included; use \code{columns} to bring
-extras, \code{NULL} brings all.
+extension. Stored \code{cozip:location}, \code{taco:location} and
+\code{cozip:gdal_vsi} columns are dropped in any letter case, and
+\code{cozip:location} is computed again.
 Archives using any profile other than Flat (\code{profile = 1}), including TACO
 (\code{profile = 2}), are rejected.
 }

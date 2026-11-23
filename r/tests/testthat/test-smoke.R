@@ -45,7 +45,7 @@ parse_cd <- function(bytes) {
 }
 
 
-describe("Spec invariants — bytes of create() output", {
+describe("Spec invariants: bytes of create() output", {
 
   it("archive size meets minimum", {
     ctx <- local_archive()
@@ -104,10 +104,25 @@ describe("Spec invariants — bytes of create() output", {
     expect_gt(meta[["size"]],   0)
     expect_lte(meta[["size"]],  length(b) - meta[["offset"]])
   })
+
+  it("manifest is compressed with zstd", {
+    skip_if_not(arrow::codec_is_available("zstd"))
+    ctx <- local_archive()
+    b  <- ctx$archive_bytes
+    sz <- index_size_from_lfh(b)
+    meta <- parse_index(b[(INDEX_OFFSET + 1L):(INDEX_OFFSET + sz)])[["__metadata__"]]
+    pq <- withr::local_tempfile(fileext = ".parquet")
+    writeBin(b[(meta[["offset"]] + 1):(meta[["offset"]] + meta[["size"]])], pq)
+    con <- DBI::dbConnect(duckdb::duckdb())
+    on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+    codecs <- DBI::dbGetQuery(con,
+      "SELECT DISTINCT compression FROM parquet_metadata(?)", params = list(pq))
+    expect_identical(codecs$compression, "ZSTD")
+  })
 })
 
 
-describe("ZIP compatibility — readable by standard ZIP tools", {
+describe("ZIP compatibility: readable by standard ZIP tools", {
 
   it("stdlib reader lists all entries", {
     ctx <- local_archive()
@@ -148,7 +163,7 @@ describe("ZIP compatibility — readable by standard ZIP tools", {
 })
 
 
-describe("stage_metadata — layout planner", {
+describe("stage_metadata: layout planner", {
 
   it("drops path column", {
     ctx <- local_archive()
@@ -248,6 +263,64 @@ describe("stage_metadata — layout planner", {
     expect_error(cozip::stage_metadata(bad), "reserved")
   })
 
+  it("rejects reserved columns in any case", {
+    ctx <- local_archive()
+    for (column in c("Offset", "SIZE", "COZIP:LOCATION", "Taco:Location")) {
+      values <- list(name = "a.txt", path = ctx$fixtures$small)
+      values[[column]] <- "x"
+      bad <- do.call(arrow::arrow_table, values)
+      expect_error(
+        cozip::stage_metadata(bad),
+        sprintf("reserved column(s) '%s'; the binding computes them (names are compared without case)", column),
+        fixed = TRUE
+      )
+    }
+  })
+
+  it("rejects input columns that differ only in case", {
+    ctx <- local_archive()
+    bad <- arrow::arrow_table(
+      name = "a.txt", path = ctx$fixtures$small, Tag = "x", tag = "y"
+    )
+    expect_error(
+      cozip::stage_metadata(bad),
+      "columns that differ only in case: 'Tag' and 'tag'; DuckDB, which reads manifests, cannot tell them apart",
+      fixed = TRUE
+    )
+    bad <- arrow::arrow_table(name = "a.txt", path = ctx$fixtures$small, NAME = "x")
+    expect_error(cozip::stage_metadata(bad), "'name' and 'NAME'", fixed = TRUE)
+  })
+
+  it("rejects names and paths that are not strings", {
+    ctx <- local_archive()
+    expect_error(
+      cozip::stage_metadata(arrow::arrow_table(name = 1L, path = ctx$fixtures$small)),
+      "`name` column must contain strings, got int32",
+      fixed = TRUE
+    )
+    expect_error(
+      cozip::create(file.path(ctx$tmp_path, "n.zip"),
+                    arrow::arrow_table(name = 1L, path = ctx$fixtures$small)),
+      "`name` column must contain strings",
+      fixed = TRUE
+    )
+    expect_error(
+      cozip::stage_metadata(arrow::arrow_table(name = "a.txt", path = 1)),
+      "`path` column must contain strings, got double",
+      fixed = TRUE
+    )
+  })
+
+  it("accepts dictionary-encoded names", {
+    ctx <- local_archive()
+    table <- arrow::arrow_table(
+      name = factor(c("a.txt", "b.bin")),
+      path = c(ctx$fixtures$small, ctx$fixtures$medium)
+    )
+    res <- cozip::stage_metadata(table)
+    expect_identical(res$paths$name, c("a.txt", "b.bin"))
+  })
+
   it("rejects zero-byte sources", {
     tmp <- withr::local_tempdir()
     empty <- file.path(tmp, "empty.bin")
@@ -285,10 +358,6 @@ describe("stage_metadata — layout planner", {
 
 describe("read input validation", {
 
-  it("selects every column without a projection", {
-    expect_identical(cozip:::.build_select(NULL, FALSE), "*")
-  })
-
   it("rejects an empty path before reading", {
     expect_error(cozip::read(""), "non-empty")
   })
@@ -303,7 +372,7 @@ describe("read input validation", {
 })
 
 
-describe("stage_create — embed user-written parquet verbatim", {
+describe("stage_create: embed user-written parquet verbatim", {
 
   write_meta <- function(ctx) {
     pq <- file.path(ctx$tmp_path, "meta.parquet")
@@ -355,9 +424,10 @@ describe("stage_create — embed user-written parquet verbatim", {
     )
   })
 
-  it("rejects reader-owned columns in parquet", {
+  it("rejects reader-owned columns in parquet in any case", {
     ctx <- local_archive()
-    for (column in c("cozip:location", "taco:location")) {
+    for (column in c("cozip:location", "taco:location", "COZIP:LOCATION",
+                     "Taco:Location")) {
       md_df <- as.data.frame(cozip::stage_metadata(ctx$input_table)$metadata)
       md_df[[column]] <- "must-not-be-stored"
       pq <- file.path(ctx$tmp_path, paste0(gsub(":", "-", column), ".parquet"))
@@ -369,6 +439,65 @@ describe("stage_create — embed user-written parquet verbatim", {
         "reader-owned"
       )
     }
+  })
+
+  it("rejects parquet columns that differ only in case", {
+    ctx <- local_archive()
+    md <- cozip::stage_metadata(ctx$input_table)$metadata
+    md$Offset <- arrow::Array$create(c(1, 2))
+    pq <- file.path(ctx$tmp_path, "case.parquet")
+    arrow::write_parquet(md, pq)
+
+    expect_error(
+      cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
+                          make_paths_arg(ctx$input_table), pq),
+      "metadata parquet has columns that differ only in case: 'offset' and 'Offset'",
+      fixed = TRUE
+    )
+  })
+
+  it("requires a string name and uint64 offset and size", {
+    ctx <- local_archive()
+    md <- cozip::stage_metadata(ctx$input_table)$metadata
+    u64 <- function(x) arrow::Array$create(x, type = arrow::uint64())
+    cases <- list(
+      list(
+        table = arrow::arrow_table(name = 1:2, offset = md$offset, size = md$size),
+        message = "column 'name' must be a string, got int32"
+      ),
+      list(
+        table = arrow::arrow_table(
+          name = md$name, offset = md$offset$cast(arrow::int64()), size = md$size
+        ),
+        message = "column 'offset' must be uint64 (cozip spec 13.3), got int64"
+      ),
+      list(
+        table = arrow::arrow_table(
+          name = md$name, offset = md$offset, size = as.numeric(md$size)
+        ),
+        message = "column 'size' must be uint64 (cozip spec 13.3), got double"
+      )
+    )
+    for (case in cases) {
+      pq <- file.path(ctx$tmp_path, "typed.parquet")
+      arrow::write_parquet(case$table, pq)
+      expect_error(
+        cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
+                            make_paths_arg(ctx$input_table), pq,
+                            validate = FALSE),
+        case$message,
+        fixed = TRUE
+      )
+    }
+  })
+
+  it("returns the absolute path of a new archive", {
+    ctx <- local_archive()
+    pq <- write_meta(ctx)
+    withr::local_dir(ctx$tmp_path)
+    out <- cozip::stage_create("relative.zip", make_paths_arg(ctx$input_table), pq)
+    expect_identical(out, normalizePath(file.path(ctx$tmp_path, "relative.zip")))
+    expect_true(file.exists(out))
   })
 
   it("rejects parquet missing required columns", {
@@ -398,10 +527,10 @@ describe("stage_create — embed user-written parquet verbatim", {
 
   it("rejects null metadata values", {
     ctx <- local_archive()
-    md <- as.data.frame(cozip::stage_metadata(ctx$input_table)$metadata)
-    md$name[2L] <- NA_character_
+    md <- cozip::stage_metadata(ctx$input_table)$metadata
+    md$name <- arrow::Array$create(c("a.txt", NA_character_))
     pq <- file.path(ctx$tmp_path, "null.parquet")
-    arrow::write_parquet(arrow::arrow_table(md), pq)
+    arrow::write_parquet(md, pq)
 
     expect_error(
       cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
@@ -503,8 +632,12 @@ describe("GeoParquet round-trip via sf + geoarrow", {
     )
     md_sf <- sf::st_sf(md_df, geometry = geom)
 
+    # as.data.frame() turns uint64 into R numbers; spec 13.3 needs uint64.
+    md <- arrow::as_arrow_table(md_sf)
+    md$offset <- md$offset$cast(arrow::uint64())
+    md$size <- md$size$cast(arrow::uint64())
     pq <- file.path(ctx$tmp_path, "meta.parquet")
-    arrow::write_parquet(md_sf, pq)
+    arrow::write_parquet(md, pq)
 
     out <- file.path(ctx$tmp_path, "out.zip")
     cozip::stage_create(out, make_paths_arg(ctx$input_table), pq)
@@ -526,5 +659,69 @@ describe("GeoParquet round-trip via sf + geoarrow", {
     expect_equal(unname(coords[1, "Y"]), -12.05)
     expect_equal(unname(coords[2, "X"]),   2.35)
     expect_equal(unname(coords[2, "Y"]),  48.86)
+  })
+})
+
+
+describe("create", {
+
+  it("returns the absolute path of a new archive", {
+    tmp <- withr::local_tempdir()
+    table <- make_input_table(make_fixtures(tmp))
+    withr::local_dir(tmp)
+    out <- cozip::create("relative.zip", table)
+    expect_identical(out, normalizePath(file.path(tmp, "relative.zip")))
+    expect_true(file.exists(out))
+    expect_identical(cozip::write("again.zip", table),
+                     normalizePath(file.path(tmp, "again.zip")))
+  })
+
+  it("expands ~ in source, metadata and output paths", {
+    skip_on_os("windows")
+    tmp <- withr::local_tempdir()
+    fixtures <- make_fixtures(tmp)
+    home <- normalizePath(path.expand("~"), mustWork = FALSE)
+    skip_if_not(startsWith(home, "/") && dir.exists(home))
+    # A ~ path that leads from the home directory back to the root.
+    up <- paste0("~", strrep("/..", length(strsplit(home, "/", fixed = TRUE)[[1]]) - 1L))
+    tilde <- function(path) paste0(up, normalizePath(path, mustWork = FALSE))
+    table <- arrow::arrow_table(
+      name = c("a.txt", "b.bin"),
+      path = c(tilde(fixtures$small), tilde(fixtures$medium))
+    )
+
+    out <- cozip::create(tilde(file.path(tmp, "tilde.zip")), table)
+    expect_identical(out, normalizePath(file.path(tmp, "tilde.zip")))
+    expect_identical(cozip::read(out)$name, c("a.txt", "b.bin"))
+
+    res <- cozip::stage_metadata(table)
+    pq <- file.path(tmp, "meta.parquet")
+    arrow::write_parquet(res$metadata, pq)
+    staged <- cozip::stage_create(tilde(file.path(tmp, "staged.zip")), res$paths,
+                                  tilde(pq))
+    expect_identical(staged, normalizePath(file.path(tmp, "staged.zip")))
+    assert_valid_cozip(readBin(staged, raw(), n = file.size(staged)))
+  })
+
+  it("fails when a source changes size after planning", {
+    tmp <- withr::local_tempdir()
+    fixtures <- make_fixtures(tmp)
+    plan_flat <- cozip:::.plan_flat
+    local_mocked_bindings(
+      .plan_flat = function(table) {
+        plan <- plan_flat(table)
+        cat("grown", file = fixtures$small, append = TRUE)
+        plan
+      },
+      .package = "cozip"
+    )
+    out <- file.path(tmp, "out.zip")
+    expect_error(
+      cozip::create(out, make_input_table(fixtures)),
+      sprintf("source is %d bytes, but the planned payload size is %d",
+              length(SMALL_CONTENT) + 5L, length(SMALL_CONTENT)),
+      fixed = TRUE
+    )
+    expect_false(file.exists(out))
   })
 })

@@ -14,9 +14,9 @@ Central Directory.
 \details{
 The writer has three public functions:
 \itemize{
-\item \code{\link[=create]{create()}} — all-in-one writer for the FLAT profile.
-\item \code{\link[=stage_metadata]{stage_metadata()}} — plans offsets after checking the source files.
-\item \code{\link[=stage_create]{stage_create()}} — packs an archive from source files and a
+\item \code{\link[=create]{create()}}: all-in-one writer for the FLAT profile.
+\item \code{\link[=stage_metadata]{stage_metadata()}}: plans offsets after checking the source files.
+\item \code{\link[=stage_create]{stage_create()}}: packs an archive from source files and a
 user-written parquet, embedded verbatim.
 }
 }

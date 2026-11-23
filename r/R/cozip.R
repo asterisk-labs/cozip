@@ -16,6 +16,16 @@
 #'
 #' @export
 stage_metadata <- function(table) {
+  plan <- .plan_flat(table)
+  list(metadata = plan$metadata, paths = plan$paths)
+}
+
+
+# Checks the input table, reads each source size once and plans the
+# offsets. create() writes with these sizes, so a source that changes
+# before the write fails in the C writer instead of leaving a manifest
+# that points at the wrong bytes.
+.plan_flat <- function(table) {
   .validate_input_table(table)
 
   n          <- table$num_rows
@@ -44,7 +54,8 @@ stage_metadata <- function(table) {
   list(
     metadata = meta,
     paths    = data.frame(name = user_names, path = user_paths,
-                          stringsAsFactors = FALSE)
+                          stringsAsFactors = FALSE),
+    sizes    = out_sizes
   )
 }
 
@@ -67,19 +78,12 @@ stage_metadata <- function(table) {
 #' @export
 stage_create <- function(out_path, paths, metadata_parquet,
                          validate = TRUE) {
-  if (!is.character(out_path) || length(out_path) != 1L
-      || is.na(out_path) || !nzchar(out_path)) {
-    .cozip_stop("`out_path` must be a single non-empty string")
-  }
-  if (!is.character(metadata_parquet) || length(metadata_parquet) != 1L
-      || is.na(metadata_parquet) || !nzchar(metadata_parquet)) {
-    .cozip_stop("`metadata_parquet` must be a single non-empty string")
-  }
+  .check_path_arg(out_path, "out_path")
+  .check_path_arg(metadata_parquet, "metadata_parquet")
   if (!is.logical(validate) || length(validate) != 1L || is.na(validate)) {
     .cozip_stop("`validate` must be TRUE or FALSE")
   }
 
-  out_abs     <- normalizePath(out_path,         mustWork = FALSE)
   parquet_abs <- normalizePath(metadata_parquet, mustWork = FALSE)
 
   if (!file.exists(parquet_abs)) {
@@ -97,37 +101,48 @@ stage_create <- function(out_path, paths, metadata_parquet,
   vp         <- .validate_paths_arg(paths)
   user_names <- vp$names
   user_paths <- vp$paths
-  user_sizes <- file.size(user_paths)
   n          <- length(user_names)
 
-  plan_res <- .Call(C_R_cozip_plan, user_names, user_sizes)
+  plan_res <- .Call(C_R_cozip_plan, user_names, file.size(user_paths))
+  planned_sizes <- as.numeric(plan_res$size[seq_len(n)])
 
   if (validate) {
     .validate_parquet_values(
       parquet_abs,
       user_names,
       as.numeric(plan_res$offset[seq_len(n)]),
-      as.numeric(plan_res$size[seq_len(n)])
+      planned_sizes
     )
   }
 
-  fin_names  <- c(user_names,    .META_NAME)
-  fin_paths  <- c(user_paths,    parquet_abs)
-  fin_sizes  <- c(user_sizes,    file.size(parquet_abs))
-  fin_in_idx <- c(rep(FALSE, n), TRUE)
+  .write_flat(out_path, user_names, user_paths, planned_sizes, parquet_abs)
+}
 
-  .Call(C_R_cozip_finalize, out_abs, fin_names, fin_paths,
-        fin_sizes, fin_in_idx, .PROFILE_FLAT)
 
-  out_abs
+# Writes the planned entries plus the manifest and returns the absolute
+# path of the archive. R expands `~` itself, so the paths are expanded
+# before they reach C. The C writer compares each source with its planned
+# size.
+.write_flat <- function(out_path, names, paths, sizes, metadata_parquet) {
+  out <- path.expand(out_path)
+  .Call(C_R_cozip_finalize, out,
+        c(names, .META_NAME),
+        c(path.expand(paths), metadata_parquet),
+        c(sizes, file.size(metadata_parquet)),
+        c(rep(FALSE, length(names)), TRUE),
+        .PROFILE_FLAT)
+  normalizePath(out, mustWork = TRUE)
 }
 
 
 #' Write a cozip archive in one call
 #'
-#' Wraps [stage_metadata()] + [arrow::write_parquet()] +
-#' [stage_create()]. For GeoParquet or custom write options, use
-#' the staging functions directly.
+#' Plans the archive as [stage_metadata()] does, writes the manifest
+#' with [arrow::write_parquet()] and packs the archive with the sizes it
+#' planned, so a source that changes in between is an error. The manifest
+#' is compressed with zstd, and each column is dictionary encoded only when
+#' that writes its first rows smaller. For GeoParquet or custom write
+#' options, use the staging functions directly.
 #'
 #' @param out_path Destination archive path.
 #' @param table arrow::Table with `name` and `path`.
@@ -138,13 +153,58 @@ stage_create <- function(out_path, paths, metadata_parquet,
 #'
 #' @export
 create <- function(out_path, table, temp_dir = NULL) {
-  res <- stage_metadata(table)
+  .check_path_arg(out_path, "out_path")
+  plan <- .plan_flat(table)
 
   tmp <- .temp_parquet_path(temp_dir)
   on.exit(unlink(tmp, force = TRUE), add = TRUE)
-  arrow::write_parquet(res$metadata, tmp)
+  .write_manifest(plan$metadata, tmp)
 
-  stage_create(out_path, res$paths, tmp, validate = FALSE)
+  .write_flat(out_path, plan$paths$name, plan$paths$path, plan$sizes, tmp)
+}
+
+
+# Arrow for R cannot set a Parquet encoding per column, so the manifest
+# gets zstd and, per column, dictionary encoding only where it writes the
+# first rows smaller. Python also tries byte stream split and delta.
+.ZSTD_LEVEL <- 9L
+.TRIAL_ROWS <- 10000L
+
+.manifest_options <- function() {
+  if (arrow::codec_is_available("zstd")) {
+    list(compression = "zstd", compression_level = .ZSTD_LEVEL)
+  } else {
+    list()
+  }
+}
+
+.parquet_size <- function(table, use_dictionary) {
+  sink <- arrow::BufferOutputStream$create()
+  do.call(arrow::write_parquet, c(
+    list(table, sink, use_dictionary = use_dictionary, write_statistics = TRUE),
+    .manifest_options()))
+  sink$finish()$size
+}
+
+.write_manifest <- function(table, path) {
+  sample <- table$Slice(0, min(table$num_rows, .TRIAL_ROWS))
+  dictionary <- vapply(seq_len(sample$num_columns) - 1L, function(i) {
+    column <- sample$SelectColumns(i)
+    .parquet_size(column, TRUE) <= .parquet_size(column, FALSE)
+  }, logical(1))
+  do.call(arrow::write_parquet, c(
+    list(table, path, use_dictionary = dictionary, write_statistics = TRUE),
+    .manifest_options()))
+  invisible(path)
+}
+
+
+.check_path_arg <- function(value, arg) {
+  if (!is.character(value) || length(value) != 1L
+      || is.na(value) || !nzchar(value)) {
+    .cozip_stop("`%s` must be a single non-empty string", arg)
+  }
+  invisible(NULL)
 }
 
 
@@ -154,22 +214,33 @@ create <- function(out_path, table, temp_dir = NULL) {
                 paste(class(table), collapse = "/"))
   }
 
-  cols    <- names(table)
+  cols <- names(table)
+  .check_column_names(cols, "input table", "reads manifests")
+
   missing <- setdiff(c("name", "path"), cols)
   if (length(missing) > 0L) {
     .cozip_stop("input table is missing required column(s): %s",
                 paste(shQuote(missing), collapse = ", "))
   }
 
-  reserved <- intersect(.RESERVED_INPUT_COLUMNS, cols)
+  reserved <- cols[tolower(cols) %in% .RESERVED_INPUT_COLUMNS]
   if (length(reserved) > 0L) {
     .cozip_stop(
-      "input table must not contain reserved column(s) %s; the binding computes them",
-      paste(shQuote(reserved), collapse = ", ")
+      "input table must not contain reserved column(s) %s; the binding computes them (names are compared without case)",
+      .quoted_list(reserved)
     )
   }
 
   if (table$num_rows == 0L) .cozip_stop("empty entry list")
+
+  # Dictionary-encoded strings (R factors) also hold strings.
+  for (col in c("name", "path")) {
+    type <- table$schema$GetFieldByName(col)$type
+    values <- if (inherits(type, "DictionaryType")) type$value_type else type
+    if (!.is_string_type(values)) {
+      .cozip_stop("`%s` column must contain strings, got %s", col, type$ToString())
+    }
+  }
 
   names_v <- as.character(table[["name"]])
   paths_v <- as.character(table[["path"]])
@@ -264,6 +335,7 @@ create <- function(out_path, table, temp_dir = NULL) {
 .check_parquet_schema <- function(parquet_path) {
   schema <- arrow::ParquetFileReader$create(parquet_path)$GetSchema()
   cols   <- names(schema)
+  .check_column_names(cols, "metadata parquet", "reads manifests")
 
   if ("path" %in% cols) {
     .cozip_stop(
@@ -271,21 +343,42 @@ create <- function(out_path, table, temp_dir = NULL) {
     )
   }
 
-  protected <- intersect(.PROTECTED_LOCATION_COLUMNS, cols)
+  protected <- cols[tolower(cols) %in% .PROTECTED_LOCATION_COLUMNS]
   if (length(protected) > 0L) {
     .cozip_stop(
       "metadata parquet must not contain reader-owned column(s): %s",
-      paste(shQuote(protected), collapse = ", ")
+      .quoted_list(protected)
     )
   }
 
   missing <- setdiff(.REQUIRED_METADATA_COLUMNS, cols)
   if (length(missing) > 0L) {
     .cozip_stop("metadata parquet is missing required column(s): %s",
-                paste(shQuote(missing), collapse = ", "))
+                .quoted_list(missing))
+  }
+
+  # Spec 13.3: name is a string, offset and size are uint64.
+  name_type <- schema$GetFieldByName("name")$type
+  if (!.is_string_type(name_type)) {
+    .cozip_stop("metadata parquet column 'name' must be a string, got %s",
+                name_type$ToString())
+  }
+  for (col in c("offset", "size")) {
+    type <- schema$GetFieldByName(col)$type$ToString()
+    if (!identical(type, "uint64")) {
+      .cozip_stop(
+        "metadata parquet column '%s' must be uint64 (cozip spec 13.3), got %s",
+        col, type
+      )
+    }
   }
 
   invisible(NULL)
+}
+
+
+.is_string_type <- function(type) {
+  type$ToString() %in% c("string", "large_string")
 }
 
 

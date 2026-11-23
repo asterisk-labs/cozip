@@ -21,7 +21,10 @@ write(out_path, table, temp_dir = NULL)
 Absolute path of the created archive.
 }
 \description{
-Wraps \code{\link[=stage_metadata]{stage_metadata()}} + \code{\link[arrow:write_parquet]{arrow::write_parquet()}} +
-\code{\link[=stage_create]{stage_create()}}. For GeoParquet or custom write options, use
-the staging functions directly.
+Plans the archive as \code{\link[=stage_metadata]{stage_metadata()}} does, writes the manifest
+with \code{\link[arrow:write_parquet]{arrow::write_parquet()}} and packs the archive with the sizes it
+planned, so a source that changes in between is an error. The manifest
+is compressed with zstd, and each column is dictionary encoded only when
+that writes its first rows smaller. For GeoParquet or custom write
+options, use the staging functions directly.
 }
