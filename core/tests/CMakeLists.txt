@@ -11,19 +11,16 @@ foreach(test_spec IN LISTS COZIP_TESTS)
 
     add_executable(${test_target} ${test_source})
     target_link_libraries(${test_target} PRIVATE cozip::cozip)
-    target_compile_features(${test_target} PRIVATE c_std_11)
+    cozip_apply_options(${test_target})
     target_compile_definitions(${test_target} PRIVATE
         COZIP_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 
-    if(MSVC)
-        target_compile_options(${test_target} PRIVATE
-            /W4 /permissive- /D_CRT_SECURE_NO_WARNINGS)
-    else()
-        target_compile_options(${test_target} PRIVATE
-            -Wall -Wextra -Wpedantic -Wshadow)
-    endif()
-
     add_test(NAME ${test_name} COMMAND ${test_target})
+    # UBSan reports and continues by default; stop so the test fails.
+    if(COZIP_SANITIZE)
+        set_tests_properties(${test_name} PROPERTIES
+            ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
 
     # Windows does not search the parent build directory for dependent DLLs
     # when CTest launches an executable from build/tests.

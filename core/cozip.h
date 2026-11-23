@@ -1,8 +1,9 @@
-/* cozip 1.1 writer and Flat reader C ABI.
+/* cozip writer and Flat reader C ABI.
  *
  * Archive names are null-terminated ASCII. Paths are UTF-8. Functions return
- * cozip_status_t and populate err when non-NULL. Outputs are unspecified on
- * failure. See the cozip 1.1 spec for the file format.
+ * cozip_status_t and populate err when non-NULL; on success err->code is
+ * COZIP_OK and err->message is empty. Outputs are unspecified on failure.
+ * SPEC.md (specification 0.1.0, binary format version 1) defines the format.
  */
 
 #ifndef COZIP_H_
@@ -91,11 +92,21 @@ COZIP_API const char *cozip_version_string(void);
 typedef enum cozip_status {
     COZIP_OK = 0,
 
-    /* Format-integrity errors: the archive itself is wrong. */
-    COZIP_ERR_INVALID_LFH       = 1,
-    COZIP_ERR_ARCHIVE_TOO_SMALL = 2,
-    COZIP_ERR_INVALID_INDEX     = 3,
-    COZIP_ERR_PROFILE           = 4,
+    /* Format-integrity errors: the archive itself is wrong. Where the spec
+     * names the failure (section 9), the status string is that name. */
+    COZIP_ERR_INVALID_LFH           = 1,
+    COZIP_ERR_ARCHIVE_TOO_SMALL     = 2,
+    COZIP_ERR_INVALID_INDEX         = 3,   /* index shape, e.g. not a Flat index */
+    COZIP_ERR_PROFILE               = 4,   /* not the profile the call needs */
+    COZIP_ERR_INVALID_MAGIC         = 5,
+    COZIP_ERR_UNSUPPORTED_VERSION   = 6,
+    COZIP_ERR_HASH_MISMATCH         = 7,
+    COZIP_ERR_TRUNCATED_INDEX       = 8,
+    COZIP_ERR_DUPLICATE_NAME        = 9,
+    COZIP_ERR_INVALID_NAME          = 10,
+    COZIP_ERR_MISSING_ENTRY         = 11,
+    COZIP_ERR_INVALID_OFFSET        = 12,
+    COZIP_ERR_INVALID_ZIP_STRUCTURE = 13,
 
     /* Caller-side errors. */
     COZIP_ERR_INVALID_ARGUMENT  = 100,
@@ -211,7 +222,8 @@ COZIP_API cozip_status_t cozip_index_payload_size(const cozip_entry_t *entries,
                                                   size_t *out_size,
                                                   cozip_error_t *err);
 
-/* Serialize in_index entries into out, preserving entry order.
+/* Serialize in_index entries into out, preserving entry order. profile must
+ * be NONE, FLAT or TACO; values 3-255 are reserved by spec 12.1.
  * Returns BUFFER_TOO_SMALL when out_size is insufficient.
  */
 COZIP_API cozip_status_t cozip_build_index_payload(const cozip_entry_t *entries,
@@ -226,10 +238,12 @@ COZIP_API cozip_status_t cozip_build_index_payload(const cozip_entry_t *entries,
 COZIP_API void cozip_build_extra_field(uint8_t out[COZIP_EXTRA_FIELD_SIZE]);
 
 
-/* Write STORE entries planned by cozip_plan and verify the resulting LFHs and
- * EOCD. The integrity hash remains zero; patch it separately. Invalid inputs
- * are rejected before out_path is replaced. A failed verification removes the
- * new file when possible.
+/* Write STORE entries planned by cozip_plan and verify the resulting LFHs,
+ * end records and ZIP64 records. The integrity hash remains zero; patch it
+ * separately. Invalid inputs, and layouts the vendored libzip cannot record
+ * (an LFH or the Central Directory starting at byte 0xFFFFFFFF, or exactly
+ * 65,535 entries), are rejected before out_path is replaced. A failed
+ * verification removes the new file when possible.
  */
 COZIP_API cozip_status_t cozip_write_archive(const char *out_path,
                                              const cozip_entry_t *entries,
@@ -239,7 +253,9 @@ COZIP_API cozip_status_t cozip_write_archive(const char *out_path,
                                              cozip_error_t *err);
 
 /* Patch bytes 43..50 with FNV-1a 64 over the index and trailing 32 KiB.
- * Returns ARCHIVE_TOO_SMALL, INVALID_ARGUMENT or IO.
+ * The file must start with the 51-byte __cozip__ header whose sizes equal
+ * index_payload_size. Returns ARCHIVE_TOO_SMALL, INVALID_LFH,
+ * INVALID_ARGUMENT or IO.
  */
 COZIP_API cozip_status_t cozip_patch_integrity_hash(const char *archive_path,
                                                     size_t index_payload_size,
@@ -259,9 +275,12 @@ COZIP_API uint64_t cozip_predict_zip32_archive_size(
 COZIP_API uint64_t cozip_required_padding_payload(uint64_t predicted);
 
 
-/* Plan, pad, build the index, write and patch the hash.
- * capacity must be at least n_entries + 1. TACO priority entries must form a
- * final contiguous block and may shift right when padding is inserted.
+/* Plan and write a profile-valid archive, then patch its integrity hash.
+ * capacity must be at least n_entries + 1. Flat requires one indexed
+ * __metadata__; TACO requires a final indexed priority block (spec 13.2,
+ * 14.2-14.3). Padding handles the minimum size and libzip's ZIP32 boundary
+ * cases. The completed archive replaces out_path by rename.
+ * On return, entries[] may contain a padding slot with a freed buffer.
  */
 COZIP_API cozip_status_t cozip_finalize(const char *out_path,
                                         cozip_entry_t *entries,
@@ -328,7 +347,7 @@ COZIP_API cozip_status_t cozip_write_flat(const char *out_path,
                                           cozip_error_t *err);
 
 
-/* FLAT-profile reader.
+/* Reader.
  *
  * source is a local path, an http(s), s3, s3a, s3n, gs, gcs, az, azure, abfs,
  * abfss, hf or source URL, or a GDAL /vsi path. Credentials come from the
@@ -348,12 +367,21 @@ COZIP_API cozip_status_t cozip_read_flat_metadata(const char *source,
                                                   size_t *out_size,
                                                   char **out_error);
 
-/* GDAL path of source that cozip:location appends after
- * "/vsisubfile/<offset>_<size>,". Remote URLs map to /vsicurl/, /vsis3/,
- * /vsigs/, /vsiaz/ and /vsiadls/; hf:// maps to a /vsicurl/ resolve URL that
- * keeps an explicit @revision. Anything else, such as a local path, r2:// or
- * source://, is returned unchanged.
- * *out_base is released with cozip_free.
+/* Check the access path of any cozip, whatever its profile (spec 8.5 and 7): the
+ * 51-byte __cozip__ header, the archive size, the index header and its five
+ * sections, every indexed name (5.3) and range (7.5), the integrity hash and
+ * the comment-free end record. Reads the first 64 KiB and the last 32 KiB at
+ * once, and the rest of the index only when it runs past the first 64 KiB;
+ * does not parse the Central Directory, check payloads or enforce profile rules.
+ * Returns COZIP_OK when these checks pass, or the first failing status. Returns
+ * UNSUPPORTED when the library was built without COZIP_READER.
+ */
+COZIP_API cozip_status_t cozip_verify(const char *source, char **out_error);
+
+/* GDAL archive path appended to "/vsisubfile/<offset>_<size>,".
+ * Maps HTTP and cloud URLs to their VSI paths; expands file:// and ~/ to
+ * local paths. Relative and /vsi paths pass through. The caller frees
+ * *out_base with cozip_free.
  */
 COZIP_API cozip_status_t cozip_location_base(const char *source,
                                              char **out_base,

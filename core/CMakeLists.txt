@@ -6,10 +6,17 @@ cmake_minimum_required(VERSION 3.21)
 # Python wheel, R package, Julia package, and npm package) read the
 # same file so they cannot drift apart.
 #
-# CalVer of the form YYYY.M.D parses fine into CMake's MAJOR.MINOR.PATCH.
+# VERSION is CalVer YYYY.M.D without leading zeros (`make check` enforces the
+# same rule), which parses into CMake's MAJOR.MINOR.PATCH. Suffixes such as
+# -rc1 are not versions here.
 
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" COZIP_VERSION_RAW)
 string(STRIP "${COZIP_VERSION_RAW}" COZIP_VERSION)
+if(NOT COZIP_VERSION MATCHES "^[0-9][0-9][0-9][0-9]\\.([1-9]|1[0-2])\\.([1-9]|[12][0-9]|3[01])$")
+    message(FATAL_ERROR
+        "VERSION '${COZIP_VERSION}' is not CalVer YYYY.M.D without leading "
+        "zeros (for example 2026.9.27)")
+endif()
 
 project(cozip
     VERSION      ${COZIP_VERSION}
@@ -27,15 +34,42 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 # IMPORTANT: do NOT set CMAKE_C_STANDARD / CMAKE_C_EXTENSIONS / warning
-# flags / visibility presets globally — those would propagate to the
+# flags / visibility presets globally; those would propagate to the
 # vendored zlib and libzip subdirectories and break their builds. All
-# such options are applied to the cozip target only, further down.
+# such options go through cozip_apply_options(), which only cozip and its
+# tests call.
 
 option(COZIP_INSTALL     "Generate install / export targets" ON)
 option(COZIP_BUILD_TESTS "Build the test suite"              OFF)
 # The Flat reader fetches bytes through the vendored karu, which needs C++23,
 # libcurl and OpenSSL. OFF keeps a writer-only C library with no system deps.
 option(COZIP_READER      "Build the Flat reader"             ON)
+# AddressSanitizer and UndefinedBehaviorSanitizer for cozip, its tests and
+# karu. GCC and Clang only.
+option(COZIP_SANITIZE    "Build with ASan and UBSan"         OFF)
+
+if(COZIP_SANITIZE AND MSVC)
+    message(FATAL_ERROR "COZIP_SANITIZE needs GCC or Clang")
+endif()
+
+# Warning and sanitizer flags shared by cozip and its tests.
+# cozip_apply_options() applies them, so they never reach the vendored
+# zlib and libzip.
+if(MSVC)
+    set(COZIP_WARNING_FLAGS /W4 /permissive- /D_CRT_SECURE_NO_WARNINGS)
+else()
+    set(COZIP_WARNING_FLAGS -Wall -Wextra -Wpedantic -Wshadow)
+endif()
+set(COZIP_SANITIZE_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer)
+
+function(cozip_apply_options target)
+    target_compile_features(${target} PRIVATE c_std_11)
+    target_compile_options(${target} PRIVATE ${COZIP_WARNING_FLAGS})
+    if(COZIP_SANITIZE)
+        target_compile_options(${target} PRIVATE ${COZIP_SANITIZE_FLAGS})
+        target_link_options(${target} PRIVATE ${COZIP_SANITIZE_FLAGS})
+    endif()
+endfunction()
 
 
 # ----------------------------------------------------------------------
@@ -49,7 +83,7 @@ configure_file(
 
 
 # ----------------------------------------------------------------------
-# Vendored deps — sources live in core/zlib/ and core/libzip/
+# Vendored deps: sources live in core/zlib/ and core/libzip/
 #
 # These are NOT downloaded at build time. They are committed to the
 # repo so this project is standalone (no FetchContent, no network in
@@ -60,7 +94,7 @@ configure_file(
 #   2. Update zipconf.h, zip_err_str.c, zconf.h from the upstream build.
 #   3. Diff core/libzip/config.h against the new cmake-config.h.in.
 #   4. Run `make lib` and fix anything that breaks.
-#   5. Commit. No script, no automation — once or twice a year.
+#   5. Commit. No script, no automation, once or twice a year.
 #
 # add_subdirectory() runs core/{zlib,libzip}/CMakeLists.txt, which
 # define the `zlibstatic` and `zip` static-library targets and the
@@ -80,6 +114,11 @@ if(COZIP_READER)
     enable_language(CXX)
     set(KARU_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
     set(KARU_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    # A normal variable shadows karu's KARU_SANITIZE cache entry (CMP0126),
+    # so turning COZIP_SANITIZE off again leaves no stale value behind.
+    if(COZIP_SANITIZE)
+        set(KARU_SANITIZE "address,undefined")
+    endif()
     add_subdirectory(karu EXCLUDE_FROM_ALL)
 endif()
 
@@ -109,18 +148,10 @@ if(COZIP_READER)
     endif()
 endif()
 
-# C standard — applied only to cozip, NOT propagated to vendored deps.
-target_compile_features(cozip PRIVATE c_std_11)
-
-# Strict warnings for our own code only. libzip and zlib silence their
-# own warnings inside their CMakeLists, so this list applies only here.
-if(MSVC)
-    target_compile_options(cozip PRIVATE
-        /W4 /permissive- /D_CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(cozip PRIVATE
-        -Wall -Wextra -Wpedantic -Wshadow)
-endif()
+# C standard, strict warnings and sanitizers for our own code only, NOT
+# propagated to vendored deps. libzip and zlib silence their own warnings
+# inside their CMakeLists.
+cozip_apply_options(cozip)
 
 # Symbol visibility.
 #
@@ -144,7 +175,7 @@ target_include_directories(cozip
         $<INSTALL_INTERFACE:include>)
 
 # Link the vendored libzip statically. libzip in turn pulls in zlib
-# via its PUBLIC link to ZLIB::ZLIB — we don't need to list zlib here.
+# via its PUBLIC link to ZLIB::ZLIB, so we don't need to list zlib here.
 target_link_libraries(cozip PRIVATE zip)
 
 set_target_properties(cozip PROPERTIES
@@ -171,7 +202,7 @@ elseif(UNIX)
         BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
-# Disable install/export under Emscripten — WASM builds don't get
+# Disable install/export under Emscripten: WASM builds don't get
 # "installed" as system libraries; the .wasm artifact is loaded
 # directly by the host (browser, node, webR). The export set also
 # fails Generate because the static deps (zip, zlibstatic) aren't

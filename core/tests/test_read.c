@@ -18,6 +18,10 @@ static int failures = 0;
         }                                                                    \
     } while (0)
 
+static uint16_t read_u16(const uint8_t *p) {
+    return (uint16_t)(p[0] | (p[1] << 8));
+}
+
 static uint32_t read_u32(const uint8_t *p) {
     return (uint32_t)p[0]
          | ((uint32_t)p[1] << 8)
@@ -187,16 +191,23 @@ static void expect_patched_error(const uint8_t *archive, size_t archive_size,
 
 static void test_reads_flat_metadata(void) {
     /* Small, tail and middle placements: the manifest comes from the head
-     * read, from the hash window, or from its own range request. */
+     * read, from the hash window, from both when they meet, or from its own
+     * range request. */
     static const struct {
         size_t user_size;
         size_t metadata_size;
-        int where; /* 0 head, 1 tail, 2 fetched */
+        int where; /* 0 head, 1 tail, 2 fetched, 3 head and tail together */
     } cases[] = {
         {100, 900, 0},
         {200000, 1500, 1},
+        /* The manifest starts 17 bytes into the hash window, so its local
+         * header lies just before the bytes the tail holds. */
+        {40000, 32560, 1},
         {200000, 45000, 2},
-        {3, 70000, 2},
+        {3, 70000, 3},
+        /* Fetched, with a local header closer to the index than the
+         * reader's look-back. */
+        {3, 100000, 2},
     };
     for (size_t i = 0; i < ARRAY_LEN(cases); i++) {
         char path[256];
@@ -219,6 +230,12 @@ static void test_reads_flat_metadata(void) {
             if (cases[i].where == 2) {
                 CHECK(offset + size > 65536u);
                 CHECK(offset < suffix_start);
+                CHECK(suffix_start > 65536u);
+            }
+            if (cases[i].where == 3) {
+                CHECK(offset + size > 65536u);
+                CHECK(offset < suffix_start);
+                CHECK(suffix_start <= 65536u);
             }
         }
 
@@ -270,15 +287,30 @@ static void test_rejects_other_profiles(void) {
         extra[i].source.u.buffer.data = payload;
         extra[i].source.u.buffer.size = sizeof(payload) - 1;
     }
+    /* The writer refuses that layout for profile 1, so write it as profile 0
+     * and mark it Flat by hand. */
     const char *extra_path = COZIP_TEST_DIR "/flat-extra.zip";
     CHECK(cozip_finalize(extra_path, extra, 2, 3, COZIP_PROFILE_FLAT,
+                         &err) == COZIP_ERR_INVALID_ARGUMENT);
+    CHECK(strstr(err.message, "exactly one priority file") != NULL);
+    CHECK(cozip_finalize(extra_path, extra, 2, 3, COZIP_PROFILE_NONE,
                          &err) == COZIP_OK);
+    size_t extra_size = 0;
+    uint8_t *extra_bytes = read_file(extra_path, &extra_size);
+    CHECK(extra_bytes != NULL);
+    if (extra_bytes) {
+        extra_bytes[COZIP_INDEX_OFFSET + 6] = COZIP_PROFILE_FLAT;
+        rehash(extra_bytes, extra_size);
+        CHECK(write_bytes(extra_path, extra_bytes, extra_size));
+        free(extra_bytes);
+    }
     expect_read_error(extra_path, COZIP_ERR_INVALID_INDEX,
-                      "Flat profile requires only '__metadata__' in the index:",
-                      "flat-extra");
+                      "Flat profile requires one index entry, '__metadata__', "
+                      "in 41 bytes; got 2 entries", "flat-extra");
 
-    /* Profile 0 with an index larger than the first 64 KiB read, so the
-     * rest of the index arrives in a second request before the hash. */
+    /* Profile 0 with an index larger than the first 64 KiB read. The
+     * profile byte is in the first bytes, so the reader rejects it without
+     * fetching the rest of the index. */
     enum { N = 4000 };
     static char names[N][8];
     static uint8_t bytes[N];
@@ -320,6 +352,15 @@ static void patch_index_name(uint8_t *a, size_t n) { (void)n; a[30] = 'X'; }
 static void patch_extra(uint8_t *a, size_t n) { (void)n; a[39] = 0; }
 static void patch_magic(uint8_t *a, size_t n) { (void)n; a[51] = 'X'; }
 static void patch_version(uint8_t *a, size_t n) { (void)n; a[55] = 2; }
+static void patch_version_zero(uint8_t *a, size_t n) { (void)n; a[55] = 0; }
+static void patch_offset_in_index(uint8_t *a, size_t n) { (void)n; put_u64(a + 76, 60); }
+static void patch_eocd(uint8_t *a, size_t n) { a[n - 22] = 'X'; }
+static void patch_eocd_comment(uint8_t *a, size_t n) { a[n - 2] = 1; }
+/* The first byte of the name in the local header of __metadata__. */
+static void patch_metadata_header(uint8_t *a, size_t n) {
+    (void)n;
+    a[read_u64(a + 76) - COZIP_FLAT_METADATA_NAME_LEN] = 'X';
+}
 static void patch_hash(uint8_t *a, size_t n) { (void)n; a[43] ^= 1; }
 static void patch_tail(uint8_t *a, size_t n) { a[n - 30] ^= 1; }
 
@@ -394,35 +435,60 @@ static void test_rejects_corrupt_archives(void) {
         {patch_name_length, 0, COZIP_ERR_INVALID_LFH, "LFH does not match cozip layout: "},
         {patch_index_name, 0, COZIP_ERR_INVALID_LFH, "first ZIP entry is not __cozip__: "},
         {patch_extra, 0, COZIP_ERR_INVALID_LFH, "cozip integrity extra field (0xCA0C) missing: "},
-        {patch_magic, 0, COZIP_ERR_INVALID_INDEX, "index payload magic is not 'CZIP': "},
-        {patch_version, 0, COZIP_ERR_INVALID_INDEX, "unsupported cozip format version 2: "},
-        {patch_tiny_payload, 0, COZIP_ERR_INVALID_INDEX, "cozip index payload is smaller than its own header: "},
-        {patch_long_payload, 0, COZIP_ERR_INVALID_INDEX, "cozip index payload is truncated: "},
-        {patch_hash, 0, COZIP_ERR_INVALID_INDEX, "cozip integrity hash mismatch: "},
-        {patch_tail, 0, COZIP_ERR_INVALID_INDEX, "cozip integrity hash mismatch: "},
-        {patch_count, 1, COZIP_ERR_INVALID_INDEX, "cozip index declares more entries than fit in its payload: "},
-        {patch_no_entries, 1, COZIP_ERR_INVALID_INDEX, "cozip index sections do not match its declared size: "},
-        {patch_names_truncated, 1, COZIP_ERR_INVALID_INDEX, "cozip index is truncated in its names: "},
-        {patch_offsets_truncated, 1, COZIP_ERR_INVALID_INDEX, "cozip index is truncated in its offsets: "},
-        {patch_sizes_truncated, 1, COZIP_ERR_INVALID_INDEX, "cozip index is truncated in its sizes: "},
+        {patch_magic, 0, COZIP_ERR_INVALID_MAGIC, "index payload magic is not 'CZIP': "},
+        {patch_version, 0, COZIP_ERR_UNSUPPORTED_VERSION, "unsupported cozip format version 2: "},
+        {patch_version_zero, 0, COZIP_ERR_UNSUPPORTED_VERSION, "unsupported cozip format version 0: "},
+        {patch_tiny_payload, 0, COZIP_ERR_TRUNCATED_INDEX, "cozip index payload of 10 bytes does not fit the archive: "},
+        {patch_long_payload, 0, COZIP_ERR_TRUNCATED_INDEX, "does not fit the archive: "},
+        {patch_hash, 0, COZIP_ERR_HASH_MISMATCH, "cozip integrity hash mismatch: "},
+        {patch_tail, 0, COZIP_ERR_HASH_MISMATCH, "cozip integrity hash mismatch: "},
+        {patch_count, 1, COZIP_ERR_INVALID_INDEX, "Flat profile requires one index entry, '__metadata__', in 41 bytes"},
+        {patch_no_entries, 1, COZIP_ERR_INVALID_INDEX, "Flat profile requires one index entry, '__metadata__', in 41 bytes"},
+        {patch_names_truncated, 1, COZIP_ERR_INVALID_INDEX, "Flat profile requires one index entry, '__metadata__', in 41 bytes"},
+        {patch_offsets_truncated, 1, COZIP_ERR_INVALID_INDEX, "Flat profile requires one index entry, '__metadata__', in 41 bytes"},
+        {patch_sizes_truncated, 1, COZIP_ERR_INVALID_INDEX, "Flat profile requires one index entry, '__metadata__', in 41 bytes"},
         {patch_metadata_name, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
-        {patch_non_ascii, 1, COZIP_ERR_INVALID_INDEX, "' is not ASCII: "},
-        {patch_leading_slash, 1, COZIP_ERR_INVALID_INDEX, "cozip index name '/_metadata__' starts or ends with '/': "},
-        {patch_trailing_slash, 1, COZIP_ERR_INVALID_INDEX, "cozip index name '__metadata_/' starts or ends with '/': "},
-        {patch_drive, 1, COZIP_ERR_INVALID_INDEX, "cozip index name 'c:metadata__' has a drive letter: "},
-        {patch_backslash, 1, COZIP_ERR_INVALID_INDEX, "cozip index name '__meta\\ata__' contains a backslash: "},
-        {patch_dot, 1, COZIP_ERR_INVALID_INDEX, "cozip index name 'a/./b/data__' has a '.' component: "},
-        {patch_dotdot, 1, COZIP_ERR_INVALID_INDEX, "cozip index name 'a/../bdata__' has a '..' component: "},
-        {patch_offset_outside, 1, COZIP_ERR_INVALID_INDEX, "cozip index entry '__metadata__' has a range outside the archive: "},
-        {patch_offset_in_lfh, 1, COZIP_ERR_INVALID_INDEX, "cozip index entry '__metadata__' has a range outside the archive: "},
-        {patch_size_zero, 1, COZIP_ERR_INVALID_INDEX, "cozip index entry '__metadata__' has a range outside the archive: "},
-        {patch_size_past_end, 1, COZIP_ERR_INVALID_INDEX, "cozip index entry '__metadata__' has a range outside the archive: "},
+        {patch_non_ascii, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
+        {patch_leading_slash, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
+        {patch_trailing_slash, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
+        {patch_drive, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
+        {patch_backslash, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
+        {patch_dot, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
+        {patch_dotdot, 1, COZIP_ERR_INVALID_INDEX, "cozip index has no entry named '__metadata__': "},
+        {patch_offset_outside, 1, COZIP_ERR_INVALID_OFFSET, "cozip index entry '__metadata__' has a range outside the archive: "},
+        {patch_offset_in_lfh, 1, COZIP_ERR_INVALID_OFFSET, "cozip index entry '__metadata__' has a range outside the archive: "},
+        {patch_offset_in_index, 1, COZIP_ERR_INVALID_OFFSET, "cozip index entry '__metadata__' has a range outside the archive: "},
+        {patch_size_zero, 1, COZIP_ERR_INVALID_OFFSET, "cozip index entry '__metadata__' has a range outside the archive: "},
+        {patch_size_past_end, 1, COZIP_ERR_INVALID_OFFSET, "cozip index entry '__metadata__' has a range outside the archive: "},
+        {patch_eocd, 1, COZIP_ERR_INVALID_ZIP_STRUCTURE, "comment-free End of Central Directory record: "},
+        {patch_eocd_comment, 1, COZIP_ERR_INVALID_ZIP_STRUCTURE, "comment-free End of Central Directory record: "},
+        {patch_metadata_header, 1, COZIP_ERR_MISSING_ENTRY, "the local header before '__metadata__' does not match the index: "},
     };
     for (size_t i = 0; i < ARRAY_LEN(cases); i++) {
         char line[32];
         snprintf(line, sizeof(line), "corrupt case %zu", i);
         expect_patched_error(archive, size, cases[i].patch, cases[i].rehashed,
                              cases[i].status, cases[i].fragment, line);
+    }
+
+    /* The manifest header is checked wherever the manifest comes from: the
+     * head and tail together, or a fetch that starts at the index end. */
+    static const size_t header_cases[][2] = {{3, 70000}, {3, 100000}};
+    for (size_t i = 0; i < ARRAY_LEN(header_cases); i++) {
+        const char *layout_path = COZIP_TEST_DIR "/header-layout.zip";
+        CHECK(make_flat(layout_path, header_cases[i][0], header_cases[i][1],
+                        NULL));
+        size_t layout_size = 0;
+        uint8_t *layout = read_file(layout_path, &layout_size);
+        CHECK(layout != NULL);
+        if (!layout) continue;
+        char line[32];
+        snprintf(line, sizeof(line), "header layout %zu", i);
+        expect_patched_error(layout, layout_size, patch_metadata_header, 1,
+                             COZIP_ERR_MISSING_ENTRY,
+                             "the local header before '__metadata__' does not "
+                             "match the index", line);
+        free(layout);
     }
 
     /* A prefix of a valid archive is below the minimum size. */
@@ -456,81 +522,12 @@ static void test_rejects_corrupt_archives(void) {
     CHECK(message && !strstr(message, "abc"));
     CHECK(message && strstr(message, "127.0.0.1:1/a.zip"));
     cozip_free(message);
-}
 
-/* A profile 0 archive whose index lists names, read back into memory. */
-static uint8_t *make_none(const char *path, const char *const *names, size_t n,
-                          size_t *out_size) {
-    static uint8_t byte = 7;
-    cozip_entry_t entries[8];
-    memset(entries, 0, sizeof(entries));
-    for (size_t i = 0; i < n; i++) {
-        entries[i].arc_name = names[i];
-        entries[i].payload_size = 1;
-        entries[i].in_index = true;
-        entries[i].source.kind = COZIP_SOURCE_BUFFER;
-        entries[i].source.u.buffer.data = &byte;
-        entries[i].source.u.buffer.size = 1;
-    }
-    cozip_error_t err = {0};
-    if (cozip_finalize(path, entries, n, n + 1, COZIP_PROFILE_NONE, &err)
-        != COZIP_OK) {
-        fprintf(stderr, "finalize: %s\n", err.message);
-        return NULL;
-    }
-    return read_file(path, out_size);
-}
-
-/* Renames index entries in place and expects the reader's message. Names
- * start right after the 2-byte name lengths. */
-static void expect_renamed(const char *const *names, size_t n,
-                           const char *const *renamed, const char *fragment,
-                           const char *line) {
-    const char *path = COZIP_TEST_DIR "/renamed.zip";
-    size_t size = 0;
-    uint8_t *archive = make_none(path, names, n, &size);
-    CHECK(archive != NULL);
-    if (!archive) return;
-    size_t cursor = COZIP_INDEX_OFFSET + COZIP_INDEX_HEADER_SIZE + 2 * n;
-    for (size_t i = 0; i < n; i++) {
-        size_t len = strlen(names[i]);
-        CHECK(memcmp(archive + cursor, names[i], len) == 0);
-        CHECK(strlen(renamed[i]) == len);
-        memcpy(archive + cursor, renamed[i], len);
-        cursor += len;
-    }
-    rehash(archive, size);
-    CHECK(write_bytes(path, archive, size));
-    expect_read_error(path, COZIP_ERR_INVALID_INDEX, fragment, line);
-    free(archive);
-}
-
-static void test_index_names(void) {
-    static const char *const two[] = {"aa", "bb"};
-    static const char *const repeated[] = {"aa", "aa"};
-    expect_renamed(two, 2, repeated, "cozip index lists 'aa' twice: ",
-                   "duplicate");
-
-    static const char *const reserved[] = {"abcdefghi"};
-    static const char *const index_name[] = {"__cozip__"};
-    expect_renamed(reserved, 1, index_name,
-                   "cozip index lists the reserved name '__cozip__': ",
-                   "reserved index");
-    static const char *const padding[] = {"abcdefghijklmnopq"};
-    static const char *const padding_name[] = {"__cozip_padding__"};
-    expect_renamed(padding, 1, padding_name,
-                   "cozip index lists the reserved name '__cozip_padding__': ",
-                   "reserved padding");
-
-    /* The first problem in index order wins: a backslash in the second
-     * entry before the third entry repeating the first. */
-    static const char *const three[] = {"aa", "bb", "cc"};
-    static const char *const both[] = {"aa", "b\\", "aa"};
-    expect_renamed(three, 3, both,
-                   "cozip index name 'b\\' contains a backslash: ", "order");
-    static const char *const late[] = {"cc", "bb", "cc"};
-    expect_renamed(three, 3, late, "cozip index lists 'cc' twice: ",
-                   "later duplicate");
+    /* A password holding '@' is redacted up to the last '@'. */
+    status = cozip_read_flat_metadata("http://user:p@ss@127.0.0.1:1/a.zip",
+                                      &data, &data_size, &message);
+    CHECK(message && !strstr(message, "ss@"));
+    cozip_free(message);
 }
 
 static void test_location_base(void) {
@@ -540,8 +537,8 @@ static void test_location_base(void) {
     } cases[] = {
         {"/data/a.zip", "/data/a.zip"},
         {"relative/a.zip", "relative/a.zip"},
-        {"~/a.zip", "~/a.zip"},
-        {"file:///data/a.zip", "file:///data/a.zip"},
+        {"file:///data/a.zip", "/data/a.zip"},
+        {"file://localhost/data/a.zip", "/data/a.zip"},
         {"https://example.org/a.zip", "/vsicurl/https://example.org/a.zip"},
         {"http://127.0.0.1:8000/a.zip?x=1", "/vsicurl/http://127.0.0.1:8000/a.zip?x=1"},
         {"s3://bucket/key/a.zip", "/vsis3/bucket/key/a.zip"},
@@ -552,6 +549,7 @@ static void test_location_base(void) {
         {"az://container/a.zip", "/vsiaz/container/a.zip"},
         {"azure://container/a.zip", "/vsiaz/container/a.zip"},
         {"abfss://container/a.zip", "/vsiadls/container/a.zip"},
+        {"abfs://container/a.zip", "/vsiadls/container/a.zip"},
         {"hf://datasets/owner/repo/dir/a.zip",
          "/vsicurl/https://huggingface.co/datasets/owner/repo/resolve/main/dir/a.zip"},
         {"hf://datasets/owner/repo@v1.0/a.zip",
@@ -566,7 +564,10 @@ static void test_location_base(void) {
          "/vsicurl/https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"},
         {"/vsis3/bucket/a.zip", "/vsis3/bucket/a.zip"},
         {"r2://bucket/a.zip", "r2://bucket/a.zip"},
-        {"source://account/product/a.zip", "source://account/product/a.zip"},
+        {"source://account/product/a.zip",
+         "/vsicurl/https://data.source.coop/account/product/a.zip"},
+        {"hf://datasets/owner/repo/my file#1.zip",
+         "/vsicurl/https://huggingface.co/datasets/owner/repo/resolve/main/my%20file%231.zip"},
     };
     for (size_t i = 0; i < ARRAY_LEN(cases); i++) {
         char *base = NULL;
@@ -621,6 +622,10 @@ static void test_arguments(void) {
           == COZIP_ERR_INVALID_ARGUMENT);
     CHECK(strcmp(cozip_status_string(COZIP_ERR_PROFILE), "PROFILE") == 0);
     CHECK(strcmp(cozip_status_string(COZIP_ERR_NOT_FOUND), "NOT_FOUND") == 0);
+    CHECK(strcmp(cozip_status_string(COZIP_ERR_HASH_MISMATCH),
+                 "HASH_MISMATCH") == 0);
+    CHECK(strcmp(cozip_status_string(COZIP_ERR_INVALID_ZIP_STRUCTURE),
+                 "INVALID_ZIP_STRUCTURE") == 0);
     cozip_free(NULL);
 }
 
@@ -639,6 +644,13 @@ static void test_home_expansion(void) {
     CHECK(size == 10);
     cozip_free(data);
     cozip_free(message);
+    /* GDAL does not expand ~, so the location names the expanded path. */
+    char *base = NULL;
+    CHECK(cozip_location_base("~/home-archive.zip", &base, &message)
+          == COZIP_OK);
+    CHECK(base && strcmp(base, COZIP_TEST_DIR "/home-archive.zip") == 0);
+    cozip_free(base);
+    cozip_free(message);
     if (saved) {
         setenv("HOME", saved, 1);
         free(saved);
@@ -648,11 +660,281 @@ static void test_home_expansion(void) {
 }
 #endif
 
+/* cozip_verify */
+
+static void set_entry(cozip_entry_t *e, const char *name, const void *data,
+                      size_t size, bool in_index) {
+    memset(e, 0, sizeof(*e));
+    e->arc_name = name;
+    e->payload_size = size;
+    e->in_index = in_index;
+    e->source.kind = COZIP_SOURCE_BUFFER;
+    e->source.u.buffer.data = data;
+    e->source.u.buffer.size = size;
+}
+
+static int finalize_or_report(const char *path, cozip_entry_t *e, size_t n,
+                              cozip_profile_t profile) {
+    cozip_error_t err = {0};
+    cozip_status_t status = cozip_finalize(path, e, n, n + 1, profile, &err);
+    if (status != COZIP_OK) fprintf(stderr, "finalize %s: %s\n", path, err.message);
+    return status == COZIP_OK;
+}
+
+/* Profile 0, three priority files among four entries. */
+static int make_none(const char *path) {
+    static const uint8_t a[] = "first", b[] = "second payload", c[] = "third",
+                         d[] = "fourth!";
+    cozip_entry_t e[5];
+    set_entry(&e[0], "a.bin", a, sizeof(a) - 1, true);
+    set_entry(&e[1], "dir/b.bin", b, sizeof(b) - 1, true);
+    set_entry(&e[2], "c.bin", c, sizeof(c) - 1, false);
+    set_entry(&e[3], "d.bin", d, sizeof(d) - 1, true);
+    return finalize_or_report(path, e, 4, COZIP_PROFILE_NONE);
+}
+
+/* Where entry i of the index lives in an archive: its name, offset and size. */
+typedef struct {
+    size_t name, offset, size;
+    uint16_t len;
+} entry_pos_t;
+
+static entry_pos_t index_entry(const uint8_t *a, uint32_t i) {
+    const size_t lengths = COZIP_INDEX_OFFSET + COZIP_INDEX_HEADER_SIZE;
+    const uint32_t n = read_u32(a + COZIP_INDEX_OFFSET + 7);
+    size_t name = lengths + 2u * n, names_total = 0;
+    for (uint32_t k = 0; k < n; k++) {
+        uint16_t len = read_u16(a + lengths + 2u * k);
+        if (k < i) name += len;
+        names_total += len;
+    }
+    const size_t offsets = lengths + 2u * n + names_total;
+    entry_pos_t pos = {name, offsets + 8u * i, offsets + 8u * n + 8u * i,
+                       read_u16(a + lengths + 2u * i)};
+    return pos;
+}
+
+static void expect_verify(const char *path, cozip_status_t expected,
+                          const char *fragment, const char *line) {
+    char *message = NULL;
+    cozip_status_t status = cozip_verify(path, &message);
+    int ok = status == expected &&
+             (expected == COZIP_OK
+                  ? message == NULL
+                  : message && strstr(message, fragment) && strstr(message, path));
+    if (!ok) {
+        fprintf(stderr, "%s: expected %s with '%s', got %s: %s\n", line,
+                cozip_status_string(expected), fragment ? fragment : "",
+                cozip_status_string(status), message ? message : "(null)");
+        failures++;
+    }
+    cozip_free(message);
+}
+
+static void verify_patched(const uint8_t *archive, size_t size,
+                           void (*patch)(uint8_t *, size_t), int rehashed,
+                           cozip_status_t expected, const char *fragment,
+                           const char *line) {
+    const char *path = COZIP_TEST_DIR "/verify-patched.zip";
+    uint8_t *copy = (uint8_t *)malloc(size);
+    CHECK(copy != NULL);
+    if (!copy) return;
+    memcpy(copy, archive, size);
+    patch(copy, size);
+    if (rehashed) rehash(copy, size);
+    CHECK(write_bytes(path, copy, size));
+    expect_verify(path, expected, fragment, line);
+    free(copy);
+}
+
+static void patch_profile_reserved(uint8_t *a, size_t n) { (void)n; a[57] = 7; }
+static void patch_count_plus_one(uint8_t *a, size_t n) {
+    (void)n;
+    put_u32(a + 58, read_u32(a + 58) + 1);
+}
+static void patch_count_huge(uint8_t *a, size_t n) { (void)n; put_u32(a + 58, 1000); }
+static void patch_trailing_byte(uint8_t *a, size_t n) {
+    (void)n;
+    set_payload_size(a, read_u32(a + 18) + 1);
+}
+static void patch_name_absolute(uint8_t *a, size_t n) {
+    (void)n;
+    a[index_entry(a, 0).name] = '/';
+}
+static void patch_name_high_byte(uint8_t *a, size_t n) {
+    (void)n;
+    a[index_entry(a, 0).name + 1] = 0x80;
+}
+static void patch_name_dotdot(uint8_t *a, size_t n) {
+    (void)n;
+    memcpy(a + index_entry(a, 1).name, "dir/../bn", 9);
+}
+static void patch_name_reserved(uint8_t *a, size_t n) {
+    (void)n;
+    memcpy(a + index_entry(a, 1).name, COZIP_INDEX_NAME, 9);
+}
+static void patch_name_duplicate(uint8_t *a, size_t n) {
+    (void)n;
+    a[index_entry(a, 2).name] = 'a';
+}
+static void patch_entry_offset_outside(uint8_t *a, size_t n) {
+    put_u64(a + index_entry(a, 0).offset, n);
+}
+static void patch_entry_offset_in_index(uint8_t *a, size_t n) {
+    (void)n;
+    put_u64(a + index_entry(a, 0).offset, 60);
+}
+static void patch_entry_size_zero(uint8_t *a, size_t n) {
+    (void)n;
+    put_u64(a + index_entry(a, 2).size, 0);
+}
+static void patch_last_size_zero(uint8_t *a, size_t n) {
+    (void)n;
+    put_u64(a + index_entry(a, read_u32(a + 58) - 1).size, 0);
+}
+
+static void test_verify(void) {
+    /* Intact archives of every profile pass, and so does a reserved
+     * profile value: spec 7.1 lets a reader parse an index it does not
+     * recognise. */
+    const char *flat = COZIP_TEST_DIR "/verify-flat.zip";
+    CHECK(make_flat(flat, 100, 900, NULL));
+    expect_verify(flat, COZIP_OK, NULL, "flat");
+
+    const char *none = COZIP_TEST_DIR "/verify-none.zip";
+    CHECK(make_none(none));
+    expect_verify(none, COZIP_OK, NULL, "profile 0");
+
+    static const uint8_t json[] = "{}", parquet[] = "PAR1", tile[] = "tile";
+    cozip_entry_t taco_entries[4];
+    set_entry(&taco_entries[0], "DATA/a.bin", tile, sizeof(tile) - 1, false);
+    set_entry(&taco_entries[1], COZIP_TACO_COLLECTION_NAME, json,
+              sizeof(json) - 1, true);
+    set_entry(&taco_entries[2], "METADATA/level0.parquet", parquet,
+              sizeof(parquet) - 1, true);
+    const char *taco = COZIP_TEST_DIR "/verify-taco.zip";
+    CHECK(finalize_or_report(taco, taco_entries, 3, COZIP_PROFILE_TACO));
+    expect_verify(taco, COZIP_OK, NULL, "taco");
+
+    size_t size = 0;
+    uint8_t *archive = read_file(none, &size);
+    CHECK(archive != NULL);
+    if (!archive) return;
+    verify_patched(archive, size, patch_profile_reserved, 1, COZIP_OK, NULL,
+                   "reserved profile");
+
+    /* One case per rule, in the order the checks run. */
+    static const struct {
+        void (*patch)(uint8_t *, size_t);
+        int rehashed;
+        cozip_status_t status;
+        const char *fragment;
+    } cases[] = {
+        {patch_signature, 0, COZIP_ERR_INVALID_LFH, "byte 0 is not a ZIP Local File Header"},
+        {patch_long_payload, 0, COZIP_ERR_TRUNCATED_INDEX, "does not fit the archive"},
+        {patch_magic, 0, COZIP_ERR_INVALID_MAGIC, "magic is not 'CZIP'"},
+        {patch_version, 0, COZIP_ERR_UNSUPPORTED_VERSION, "version 2"},
+        {patch_hash, 0, COZIP_ERR_HASH_MISMATCH, "integrity hash mismatch"},
+        {patch_tail, 0, COZIP_ERR_HASH_MISMATCH, "integrity hash mismatch"},
+        {patch_name_absolute, 0, COZIP_ERR_HASH_MISMATCH, "integrity hash mismatch"},
+        {patch_eocd_comment, 1, COZIP_ERR_INVALID_ZIP_STRUCTURE, "comment-free End of Central Directory"},
+        {patch_count_huge, 1, COZIP_ERR_TRUNCATED_INDEX, "cannot hold 1000 entries"},
+        {patch_count_plus_one, 1, COZIP_ERR_TRUNCATED_INDEX, "entries need"},
+        {patch_trailing_byte, 1, COZIP_ERR_INVALID_INDEX, "holds only"},
+        {patch_name_absolute, 1, COZIP_ERR_INVALID_NAME, "entry 0 name must be relative"},
+        {patch_name_high_byte, 1, COZIP_ERR_INVALID_NAME, "entry 0 name contains non-ASCII bytes"},
+        {patch_name_dotdot, 1, COZIP_ERR_INVALID_NAME, "entry 1 name contains a '.' or '..'"},
+        {patch_name_reserved, 1, COZIP_ERR_INVALID_NAME, "reserved name '__cozip__'"},
+        {patch_entry_offset_outside, 1, COZIP_ERR_INVALID_OFFSET, "entry 0 ('a.bin') has a range outside"},
+        {patch_entry_offset_in_index, 1, COZIP_ERR_INVALID_OFFSET, "entry 0 ('a.bin') has a range outside"},
+        {patch_entry_size_zero, 1, COZIP_ERR_INVALID_OFFSET, "entry 2 ('d.bin') has a range outside"},
+        {patch_name_duplicate, 1, COZIP_ERR_DUPLICATE_NAME, "entries 0 and 2 share the name 'a.bin'"},
+    };
+    for (size_t i = 0; i < ARRAY_LEN(cases); i++) {
+        char line[32];
+        snprintf(line, sizeof(line), "verify case %zu", i);
+        verify_patched(archive, size, cases[i].patch, cases[i].rehashed,
+                       cases[i].status, cases[i].fragment, line);
+    }
+
+    const char *small = COZIP_TEST_DIR "/verify-small.zip";
+    CHECK(write_bytes(small, archive, COZIP_MIN_ARCHIVE_SIZE - 1));
+    expect_verify(small, COZIP_ERR_ARCHIVE_TOO_SMALL, "too small", "small");
+    free(archive);
+
+    /* An index that runs past the first 64 KiB is read whole: its sizes
+     * section lies beyond the head, and a change there is hashed and
+     * checked. */
+    enum { MANY = 4000 };
+    static char names[MANY][16];
+    static const uint8_t byte = 7;
+    cozip_entry_t *many = (cozip_entry_t *)calloc(MANY + 1, sizeof(*many));
+    CHECK(many != NULL);
+    if (many) {
+        for (size_t i = 0; i < MANY; i++) {
+            snprintf(names[i], sizeof(names[i]), "e%05zu.bin", i);
+            set_entry(&many[i], names[i], &byte, 1, true);
+        }
+        const char *big = COZIP_TEST_DIR "/verify-big-index.zip";
+        CHECK(finalize_or_report(big, many, MANY, COZIP_PROFILE_NONE));
+        uint8_t *big_archive = read_file(big, &size);
+        CHECK(big_archive != NULL);
+        if (big_archive) {
+            CHECK(COZIP_INDEX_OFFSET + read_u32(big_archive + 18) > 65536u);
+            CHECK(index_entry(big_archive, MANY - 1).size > 65536u);
+            expect_verify(big, COZIP_OK, NULL, "big index");
+            verify_patched(big_archive, size, patch_last_size_zero, 0,
+                           COZIP_ERR_HASH_MISMATCH, "integrity hash mismatch",
+                           "big index, not rehashed");
+            verify_patched(big_archive, size, patch_last_size_zero, 1,
+                           COZIP_ERR_INVALID_OFFSET, "entry 3999 ('e03999.bin')",
+                           "big index, rehashed");
+            free(big_archive);
+        }
+        free(many);
+    }
+
+    /* With two repeated names, the first repeat in index order is named,
+     * not the name that sorts first. */
+    static const uint8_t one = 1;
+    cozip_entry_t four[5];
+    static const char *const four_names[] = {"w.bin", "x.bin", "y.bin", "z.bin"};
+    for (size_t i = 0; i < 4; i++) set_entry(&four[i], four_names[i], &one, 1, true);
+    const char *repeats = COZIP_TEST_DIR "/verify-repeats.zip";
+    CHECK(finalize_or_report(repeats, four, 4, COZIP_PROFILE_NONE));
+    uint8_t *repeat_archive = read_file(repeats, &size);
+    CHECK(repeat_archive != NULL);
+    if (repeat_archive) {
+        static const char *const renamed[] = {"b.bin", "a.bin", "b.bin", "a.bin"};
+        for (uint32_t i = 0; i < 4; i++) {
+            memcpy(repeat_archive + index_entry(repeat_archive, i).name, renamed[i], 5);
+        }
+        rehash(repeat_archive, size);
+        CHECK(write_bytes(repeats, repeat_archive, size));
+        expect_verify(repeats, COZIP_ERR_DUPLICATE_NAME,
+                      "entries 0 and 2 share the name 'b.bin'", "first repeat");
+        free(repeat_archive);
+    }
+
+    /* Transport and argument errors. */
+    char *message = NULL;
+    cozip_status_t status = cozip_verify(COZIP_TEST_DIR "/missing.zip", &message);
+    CHECK(status == COZIP_ERR_IO || status == COZIP_ERR_NOT_FOUND);
+    CHECK(message && strstr(message, "missing.zip"));
+    cozip_free(message);
+    CHECK(cozip_verify(NULL, &message) == COZIP_ERR_INVALID_ARGUMENT);
+    cozip_free(message);
+    CHECK(cozip_verify("", &message) == COZIP_ERR_INVALID_ARGUMENT);
+    cozip_free(message);
+    CHECK(cozip_verify(none, NULL) == COZIP_OK);
+    CHECK(cozip_verify(small, NULL) == COZIP_ERR_ARCHIVE_TOO_SMALL);
+}
+
 int main(void) {
     test_reads_flat_metadata();
     test_rejects_other_profiles();
     test_rejects_corrupt_archives();
-    test_index_names();
+    test_verify();
     test_location_base();
     test_arguments();
 #if !defined(_WIN32)

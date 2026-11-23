@@ -1,25 +1,4 @@
-/*
- * cozip 1.1 writer C ABI, implementation.
- *
- * This file implements the public API declared in cozip.h. The C
- * core only writes archives.
- *
- * The implementation is split into the following sections.
- *
- *   1. Platform shims and includes.
- *   2. Internal constants and build-time guards.
- *   3. Portable 64-bit seek and tell.
- *   4. Version and reserved name accessors.
- *   5. Little-endian byte readers and writers.
- *   6. Error helpers.
- *   7. FNV-1a 64 (internal).
- *   8. Writer-side computation (cozip_plan, payload sizing,
- *      payload serialization, extra field).
- *   9. Disk I/O (hash patching, archive writing).
- *   10. High-level finalize (profile-aware padding + full pipeline).
- *   11. TACO profile (shared path planner + writer).
- *   12. FLAT profile (placeholder plan + finalize wrapper).
- */
+/* cozip writer; the Flat reader is in cozip_read.c. */
 
 
 /* ---- 1. Platform shims and includes ---- */
@@ -59,8 +38,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include <time.h>
+
 #if defined(_WIN32)
 #  include <windows.h>
+#  include <process.h>
+#  define cozip_getpid() ((unsigned long)_getpid())
+#else
+#  include <unistd.h>
+#  define cozip_getpid() ((unsigned long)getpid())
 #endif
 
 
@@ -81,6 +67,12 @@
 #define LFH_SIGNATURE          UINT32_C(0x04034B50)
 #define EOCD_SIGNATURE         UINT32_C(0x06054B50)
 #define EOCD_BASE_SIZE         22u
+#define ZIP64_LOCATOR_SIGNATURE UINT32_C(0x07064B50)
+#define ZIP64_LOCATOR_SIZE     20u
+#define ZIP64_RECORD_SIGNATURE UINT32_C(0x06064B50)
+#define ZIP64_RECORD_SIZE      56u
+/* The 16-bit entry counts of the EOCD hold 0xFFFF when ZIP64 applies. */
+#define ZIP32_COUNT_SENTINEL   0xFFFFu
 #define ZIP64_EXTRA_ID         0x0001u
 #define ZIP64_LFH_EXTRA_DATA   16u
 /* Bits 0 (encrypted), 3 (data descriptor), 6 (strong encryption) and
@@ -188,6 +180,21 @@ static int cozip_remove(const char *path) {
     return result;
 }
 
+/* Replace `to` with `from` in one step, as rename(2) does on POSIX. */
+static int cozip_replace(const char *from, const char *to) {
+    wchar_t *wide_from = cozip_utf8_to_wide(from);
+    wchar_t *wide_to = cozip_utf8_to_wide(to);
+    int result = -1;
+    if (wide_from && wide_to &&
+        MoveFileExW(wide_from, wide_to,
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        result = 0;
+    }
+    free(wide_from);
+    free(wide_to);
+    return result;
+}
+
 static HANDLE cozip_open_handle(const char *path) {
     wchar_t *wide = cozip_utf8_to_wide(path);
     if (!wide) return INVALID_HANDLE_VALUE;
@@ -211,6 +218,10 @@ static FILE *cozip_fopen(const char *path, const char *mode) {
 
 static int cozip_remove(const char *path) {
     return remove(path);
+}
+
+static int cozip_replace(const char *from, const char *to) {
+    return rename(from, to);
 }
 #endif
 
@@ -239,6 +250,15 @@ COZIP_API const char *cozip_status_string(cozip_status_t status) {
         case COZIP_ERR_ARCHIVE_TOO_SMALL: return "ARCHIVE_TOO_SMALL";
         case COZIP_ERR_INVALID_INDEX:     return "INVALID_INDEX";
         case COZIP_ERR_PROFILE:           return "PROFILE";
+        case COZIP_ERR_INVALID_MAGIC:     return "INVALID_MAGIC";
+        case COZIP_ERR_UNSUPPORTED_VERSION: return "UNSUPPORTED_VERSION";
+        case COZIP_ERR_HASH_MISMATCH:     return "HASH_MISMATCH";
+        case COZIP_ERR_TRUNCATED_INDEX:   return "TRUNCATED_INDEX";
+        case COZIP_ERR_DUPLICATE_NAME:    return "DUPLICATE_NAME";
+        case COZIP_ERR_INVALID_NAME:      return "INVALID_NAME";
+        case COZIP_ERR_MISSING_ENTRY:     return "MISSING_ENTRY";
+        case COZIP_ERR_INVALID_OFFSET:    return "INVALID_OFFSET";
+        case COZIP_ERR_INVALID_ZIP_STRUCTURE: return "INVALID_ZIP_STRUCTURE";
         case COZIP_ERR_INVALID_ARGUMENT:  return "INVALID_ARGUMENT";
         case COZIP_ERR_BUFFER_TOO_SMALL:  return "BUFFER_TOO_SMALL";
         case COZIP_ERR_IO:                return "IO";
@@ -310,12 +330,13 @@ static cozip_status_t set_err(cozip_error_t *err, cozip_status_t code,
     return code;
 }
 
-static bool ascii_only(const char *value) {
-    if (!value) return false;
-    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
-        if (*p >= 0x80u) return false;
+/* Public entry points start from a clean error, so a message left by an
+ * earlier failed call never survives a successful one. */
+static void clear_err(cozip_error_t *err) {
+    if (err) {
+        err->code = COZIP_OK;
+        err->message[0] = '\0';
     }
-    return true;
 }
 
 static cozip_status_t validate_path(const char *path,
@@ -332,6 +353,44 @@ static bool ascii_alpha(char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
+/* Spec 5.1.8 and 5.3.1-5.3.5: why the len bytes at name, which need not end
+ * in NUL, are not a valid archive name, or NULL when they are. The reason
+ * reads after "archive name". cozip_verify in cozip_read.c applies the same
+ * rules to index names, so this one function is not static. */
+const char *cozip_internal_name_problem(const char *name, size_t len);
+const char *cozip_internal_name_problem(const char *name, size_t len) {
+    if (len == 0) return "is empty";
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)name[i];
+        if (c == 0 || c >= 0x80u) {
+            return "contains non-ASCII bytes; cozip archive names must be "
+                   "ASCII";
+        }
+    }
+    if (name[0] == '/') return "must be relative, not start with '/'";
+    if (len >= 2 && ascii_alpha(name[0]) && name[1] == ':') {
+        return "must not have a drive-letter prefix";
+    }
+    if (name[len - 1] == '/') {
+        return "ends with '/'; explicit directory entries are not allowed";
+    }
+    if (memchr(name, '\\', len)) {
+        return "contains '\\'; use '/' as the separator";
+    }
+    size_t start = 0;
+    for (size_t i = 0; i <= len; i++) {
+        if (i < len && name[i] != '/') continue;
+        size_t component_len = i - start;
+        if ((component_len == 1 && name[start] == '.') ||
+            (component_len == 2 && name[start] == '.' &&
+             name[start + 1] == '.')) {
+            return "contains a '.' or '..' path component";
+        }
+        start = i + 1;
+    }
+    return NULL;
+}
+
 static cozip_status_t validate_archive_name_syntax(const char *name,
                                                     size_t position,
                                                     cozip_error_t *err) {
@@ -346,46 +405,10 @@ static cozip_status_t validate_archive_name_syntax(const char *name,
                        "bytes (got %zu)",
                        position, len);
     }
-    if (!ascii_only(name)) {
+    const char *problem = cozip_internal_name_problem(name, len);
+    if (problem) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "entry %zu archive name contains non-ASCII bytes; "
-                       "cozip archive names must be ASCII", position);
-    }
-    if (name[0] == '/') {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "entry %zu archive name must be relative, not start "
-                       "with '/'", position);
-    }
-    if (len >= 2 && ascii_alpha(name[0]) && name[1] == ':') {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "entry %zu archive name must not have a drive-letter "
-                       "prefix",
-                       position);
-    }
-    if (name[len - 1] == '/') {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "entry %zu archive name ends with '/'; explicit "
-                       "directory entries are not allowed", position);
-    }
-    if (strchr(name, '\\')) {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "entry %zu archive name contains '\\'; use '/' as "
-                       "the separator", position);
-    }
-
-    const char *component = name;
-    for (const char *p = name;; p++) {
-        if (*p != '/' && *p != '\0') continue;
-        size_t component_len = (size_t)(p - component);
-        if ((component_len == 1 && component[0] == '.') ||
-            (component_len == 2 && component[0] == '.' &&
-             component[1] == '.')) {
-            return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                           "entry %zu archive name contains a '.' or '..' "
-                           "path component", position);
-        }
-        if (*p == '\0') break;
-        component = p + 1;
+                       "entry %zu archive name %s", position, problem);
     }
     return COZIP_OK;
 }
@@ -422,7 +445,7 @@ static cozip_status_t validate_entry_names(const cozip_entry_t *entries,
                            "entry %zu uses reserved name '%s'", i,
                            COZIP_INDEX_NAME);
         }
-        if (indexed_only &&
+        if (entries[i].in_index &&
             strcmp(entries[i].arc_name, COZIP_PADDING_NAME) == 0) {
             free(names);
             return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
@@ -447,8 +470,10 @@ static cozip_status_t validate_entry_names(const cozip_entry_t *entries,
 
 static cozip_status_t stat_file_size(const char *path, uint64_t *out_size,
                                      cozip_error_t *err);
+#if defined(_WIN32)
 static bool same_file_as(const char *path, const char *target,
                          const cozip_stat_t *target_st);
+#endif
 
 /* ---- 7. FNV-1a 64 (internal) ---- */
 
@@ -487,21 +512,28 @@ static bool add_u64(uint64_t a, uint64_t b, uint64_t *out) {
     return true;
 }
 
-cozip_status_t cozip_plan(cozip_entry_t *entries, size_t n,
-                          cozip_error_t *err) {
-    if (n > 0 && !entries) {
+/* Spec 12.1 registers profiles 0, 1 and 2; 3-255 are reserved. */
+static cozip_status_t validate_profile_value(cozip_profile_t profile,
+                                             cozip_error_t *err) {
+    int value = (int)profile;
+    if (value != COZIP_PROFILE_NONE && value != COZIP_PROFILE_FLAT &&
+        value != COZIP_PROFILE_TACO) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "entries must be non-NULL when n > 0");
+                       "profile %d is reserved (cozip spec 12.1); use NONE, "
+                       "FLAT or TACO", value);
     }
+    return COZIP_OK;
+}
 
-    cozip_status_t names_status = validate_entry_names(entries, n, false, err);
-    if (names_status != COZIP_OK) return names_status;
-
+/* Names, source paths and sizes, checked once before any layout work. */
+static cozip_status_t validate_entries(const cozip_entry_t *entries, size_t n,
+                                       cozip_error_t *err) {
+    cozip_status_t s = validate_entry_names(entries, n, false, err);
+    if (s != COZIP_OK) return s;
     for (size_t i = 0; i < n; i++) {
         if (entries[i].source.kind == COZIP_SOURCE_PATH &&
             entries[i].source.u.path) {
-            cozip_status_t s = validate_path(entries[i].source.u.path,
-                                             "source path", err);
+            s = validate_path(entries[i].source.u.path, "source path", err);
             if (s != COZIP_OK) return s;
         }
         /* At exactly 0xFFFFFFFF bytes the vendored libzip writes the
@@ -517,47 +549,12 @@ cozip_status_t cozip_plan(cozip_entry_t *entries, size_t n,
                            "represented in a ZIP local header", i);
         }
     }
-
-    /* The index payload sits between byte 51 and the first user LFH.
-     * Its size is fully determined by the names of the in_index
-     * entries.
-     */
-    size_t idx_payload_size = 0;
-    cozip_status_t s = cozip_index_payload_size(entries, n,
-                                                &idx_payload_size, err);
-    if (s != COZIP_OK) return s;
-
-    uint64_t cursor = (uint64_t)COZIP_INDEX_OFFSET
-                    + (uint64_t)idx_payload_size;
-    for (size_t i = 0; i < n; i++) {
-        uint64_t payload_offset = 0;
-        uint64_t next = 0;
-        uint64_t lfh_size = lfh_size_for(entries[i].arc_name,
-                                         entries[i].payload_size);
-        if (!add_u64(cursor, lfh_size, &payload_offset) ||
-            !add_u64(payload_offset, entries[i].payload_size, &next)) {
-            return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                           "archive layout overflows uint64 at entry %zu", i);
-        }
-        entries[i].lfh_offset     = cursor;
-        entries[i].lfh_size       = lfh_size;
-        entries[i].payload_offset = payload_offset;
-        cursor = next;
-    }
     return COZIP_OK;
 }
 
-cozip_status_t cozip_index_payload_size(const cozip_entry_t *entries, size_t n,
-                                        size_t *out_size,
-                                        cozip_error_t *err) {
-    if (!out_size || (n > 0 && !entries)) {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "out_size and non-empty entries must be non-NULL");
-    }
-
-    cozip_status_t names_status = validate_entry_names(entries, n, true, err);
-    if (names_status != COZIP_OK) return names_status;
-
+/* Index payload size from the in_index names, which are already valid. */
+static cozip_status_t index_size_of(const cozip_entry_t *entries, size_t n,
+                                    size_t *out_size, cozip_error_t *err) {
     uint64_t total = COZIP_INDEX_HEADER_SIZE;
     uint64_t n_indexed = 0;
     for (size_t i = 0; i < n; i++) {
@@ -590,29 +587,34 @@ cozip_status_t cozip_index_payload_size(const cozip_entry_t *entries, size_t n,
     return COZIP_OK;
 }
 
-cozip_status_t cozip_build_index_payload(const cozip_entry_t *entries, size_t n,
-                                         cozip_profile_t profile,
-                                         uint8_t *out, size_t out_size,
-                                         cozip_error_t *err) {
-    int profile_value = (int)profile;
-    if (profile_value < 0 || profile_value > UINT8_MAX) {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "profile must fit in one byte (got %d)", profile_value);
+/* Fill the offsets of entries that are already valid. The index payload
+ * sits between byte 51 and the first entry's local header. */
+static cozip_status_t layout_entries(cozip_entry_t *entries, size_t n,
+                                     size_t idx_payload_size,
+                                     cozip_error_t *err) {
+    uint64_t cursor = (uint64_t)COZIP_INDEX_OFFSET
+                    + (uint64_t)idx_payload_size;
+    for (size_t i = 0; i < n; i++) {
+        uint64_t payload_offset = 0;
+        uint64_t next = 0;
+        uint64_t lfh_size = lfh_size_for(entries[i].arc_name,
+                                         entries[i].payload_size);
+        if (!add_u64(cursor, lfh_size, &payload_offset) ||
+            !add_u64(payload_offset, entries[i].payload_size, &next)) {
+            return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                           "archive layout overflows uint64 at entry %zu", i);
+        }
+        entries[i].lfh_offset     = cursor;
+        entries[i].lfh_size       = lfh_size;
+        entries[i].payload_offset = payload_offset;
+        cursor = next;
     }
+    return COZIP_OK;
+}
 
-    size_t needed = 0;
-    cozip_status_t s = cozip_index_payload_size(entries, n, &needed, err);
-    if (s != COZIP_OK) return s;
-
-    if (!out) {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "index payload output must be non-NULL");
-    }
-    if (out_size < needed) {
-        return set_err(err, COZIP_ERR_BUFFER_TOO_SMALL,
-                       "need %zu bytes, got %zu", needed, out_size);
-    }
-
+/* Serialize the index of entries that are already valid and planned. */
+static void write_index_payload(const cozip_entry_t *entries, size_t n,
+                                cozip_profile_t profile, uint8_t *out) {
     uint32_t n_indexed = 0;
     for (size_t i = 0; i < n; i++) {
         if (entries[i].in_index) n_indexed++;
@@ -624,7 +626,7 @@ cozip_status_t cozip_build_index_payload(const cozip_entry_t *entries, size_t n,
     memcpy(p, COZIP_MAGIC, COZIP_MAGIC_LEN);
     p += COZIP_MAGIC_LEN;
     put_u16(p, COZIP_FORMAT_VERSION); p += 2;
-    *p++ = (uint8_t)profile_value;
+    *p++ = (uint8_t)profile;
     put_u32(p, n_indexed); p += 4;
 
     /* Name lengths */
@@ -652,6 +654,57 @@ cozip_status_t cozip_build_index_payload(const cozip_entry_t *entries, size_t n,
         put_u64(p, entries[i].payload_size);
         p += 8;
     }
+}
+
+cozip_status_t cozip_plan(cozip_entry_t *entries, size_t n,
+                          cozip_error_t *err) {
+    clear_err(err);
+    if (n > 0 && !entries) {
+        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                       "entries must be non-NULL when n > 0");
+    }
+    cozip_status_t s = validate_entries(entries, n, err);
+    if (s != COZIP_OK) return s;
+    size_t idx_payload_size = 0;
+    s = index_size_of(entries, n, &idx_payload_size, err);
+    if (s != COZIP_OK) return s;
+    return layout_entries(entries, n, idx_payload_size, err);
+}
+
+cozip_status_t cozip_index_payload_size(const cozip_entry_t *entries, size_t n,
+                                        size_t *out_size,
+                                        cozip_error_t *err) {
+    clear_err(err);
+    if (!out_size || (n > 0 && !entries)) {
+        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                       "out_size and non-empty entries must be non-NULL");
+    }
+    cozip_status_t s = validate_entry_names(entries, n, true, err);
+    if (s != COZIP_OK) return s;
+    return index_size_of(entries, n, out_size, err);
+}
+
+cozip_status_t cozip_build_index_payload(const cozip_entry_t *entries, size_t n,
+                                         cozip_profile_t profile,
+                                         uint8_t *out, size_t out_size,
+                                         cozip_error_t *err) {
+    clear_err(err);
+    cozip_status_t s = validate_profile_value(profile, err);
+    if (s != COZIP_OK) return s;
+
+    size_t needed = 0;
+    s = cozip_index_payload_size(entries, n, &needed, err);
+    if (s != COZIP_OK) return s;
+
+    if (!out) {
+        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                       "index payload output must be non-NULL");
+    }
+    if (out_size < needed) {
+        return set_err(err, COZIP_ERR_BUFFER_TOO_SMALL,
+                       "need %zu bytes, got %zu", needed, out_size);
+    }
+    write_index_payload(entries, n, profile, out);
     return COZIP_OK;
 }
 
@@ -690,6 +743,7 @@ static cozip_status_t hash_range(FILE *fp, long long start, size_t len,
 cozip_status_t cozip_patch_integrity_hash(const char *archive_path,
                                           size_t index_payload_size,
                                           cozip_error_t *err) {
+    clear_err(err);
     cozip_status_t path_status = validate_path(
         archive_path, "archive path", err);
     if (path_status != COZIP_OK) return path_status;
@@ -715,14 +769,42 @@ cozip_status_t cozip_patch_integrity_hash(const char *archive_path,
                        "archive too small (%lld bytes)", archive_size);
     }
 
-    /* Reject inconsistent index_payload_size before any read */
+    /* Reject inconsistent index_payload_size before any read. The
+     * arithmetic stays in 64 bits so a 32-bit size_t cannot wrap it. */
     if (index_payload_size == 0 ||
-        index_payload_size >
-            (size_t)archive_size - (size_t)COZIP_INDEX_OFFSET) {
+        (uint64_t)index_payload_size >
+            (uint64_t)archive_size - (uint64_t)COZIP_INDEX_OFFSET) {
         fclose(fp);
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                        "index_payload_size out of range (%zu)",
                        index_payload_size);
+    }
+
+    /* Only patch a file that starts with the __cozip__ header this size
+     * belongs to; bytes 43..50 of any other file are not a hash slot. */
+    uint8_t lfh[COZIP_INDEX_OFFSET];
+    if (cozip_fseek64(fp, 0) != 0 || fread(lfh, 1, sizeof(lfh), fp) != sizeof(lfh)) {
+        fclose(fp);
+        return set_err(err, COZIP_ERR_IO, "reading the __cozip__ header failed");
+    }
+    if (get_u32(lfh) != LFH_SIGNATURE || get_u16(lfh + 8) != 0 ||
+        get_u16(lfh + 26) != COZIP_INDEX_NAME_LEN ||
+        get_u16(lfh + 28) != COZIP_EXTRA_FIELD_SIZE ||
+        memcmp(lfh + 30, COZIP_INDEX_NAME, COZIP_INDEX_NAME_LEN) != 0 ||
+        get_u16(lfh + 39) != COZIP_EXTRA_HEADER_ID ||
+        get_u16(lfh + 41) != COZIP_EXTRA_DATA_SIZE) {
+        fclose(fp);
+        return set_err(err, COZIP_ERR_INVALID_LFH,
+                       "'%s' does not start with the __cozip__ header",
+                       archive_path);
+    }
+    if ((uint64_t)get_u32(lfh + 18) != (uint64_t)index_payload_size ||
+        (uint64_t)get_u32(lfh + 22) != (uint64_t)index_payload_size) {
+        fclose(fp);
+        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                       "index_payload_size %zu differs from the __cozip__ "
+                       "header (%u bytes)", index_payload_size,
+                       (unsigned)get_u32(lfh + 18));
     }
 
     /* 1. Hash the index region */
@@ -982,6 +1064,59 @@ static cozip_status_t verify_written_archive(const char *out_path,
         goto done;
     }
 
+    /* The end records must describe the Central Directory that follows the
+     * last payload. A field holding the ZIP32 sentinel is only valid when the
+     * ZIP64 end records carry the real value (spec 5.2.2); libzip 1.11 writes
+     * the sentinel for values equal to the limit without them. */
+    uint64_t entries_total = get_u16(buf + 10);
+    uint64_t cd_size = get_u32(buf + 12);
+    uint64_t cd_offset = get_u32(buf + 16);
+    uint64_t expected_entries = (uint64_t)n + 1;
+    uint64_t cd_end = archive_size - EOCD_BASE_SIZE;
+    if (entries_total == ZIP32_COUNT_SENTINEL ||
+        cd_size == ZIP32_SIZE_THRESHOLD || cd_offset == ZIP32_SIZE_THRESHOLD) {
+        if (archive_size < EOCD_BASE_SIZE + ZIP64_LOCATOR_SIZE) {
+            s = set_err(err, COZIP_ERR_INVALID_LFH,
+                        "post-write check: ZIP64 end records are missing");
+            goto done;
+        }
+        s = read_exact(fp, archive_size - EOCD_BASE_SIZE - ZIP64_LOCATOR_SIZE,
+                       buf, ZIP64_LOCATOR_SIZE, "ZIP64 locator", err);
+        if (s != COZIP_OK) goto done;
+        uint64_t record_offset = get_u64(buf + 8);
+        if (get_u32(buf) != ZIP64_LOCATOR_SIGNATURE ||
+            record_offset > archive_size - ZIP64_RECORD_SIZE) {
+            s = set_err(err, COZIP_ERR_INVALID_LFH,
+                        "post-write check: an end record holds a ZIP32 "
+                        "sentinel but the ZIP64 end records are missing");
+            goto done;
+        }
+        s = read_exact(fp, record_offset, buf, ZIP64_RECORD_SIZE,
+                       "ZIP64 end record", err);
+        if (s != COZIP_OK) goto done;
+        if (get_u32(buf) != ZIP64_RECORD_SIGNATURE) {
+            s = set_err(err, COZIP_ERR_INVALID_LFH,
+                        "post-write check: no ZIP64 end record at %llu",
+                        (unsigned long long)record_offset);
+            goto done;
+        }
+        entries_total = get_u64(buf + 32);
+        cd_size = get_u64(buf + 40);
+        cd_offset = get_u64(buf + 48);
+        cd_end = record_offset;
+    }
+    if (entries_total != expected_entries || cd_offset != cursor ||
+        cd_offset > cd_end || cd_size != cd_end - cd_offset) {
+        s = set_err(err, COZIP_ERR_INVALID_LFH,
+                    "post-write check: end records describe %llu entries and "
+                    "a Central Directory at %llu (%llu bytes); planned %llu "
+                    "entries at %llu", (unsigned long long)entries_total,
+                    (unsigned long long)cd_offset, (unsigned long long)cd_size,
+                    (unsigned long long)expected_entries,
+                    (unsigned long long)cursor);
+        goto done;
+    }
+
 done:
     free(buf);
     if (fclose(fp) != 0 && s == COZIP_OK) {
@@ -1002,65 +1137,98 @@ static cozip_status_t remove_failed_output(const char *out_path,
                    "remain at '%s'", phase, remove_errno, out_path);
 }
 
-cozip_status_t cozip_write_archive(const char *out_path,
-                                   const cozip_entry_t *entries, size_t n,
-                                   const uint8_t *index_payload,
-                                   size_t index_payload_size,
-                                   cozip_error_t *err) {
-    if (!index_payload || (n > 0 && !entries)) {
-        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "index_payload and non-empty entries "
-                       "must be non-NULL");
+/* libzip 1.11 writes the ZIP32 sentinel for an offset or a count that
+ * equals its limit but adds the ZIP64 value only when it exceeds it, which
+ * leaves a Central Directory that ZIP tools cannot read. Planned layouts are
+ * checked for those exact values before anything is written. */
+static uint64_t end_of_payloads(const cozip_entry_t *entries, size_t n,
+                                size_t index_payload_size) {
+    if (n == 0) {
+        return (uint64_t)COZIP_INDEX_OFFSET + (uint64_t)index_payload_size;
     }
-    cozip_status_t path_status = validate_path(
-        out_path, "output path", err);
-    if (path_status != COZIP_OK) return path_status;
-    /* Pre-flight check on the index payload size. The __cozip__ entry
-     * is ZIP32 by spec, so a payload >= 0xFFFFFFFF cannot be written.
-     */
-    if (index_payload_size == 0 ||
-        index_payload_size >= ZIP32_SIZE_THRESHOLD) {
+    return entries[n - 1].payload_offset + entries[n - 1].payload_size;
+}
+
+static cozip_status_t check_zip32_limits(const cozip_entry_t *entries,
+                                         size_t n, size_t index_payload_size,
+                                         cozip_error_t *err) {
+    if ((uint64_t)n + 1 == ZIP32_COUNT_SENTINEL) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                       "index_payload_size out of range (%zu)",
-                       index_payload_size);
+                       "an archive of exactly 65535 entries cannot be "
+                       "recorded by libzip; add or remove one entry");
     }
+    for (size_t i = 0; i < n; i++) {
+        if (entries[i].lfh_offset == ZIP32_SIZE_THRESHOLD) {
+            return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                           "entry %zu ('%s') would start at byte 4294967295, "
+                           "which libzip cannot record; reorder the entries "
+                           "or rename one before it", i, entries[i].arc_name);
+        }
+    }
+    if (end_of_payloads(entries, n, index_payload_size) ==
+        ZIP32_SIZE_THRESHOLD) {
+        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                       "the Central Directory would start at byte "
+                       "4294967295, which libzip cannot record");
+    }
+    return COZIP_OK;
+}
 
-    cozip_status_t names_status = validate_entry_names(entries, n, false, err);
-    if (names_status != COZIP_OK) return names_status;
-    names_status = validate_entry_names(entries, n, true, err);
-    if (names_status != COZIP_OK) return names_status;
-
-    /* Reject unusable sources before the output is touched. */
+/* Source checks shared by both writers: non-empty payloads, sources that
+ * exist and still have their planned size, and no source that is the
+ * output. alias_target is the path whose identity sources are compared
+ * with, or NULL when the caller already checked it. */
+static cozip_status_t check_sources(const cozip_entry_t *entries, size_t n,
+                                    const char *alias_target,
+                                    cozip_error_t *err) {
     cozip_stat_t out_st;
     const cozip_stat_t *out_st_ptr =
-        (cozip_stat(out_path, &out_st) == 0) ? &out_st : NULL;
+        (alias_target && cozip_stat(alias_target, &out_st) == 0) ? &out_st
+                                                                 : NULL;
     for (size_t i = 0; i < n; i++) {
         const cozip_entry_t *e = &entries[i];
-        cozip_status_t name_status = validate_archive_name_syntax(
-            e->arc_name, i, err);
-        if (name_status != COZIP_OK) return name_status;
         if (e->payload_size == 0) {
             return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                            "entry %zu ('%s') has a zero-byte payload; "
                            "cozip entries must be non-empty", i, e->arc_name);
         }
         if (e->source.kind == COZIP_SOURCE_PATH) {
-            if (!e->source.u.path) {
+            const char *path = e->source.u.path;
+            if (!path || path[0] == '\0') {
                 return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                                "entry %zu ('%s') has no source path",
                                i, e->arc_name);
             }
-            uint64_t actual_size = 0;
-            path_status = stat_file_size(e->source.u.path, &actual_size, err);
-            if (path_status != COZIP_OK) return path_status;
-            if (actual_size != e->payload_size) {
+            /* One stat gives the type, the size and the identity. */
+            cozip_stat_t st;
+            if (cozip_stat(path, &st) != 0) {
+                int stat_errno = errno;
+                return set_err(err, COZIP_ERR_IO, "cannot stat '%s': %s",
+                               path, strerror(stat_errno));
+            }
+            if (!S_ISREG(st.st_mode)) {
                 return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                               "entry %zu ('%s') source is %llu bytes, but "
-                               "the planned payload size is %llu", i,
-                               e->arc_name, (unsigned long long)actual_size,
+                               "'%s' is not a regular file", path);
+            }
+            if (st.st_size < 0 || (uint64_t)st.st_size != e->payload_size) {
+                return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                               "entry %zu ('%s') source is %lld bytes, but "
+                               "the planned payload size is %llu; did the "
+                               "file change after planning?", i, e->arc_name,
+                               (long long)st.st_size,
                                (unsigned long long)e->payload_size);
             }
-            if (same_file_as(e->source.u.path, out_path, out_st_ptr)) {
+            bool alias = false;
+            if (alias_target) {
+#if defined(_WIN32)
+                alias = same_file_as(path, alias_target, out_st_ptr);
+#else
+                alias = strcmp(path, alias_target) == 0 ||
+                        (out_st_ptr && st.st_dev == out_st_ptr->st_dev &&
+                         st.st_ino == out_st_ptr->st_ino);
+#endif
+            }
+            if (alias) {
                 return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                                "output path is also the source path for "
                                "entry %zu ('%s')", i, e->arc_name);
@@ -1079,9 +1247,21 @@ cozip_status_t cozip_write_archive(const char *out_path,
                            "entry %zu ('%s') has no source", i, e->arc_name);
         }
     }
+    return COZIP_OK;
+}
 
+/* Write entries that are already valid and planned to out_path with libzip,
+ * then verify the file against the plan. open_flags chooses between
+ * replacing out_path and creating it exclusively. */
+static cozip_status_t write_archive_file(const char *out_path,
+                                         const cozip_entry_t *entries,
+                                         size_t n,
+                                         const uint8_t *index_payload,
+                                         size_t index_payload_size,
+                                         int open_flags,
+                                         cozip_error_t *err) {
     int zerr = 0;
-    zip_t *za = zip_open(out_path, ZIP_CREATE | ZIP_TRUNCATE, &zerr);
+    zip_t *za = zip_open(out_path, open_flags, &zerr);
     if (!za) {
         zip_error_t ze;
         zip_error_init_with_code(&ze, zerr);
@@ -1201,6 +1381,41 @@ cozip_status_t cozip_write_archive(const char *out_path,
 }
 
 
+
+cozip_status_t cozip_write_archive(const char *out_path,
+                                   const cozip_entry_t *entries, size_t n,
+                                   const uint8_t *index_payload,
+                                   size_t index_payload_size,
+                                   cozip_error_t *err) {
+    clear_err(err);
+    if (!index_payload || (n > 0 && !entries)) {
+        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                       "index_payload and non-empty entries "
+                       "must be non-NULL");
+    }
+    cozip_status_t s = validate_path(out_path, "output path", err);
+    if (s != COZIP_OK) return s;
+    /* Pre-flight check on the index payload size. The __cozip__ entry
+     * is ZIP32 by spec, so a payload >= 0xFFFFFFFF cannot be written.
+     */
+    if (index_payload_size == 0 ||
+        index_payload_size >= ZIP32_SIZE_THRESHOLD) {
+        return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                       "index_payload_size out of range (%zu)",
+                       index_payload_size);
+    }
+    s = validate_entry_names(entries, n, false, err);
+    if (s != COZIP_OK) return s;
+    s = check_zip32_limits(entries, n, index_payload_size, err);
+    if (s != COZIP_OK) return s;
+    s = check_sources(entries, n, out_path, err);
+    if (s != COZIP_OK) return s;
+    return write_archive_file(out_path, entries, n, index_payload,
+                              index_payload_size, ZIP_CREATE | ZIP_TRUNCATE,
+                              err);
+}
+
+
 /* ---- 10. High-level finalize ---- */
 
 /* TACO requires every indexed priority entry to form the final contiguous
@@ -1293,12 +1508,132 @@ COZIP_API uint64_t cozip_required_padding_payload(uint64_t predicted) {
     return deficit - COZIP_PADDING_ENTRY_OVERHEAD;
 }
 
+static bool taco_metadata_parquet_name(const char *name);
+
+/* Spec 13.2 and 14.2-14.3: the priority files each profile requires. For
+ * TACO, *out_padding_position is the start of the final priority block,
+ * where padding goes so no data payload moves; otherwise it is n. */
+static cozip_status_t check_profile_rules(const cozip_entry_t *entries,
+                                          size_t n, cozip_profile_t profile,
+                                          size_t *out_padding_position,
+                                          cozip_error_t *err) {
+    *out_padding_position = n;
+    if (profile == COZIP_PROFILE_FLAT) {
+        size_t indexed = 0;
+        size_t position = n;
+        for (size_t i = 0; i < n; i++) {
+            if (entries[i].in_index) {
+                indexed++;
+                position = i;
+            }
+        }
+        if (indexed != 1 ||
+            strcmp(entries[position].arc_name, COZIP_FLAT_METADATA_NAME) != 0) {
+            return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                           "FLAT profile requires exactly one priority file, "
+                           "'%s' (cozip spec 13.2)", COZIP_FLAT_METADATA_NAME);
+        }
+        return COZIP_OK;
+    }
+    if (profile == COZIP_PROFILE_TACO) {
+        cozip_status_t s = taco_priority_start(entries, n,
+                                               out_padding_position, err);
+        if (s != COZIP_OK) return s;
+        bool has_collection = false;
+        for (size_t i = 0; i < n; i++) {
+            if (entries[i].in_index &&
+                strcmp(entries[i].arc_name, COZIP_TACO_COLLECTION_NAME) == 0) {
+                has_collection = true;
+            }
+            if (!entries[i].in_index &&
+                taco_metadata_parquet_name(entries[i].arc_name)) {
+                return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                               "entry %zu ('%s') is a METADATA Parquet and "
+                               "must be a priority file (cozip spec 14.2)",
+                               i, entries[i].arc_name);
+            }
+        }
+        if (!has_collection) {
+            return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                           "TACO profile requires '%s' among the priority "
+                           "files (cozip spec 14.2)",
+                           COZIP_TACO_COLLECTION_NAME);
+        }
+    }
+    return COZIP_OK;
+}
+
+/* Insert the __cozip_padding__ entry at padding_position, or resize it when
+ * it is already there. The entry is never indexed, so the index size does
+ * not change, and only entries after the insertion point move. */
+static cozip_status_t set_padding(cozip_entry_t *entries, size_t *total_n,
+                                  size_t padding_position, bool *has_padding,
+                                  uint8_t **padding_buf, uint64_t payload,
+                                  cozip_error_t *err) {
+    if (payload > SIZE_MAX) {
+        return set_err(err, COZIP_ERR_IO, "padding of %llu bytes is too large",
+                       (unsigned long long)payload);
+    }
+    uint8_t *buf = (uint8_t *)realloc(*padding_buf, (size_t)payload);
+    if (!buf) {
+        return set_err(err, COZIP_ERR_IO,
+                       "padding buffer allocation failed (%llu bytes)",
+                       (unsigned long long)payload);
+    }
+    memset(buf, COZIP_PADDING_FILL_BYTE, (size_t)payload);
+    *padding_buf = buf;
+
+    if (!*has_padding) {
+        if (padding_position < *total_n) {
+            memmove(&entries[padding_position + 1],
+                    &entries[padding_position],
+                    (*total_n - padding_position) * sizeof(*entries));
+        }
+        *total_n += 1;
+        *has_padding = true;
+    }
+    cozip_entry_t *p = &entries[padding_position];
+    memset(p, 0, sizeof(*p));
+    p->arc_name             = COZIP_PADDING_NAME;
+    p->payload_size         = payload;
+    p->in_index             = false;
+    p->source.kind          = COZIP_SOURCE_BUFFER;
+    p->source.u.buffer.data = buf;
+    p->source.u.buffer.size = (size_t)payload;
+    return COZIP_OK;
+}
+
+/* Candidate temporary name beside out_path. ZIP_EXCL handles races. */
+static cozip_status_t temp_output_path(const char *out_path,
+                                       const void *salt, char **out,
+                                       cozip_error_t *err) {
+    size_t cap = strlen(out_path) + 80;
+    char *tmp = (char *)malloc(cap);
+    if (!tmp) return set_err(err, COZIP_ERR_IO, "out of memory");
+    unsigned long mix = (unsigned long)(uintptr_t)salt
+                      ^ (unsigned long)time(NULL)
+                      ^ ((unsigned long)clock() << 7);
+    for (unsigned attempt = 0; attempt < 64; attempt++) {
+        snprintf(tmp, cap, "%s.cozip-tmp-%lu-%lx-%u", out_path,
+                 cozip_getpid(), mix, attempt);
+        cozip_stat_t st;
+        if (cozip_stat(tmp, &st) != 0 && errno == ENOENT) {
+            *out = tmp;
+            return COZIP_OK;
+        }
+    }
+    free(tmp);
+    return set_err(err, COZIP_ERR_IO,
+                   "cannot find a free temporary name next to '%s'", out_path);
+}
+
 COZIP_API cozip_status_t cozip_finalize(const char *out_path,
                                         cozip_entry_t *entries,
                                         size_t n_entries,
                                         size_t capacity,
                                         cozip_profile_t profile,
                                         cozip_error_t *err) {
+    clear_err(err);
     if (!out_path || !entries) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                        "out_path and entries must be non-NULL");
@@ -1308,95 +1643,128 @@ COZIP_API cozip_status_t cozip_finalize(const char *out_path,
                        "capacity (%zu) must be at least n_entries + 1 (%zu)",
                        capacity, n_entries == SIZE_MAX ? SIZE_MAX : n_entries + 1);
     }
+    cozip_status_t s = validate_path(out_path, "output path", err);
+    if (s != COZIP_OK) return s;
+    s = validate_profile_value(profile, err);
+    if (s != COZIP_OK) return s;
 
-    size_t padding_position = n_entries;
-    if (profile == COZIP_PROFILE_TACO) {
-        cozip_status_t s = taco_priority_start(entries, n_entries,
-                                               &padding_position, err);
-        if (s != COZIP_OK) return s;
+    /* The padding entry is the writer's own; no caller entry takes its name
+     * (spec 5.3.7), indexed or not. */
+    for (size_t i = 0; i < n_entries; i++) {
+        if (entries[i].arc_name &&
+            strcmp(entries[i].arc_name, COZIP_PADDING_NAME) == 0) {
+            return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
+                           "entry %zu uses reserved name '%s'", i,
+                           COZIP_PADDING_NAME);
+        }
     }
 
-    cozip_status_t s = cozip_plan(entries, n_entries, err);
+    /* Validate once; everything below works on entries known to be valid. */
+    s = validate_entries(entries, n_entries, err);
     if (s != COZIP_OK) return s;
-
+    size_t padding_position = n_entries;
+    s = check_profile_rules(entries, n_entries, profile, &padding_position,
+                            err);
+    if (s != COZIP_OK) return s;
     size_t idx_size = 0;
-    s = cozip_index_payload_size(entries, n_entries, &idx_size, err);
+    s = index_size_of(entries, n_entries, &idx_size, err);
+    if (s != COZIP_OK) return s;
+    s = layout_entries(entries, n_entries, idx_size, err);
     if (s != COZIP_OK) return s;
 
-    /* FLAT/NONE append padding as before. TACO inserts it immediately before
-     * its final priority block, as required by the profile. In both cases the
-     * non-priority DATA entries precede the insertion point, so their offsets
-     * remain stable after re-planning. idx_size also stays fixed because the
-     * padding entry is never indexed.
-     */
+    /* FLAT/NONE append padding; TACO inserts it immediately before its final
+     * priority block. Either way no data payload moves, and idx_size stays
+     * fixed because the padding entry is never indexed. */
     size_t total_n = n_entries;
+    bool has_padding = false;
     uint8_t *padding_buf = NULL;
+    char *tmp_path = NULL;
+    uint8_t *idx_buf = NULL;
 
     uint64_t pad_payload = cozip_required_padding_payload(
         cozip_predict_zip32_archive_size(entries, n_entries, idx_size));
-
     if (pad_payload > 0) {
-        padding_buf = (uint8_t *)malloc((size_t)pad_payload);
-        if (!padding_buf) {
-            return set_err(err, COZIP_ERR_IO,
-                           "padding buffer allocation failed (%llu bytes)",
-                           (unsigned long long)pad_payload);
-        }
-        memset(padding_buf, COZIP_PADDING_FILL_BYTE, (size_t)pad_payload);
-
-        if (padding_position < n_entries) {
-            memmove(&entries[padding_position + 1],
-                    &entries[padding_position],
-                    (n_entries - padding_position) * sizeof(*entries));
-        }
-
-        cozip_entry_t *p = &entries[padding_position];
-        memset(p, 0, sizeof(*p));
-        p->arc_name             = COZIP_PADDING_NAME;
-        p->payload_size         = pad_payload;
-        p->in_index             = false;
-        p->source.kind          = COZIP_SOURCE_BUFFER;
-        p->source.u.buffer.data = padding_buf;
-        p->source.u.buffer.size = (size_t)pad_payload;
-        total_n = n_entries + 1;
-
-        s = cozip_plan(entries, total_n, err);
-        if (s != COZIP_OK) { free(padding_buf); return s; }
+        s = set_padding(entries, &total_n, padding_position, &has_padding,
+                        &padding_buf, pad_payload, err);
+        if (s != COZIP_OK) goto done;
+        s = layout_entries(entries, total_n, idx_size, err);
+        if (s != COZIP_OK) goto done;
     }
 
-    uint8_t *idx_buf = (uint8_t *)malloc(idx_size);
+    /* Step around the layouts libzip cannot record: one more entry turns a
+     * count of 65,535 into 65,536, and a padding entry, or one more padding
+     * byte, moves a Central Directory or a header in a final TACO block off
+     * byte 0xFFFFFFFF. Whatever remains (a header at that byte before the
+     * padding position) is reported. */
+    for (int round = 0; round < 8; round++) {
+        bool count = (uint64_t)total_n + 1 == ZIP32_COUNT_SENTINEL;
+        bool cd = end_of_payloads(entries, total_n, idx_size) ==
+                  ZIP32_SIZE_THRESHOLD;
+        /* Entries after padding_position move when the padding is inserted
+         * there or grows; the entry at that position does not, because the
+         * padding header takes its place. */
+        bool movable = false;
+        for (size_t i = padding_position + 1; i < total_n; i++) {
+            if (entries[i].lfh_offset == ZIP32_SIZE_THRESHOLD) movable = true;
+        }
+        if ((!count && !cd && !movable) || (count && has_padding)) break;
+        if (cd && !has_padding && padding_position == total_n) {
+            /* Padding appended at the end would itself start at byte
+             * 0xFFFFFFFF. It goes before a final indexed entry instead,
+             * whose offset only the index records (spec 13.2 lets Flat
+             * place __metadata__ anywhere); after a data entry, whose
+             * offset a manifest may already hold, the layout is reported. */
+            if (total_n == 0 || !entries[total_n - 1].in_index) break;
+            padding_position = total_n - 1;
+        }
+        uint64_t next = has_padding
+                      ? entries[padding_position].payload_size + 1 : 1;
+        s = set_padding(entries, &total_n, padding_position, &has_padding,
+                        &padding_buf, next, err);
+        if (s != COZIP_OK) goto done;
+        s = layout_entries(entries, total_n, idx_size, err);
+        if (s != COZIP_OK) goto done;
+    }
+    s = check_zip32_limits(entries, total_n, idx_size, err);
+    if (s != COZIP_OK) goto done;
+
+    /* Every source exists, still has its planned size and is not the
+     * output, compared by file identity against out_path itself. */
+    s = check_sources(entries, total_n, out_path, err);
+    if (s != COZIP_OK) goto done;
+
+    idx_buf = (uint8_t *)malloc(idx_size);
     if (!idx_buf) {
-        free(padding_buf);
-        return set_err(err, COZIP_ERR_IO,
-                       "index buffer allocation failed (%zu bytes)",
-                       idx_size);
+        s = set_err(err, COZIP_ERR_IO,
+                    "index buffer allocation failed (%zu bytes)", idx_size);
+        goto done;
     }
-    s = cozip_build_index_payload(entries, total_n, profile,
-                                  idx_buf, idx_size, err);
+    write_index_payload(entries, total_n, profile, idx_buf);
+
+    /* Verify and hash the temporary archive before replacing out_path. */
+    s = temp_output_path(out_path, entries, &tmp_path, err);
+    if (s != COZIP_OK) goto done;
+    s = write_archive_file(tmp_path, entries, total_n, idx_buf, idx_size,
+                           ZIP_CREATE | ZIP_EXCL, err);
+    if (s != COZIP_OK) goto done;
+    s = cozip_patch_integrity_hash(tmp_path, idx_size, err);
     if (s != COZIP_OK) {
-        free(idx_buf);
-        free(padding_buf);
-        return s;
+        s = remove_failed_output(tmp_path, "integrity-hash patch", s, err);
+        goto done;
+    }
+    if (cozip_replace(tmp_path, out_path) != 0) {
+        int replace_errno = errno;
+        s = set_err(err, COZIP_ERR_IO, "cannot replace '%s': %s", out_path,
+                    strerror(replace_errno));
+        s = remove_failed_output(tmp_path, "replacing the output", s, err);
+        goto done;
     }
 
-    /* Both buffers must outlive the call: libzip references them
-     * via zip_source_buffer (freep=0) until zip_close runs inside.
-     */
-    s = cozip_write_archive(out_path, entries, total_n,
-                            idx_buf, idx_size, err);
+done:
     free(idx_buf);
     free(padding_buf);
-    if (s != COZIP_OK) return s;
-
-    /* The archive was written and verified; a failed hash patch would
-     * leave a structurally valid ZIP with a zero integrity hash, which
-     * cozip-aware readers reject. Remove it so callers never publish it.
-     */
-    s = cozip_patch_integrity_hash(out_path, idx_size, err);
-    if (s != COZIP_OK) {
-        return remove_failed_output(out_path, "integrity-hash patch", s, err);
-    }
-    return COZIP_OK;
+    free(tmp_path);
+    return s;
 }
 
 
@@ -1559,15 +1927,14 @@ static cozip_status_t stat_file_size(const char *path, uint64_t *out_size,
     return COZIP_OK;
 }
 
-/* True when `path` and an existing `target` name the same file. String
- * equality works on every platform. POSIX compares device/inode; Windows
- * compares the volume serial and file index returned for open handles.
- * Both catch hard links and different path spellings.
- */
+/* True when `path` and an existing `target` name the same file, compared
+ * by volume serial and file index on Windows, which also catches hard links
+ * and different spellings. POSIX callers compare st_dev and st_ino from the
+ * stat they already hold (check_sources). */
+#if defined(_WIN32)
 static bool same_file_as(const char *path, const char *target,
                          const cozip_stat_t *target_st) {
     if (strcmp(path, target) == 0) return true;
-#if defined(_WIN32)
     if (!target_st) return false;
     HANDLE path_handle = cozip_open_handle(path);
     HANDLE target_handle = cozip_open_handle(target);
@@ -1587,14 +1954,8 @@ static bool same_file_as(const char *path, const char *target,
     CloseHandle(path_handle);
     CloseHandle(target_handle);
     return same;
-#else
-    cozip_stat_t st;
-    if (target_st && cozip_stat(path, &st) == 0) {
-        return st.st_dev == target_st->st_dev && st.st_ino == target_st->st_ino;
-    }
-#endif
-    return false;
 }
+#endif
 
 static cozip_status_t build_taco_entries(
     const cozip_path_entry_t *files,
@@ -1774,6 +2135,7 @@ COZIP_API cozip_status_t cozip_plan_taco(
     size_t n_priorities,
     cozip_taco_plan_t *out_plan,
     cozip_error_t *err) {
+    clear_err(err);
     return plan_taco(files, n_files, priorities, n_priorities, false,
                      out_plan, err);
 }
@@ -1785,6 +2147,7 @@ COZIP_API cozip_status_t cozip_plan_taco_sized(
     size_t n_priorities,
     cozip_taco_plan_t *out_plan,
     cozip_error_t *err) {
+    clear_err(err);
     return plan_taco(files, n_files, priorities, n_priorities, true,
                      out_plan, err);
 }
@@ -1797,6 +2160,7 @@ COZIP_API cozip_status_t cozip_write_taco(
     size_t n_priorities,
     const cozip_taco_plan_t *plan,
     cozip_error_t *err) {
+    clear_err(err);
     if (!out_path || !plan) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                        "out_path and plan must be non-NULL");
@@ -1845,21 +2209,8 @@ COZIP_API cozip_status_t cozip_write_taco(
         }
     }
 
-    /* Never let libzip replace one of its own inputs. When out_path
-     * already exists, compare file identity too, not only spelling. */
-    cozip_stat_t out_st;
-    const cozip_stat_t *out_st_ptr =
-        (cozip_stat(out_path, &out_st) == 0) ? &out_st : NULL;
-    for (size_t i = 0; i < total; i++) {
-        if (same_file_as(entries[i].source.u.path, out_path, out_st_ptr)) {
-            s = set_err(err, COZIP_ERR_INVALID_ARGUMENT,
-                        "output path is also source path for TACO entry %zu",
-                        i);
-            free(entries);
-            return s;
-        }
-    }
-
+    /* cozip_finalize refuses a source that is out_path itself, by file
+     * identity, before anything is written. */
     s = cozip_finalize(out_path, entries, total, total + 1,
                        COZIP_PROFILE_TACO, err);
     free(entries);
@@ -1909,6 +2260,7 @@ static cozip_status_t reject_flat_reserved_names(const cozip_entry_t *entries,
 COZIP_API cozip_status_t cozip_plan_flat(cozip_entry_t *entries,
                                          size_t n_users,
                                          cozip_error_t *err) {
+    clear_err(err);
     if (!entries) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                        "entries must be non-NULL");
@@ -1943,6 +2295,7 @@ COZIP_API cozip_status_t cozip_write_flat(const char *out_path,
                                           size_t capacity,
                                           const char *metadata_path,
                                           cozip_error_t *err) {
+    clear_err(err);
     if (!out_path || !entries || !metadata_path) {
         return set_err(err, COZIP_ERR_INVALID_ARGUMENT,
                        "out_path, entries and metadata_path must be non-NULL");
