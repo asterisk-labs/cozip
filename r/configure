@@ -1,5 +1,5 @@
 #!/bin/sh
-# Writes src/Makevars from src/Makevars.in.
+# Writes src/version.h from DESCRIPTION and src/Makevars from src/Makevars.in.
 #
 # The Flat reader compiles the vendored karu (C++23) and links libcurl and
 # OpenSSL, found with pkg-config. webR has neither, so an Emscripten build
@@ -9,6 +9,15 @@ set -eu
 
 : "${R_HOME:=$(R RHOME)}"
 CC=$("${R_HOME}/bin/R" CMD config CC)
+
+# cozip.c includes version.h; the version comes from DESCRIPTION, which make
+# sync keeps equal to the repository VERSION.
+version=$(sed -n 's/^Version:[[:space:]]*//p' DESCRIPTION | tr -d '[:space:]')
+if [ -z "$version" ]; then
+    echo "configure: DESCRIPTION has no Version field" >&2
+    exit 1
+fi
+printf '#ifndef COZIP_VERSION_H\n#define COZIP_VERSION_H\n#define COZIP_VERSION_STRING "%s"\n#endif\n' "$version" > src/version.h
 
 cxx_std=
 reader_cppflags=

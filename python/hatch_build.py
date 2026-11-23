@@ -23,11 +23,44 @@ class CustomBuildHook(BuildHookInterface):
         # Source builds compile the copy of core/ carried by the sdist.
         if not lib_path.is_file():
             _compile_native(_native_source(root), lib_path)
+        self._check_library_version(lib_path, self.metadata.version)
 
         # CFFI uses dlopen rather than the CPython extension ABI. The wheel is
         # py3-none, but it is still tied to an OS and architecture.
         build_data["pure_python"] = False
         build_data["tag"] = f"py3-none-{_platform_tag()}"
+
+    def _check_library_version(self, lib_path: Path, expected: str) -> None:
+        """Check a loadable library's version in a child interpreter.
+
+        Libraries that cannot load here are packaged with a warning.
+        """
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", _VERSION_PROBE, str(lib_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            self.app.display_warning(
+                f"cozip: could not load {lib_path} to check its version, "
+                f"packaging it unchecked\n{result.stderr.strip()}"
+            )
+            return
+        found = result.stdout.strip()
+        if found != expected:
+            raise RuntimeError(
+                f"{lib_path} reports cozip {found!r} but VERSION is "
+                f"{expected!r}; rebuild it with `make lib` or delete it so "
+                "the wheel compiles core/ from source"
+            )
+
+
+_VERSION_PROBE = (
+    "import ctypes, sys; "
+    "f = ctypes.CDLL(sys.argv[1]).cozip_version_string; "
+    "f.restype = ctypes.c_char_p; "
+    "sys.stdout.write(f().decode('ascii'))"
+)
 
 
 def _library_name() -> str:

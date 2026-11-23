@@ -33,8 +33,9 @@ jobs:
             echo "version=$VERSION_FILE" >> "$GITHUB_OUTPUT"
           fi
 
-          cmp VERSION python/VERSION
-          cmp LICENSE python/LICENSE
+      # Check CalVer and synced copies before any build.
+      - name: Check VERSION format and drift
+        run: make check
 
 
   # libcozip links the vendored karu, so libcurl and OpenSSL come from vcpkg
@@ -134,15 +135,14 @@ jobs:
           doNotCache: false
 
       - name: Configure (Unix)
-        # BUILD_SHARED_LIBS=ON applies only to cozip. Vendored libzip, zlib
-        # and karu stay STATIC and absorb into cozip with hidden visibility.
+        # core/CMakeLists.txt always builds cozip SHARED. Vendored libzip,
+        # zlib and karu are STATIC and absorb into cozip with hidden visibility.
         if: runner.os != 'Windows'
         run: >
           cmake -B build -S core -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_INSTALL_PREFIX=install
           -DCMAKE_INSTALL_LIBDIR=lib
-          -DBUILD_SHARED_LIBS=ON
           -DCOZIP_BUILD_TESTS=ON
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
@@ -156,7 +156,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_INSTALL_PREFIX=install
           -DCMAKE_INSTALL_LIBDIR=lib
-          -DBUILD_SHARED_LIBS=ON
           -DCOZIP_BUILD_TESTS=ON
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
@@ -369,9 +368,6 @@ jobs:
       - working-directory: javascript
         run: npm test
 
-      - working-directory: javascript
-        run: npm run build --if-present
-
       # package.json version must equal the tagged release.
       - if: startsWith(github.ref, 'refs/tags/v')
         working-directory: javascript
@@ -572,9 +568,17 @@ jobs:
           if-no-files-found: error
 
 
+  # Publish only after all builds pass.
   gh-release:
     name: GitHub Release
-    needs: [validate, build-lib, build-r-package, build-julia-package]
+    needs:
+      - validate
+      - build-lib
+      - build-r-package
+      - build-julia-package
+      - build-npm-package
+      - build-wheels
+      - build-sdist
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -625,18 +629,28 @@ jobs:
             fi
           done
 
-      # Hyphen in version (2026.5.1-rc1 etc) marks a prerelease.
-      - uses: softprops/action-gh-release@v2
+      - name: Read notes for this version
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { in_release = 1; next }
+            in_release && /^## \[/ { exit }
+            in_release { print }
+          ' CHANGELOG > release-notes.md
+          test -s release-notes.md
+
+      # Keep the release notes as short as the versioned CHANGELOG section.
+      - uses: softprops/action-gh-release@v3
         with:
           files: release-files/*
-          generate_release_notes: true
+          body_path: release-notes.md
           draft: false
-          prerelease: ${{ contains(github.ref, '-') }}
+          prerelease: false
 
 
   regenerate-artifacts-toml:
     name: Regenerate Julia Artifacts.toml
-    needs: [validate, gh-release]
+    needs: [validate, publish-pypi, publish-npm]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -687,7 +701,7 @@ jobs:
   #   workflow: release.yml   environment: pypi
   publish-pypi:
     name: Publish to PyPI
-    needs: [build-wheels, build-sdist, build-r-package, build-julia-package, build-npm-package]
+    needs: gh-release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
@@ -708,7 +722,7 @@ jobs:
 
   publish-npm:
     name: Publish to npm
-    needs: [build-wheels, build-sdist, build-r-package, build-julia-package, build-npm-package]
+    needs: gh-release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: npm
@@ -723,10 +737,11 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      # Tests ran in build-npm-package; generate types without rerunning them.
       - working-directory: javascript
         run: |
           npm ci
-          npm run build --if-present
+          npm run types
 
       - working-directory: javascript
-        run: npm publish --access public
+        run: npm publish --access public --ignore-scripts

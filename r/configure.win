@@ -1,8 +1,18 @@
 #!/bin/sh
-# Writes src/Makevars.win from src/Makevars.win.in. Rtools provides
-# pkg-config, libcurl and OpenSSL for the Flat reader.
+# Writes src/version.h from DESCRIPTION and src/Makevars.win from
+# src/Makevars.win.in. Rtools provides pkg-config, libcurl and OpenSSL for the
+# Flat reader.
 
 set -eu
+
+# cozip.c includes version.h; the version comes from DESCRIPTION, which make
+# sync keeps equal to the repository VERSION.
+version=$(sed -n 's/^Version:[[:space:]]*//p' DESCRIPTION | tr -d '[:space:]')
+if [ -z "$version" ]; then
+    echo "configure.win: DESCRIPTION has no Version field" >&2
+    exit 1
+fi
+printf '#ifndef COZIP_VERSION_H\n#define COZIP_VERSION_H\n#define COZIP_VERSION_STRING "%s"\n#endif\n' "$version" > src/version.h
 
 if ! command -v pkg-config >/dev/null 2>&1; then
     echo "configure.win: pkg-config is required to find libcurl and OpenSSL" >&2

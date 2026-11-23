@@ -38,12 +38,6 @@ OBJECTS = \
 
 all: $(SHLIB)
 
-# Same as Unix: version.h is generated from $(PACKAGE_VERSION),
-# only cozip.c includes it.
-cozip.o: version.h
-
-version.h:
-	@echo '#define COZIP_VERSION_STRING "$(PACKAGE_VERSION)"' > $@
-
+# Same as Unix: ../configure.win writes version.h from DESCRIPTION.
 clean:
-	rm -f $(OBJECTS) version.h $(SHLIB)
+	rm -f $(OBJECTS) $(SHLIB)

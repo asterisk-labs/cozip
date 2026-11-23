@@ -31,13 +31,6 @@ OBJECTS = \
 
 all: $(SHLIB)
 
-# version.h is generated from $(PACKAGE_VERSION) (which R reads
-# from DESCRIPTION). Only cozip.c includes it, so only cozip.o
-# needs the dependency.
-cozip.o: version.h
-
-version.h:
-	@echo '#define COZIP_VERSION_STRING "$(PACKAGE_VERSION)"' > $@
-
+# ../configure writes version.h from DESCRIPTION, and ../cleanup removes it.
 clean:
-	rm -f $(OBJECTS) version.h $(SHLIB)
+	rm -f $(OBJECTS) $(SHLIB)
