@@ -310,7 +310,7 @@ jobs:
             runner: ubuntu-24.04
             lib_ext: so
           - name: macos-aarch64
-            runner: macos-14
+            runner: macos-15
             lib_ext: dylib
           - name: windows-x86_64
             runner: windows-2022
@@ -399,7 +399,7 @@ jobs:
             shell: bash
             manylinux_plat: manylinux_2_28_aarch64
           - name: macos-aarch64
-            runner: macos-14
+            runner: macos-15
             container: ''
             arch: arm64
             lib_ext: dylib
