@@ -62,7 +62,7 @@ jobs:
           # Static OpenSSL is built per architecture, so macOS ships one
           # library per architecture instead of a universal one.
           - name: macos-aarch64
-            runner: macos-14
+            runner: macos-15
             container: ''
             triplet: arm64-osx
             arch: arm64

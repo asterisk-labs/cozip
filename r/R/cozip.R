@@ -333,7 +333,7 @@ create <- function(out_path, table, temp_dir = NULL) {
 
 
 .check_parquet_schema <- function(parquet_path) {
-  schema <- arrow::ParquetFileReader$create(parquet_path)$GetSchema()
+  schema <- arrow::ParquetFileReader$create(parquet_path, mmap = FALSE)$GetSchema()
   cols   <- names(schema)
   .check_column_names(cols, "metadata parquet", "reads manifests")
 
@@ -387,7 +387,8 @@ create <- function(out_path, table, temp_dir = NULL) {
   tbl <- arrow::read_parquet(
     parquet_path,
     col_select    = c("name", "offset", "size"),
-    as_data_frame = FALSE
+    as_data_frame = FALSE,
+    mmap = FALSE
   )
 
   if (tbl$num_rows != length(expected_names)) {

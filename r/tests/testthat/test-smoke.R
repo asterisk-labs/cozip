@@ -271,7 +271,7 @@ describe("stage_metadata: layout planner", {
       bad <- do.call(arrow::arrow_table, values)
       expect_error(
         cozip::stage_metadata(bad),
-        sprintf("reserved column(s) '%s'; the binding computes them (names are compared without case)", column),
+        sprintf("reserved column(s) %s; the binding computes them (names are compared without case)", shQuote(column)),
         fixed = TRUE
       )
     }
@@ -284,11 +284,12 @@ describe("stage_metadata: layout planner", {
     )
     expect_error(
       cozip::stage_metadata(bad),
-      "columns that differ only in case: 'Tag' and 'tag'; DuckDB, which reads manifests, cannot tell them apart",
+      sprintf("columns that differ only in case: %s and %s; DuckDB, which reads manifests, cannot tell them apart", shQuote("Tag"), shQuote("tag")),
       fixed = TRUE
     )
     bad <- arrow::arrow_table(name = "a.txt", path = ctx$fixtures$small, NAME = "x")
-    expect_error(cozip::stage_metadata(bad), "'name' and 'NAME'", fixed = TRUE)
+    expect_error(cozip::stage_metadata(bad),
+                 paste(shQuote(c("name", "NAME")), collapse = " and "), fixed = TRUE)
   })
 
   it("rejects names and paths that are not strings", {
@@ -426,11 +427,13 @@ describe("stage_create: embed user-written parquet verbatim", {
 
   it("rejects reader-owned columns in parquet in any case", {
     ctx <- local_archive()
-    for (column in c("cozip:location", "taco:location", "COZIP:LOCATION",
-                     "Taco:Location")) {
+    columns <- c("cozip:location", "taco:location", "COZIP:LOCATION",
+                 "Taco:Location")
+    for (i in seq_along(columns)) {
+      column <- columns[[i]]
       md_df <- as.data.frame(cozip::stage_metadata(ctx$input_table)$metadata)
       md_df[[column]] <- "must-not-be-stored"
-      pq <- file.path(ctx$tmp_path, paste0(gsub(":", "-", column), ".parquet"))
+      pq <- file.path(ctx$tmp_path, sprintf("reader-owned-%d.parquet", i))
       arrow::write_parquet(arrow::arrow_table(md_df), pq)
 
       expect_error(
@@ -451,7 +454,7 @@ describe("stage_create: embed user-written parquet verbatim", {
     expect_error(
       cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),
                           make_paths_arg(ctx$input_table), pq),
-      "metadata parquet has columns that differ only in case: 'offset' and 'Offset'",
+      sprintf("metadata parquet has columns that differ only in case: %s and %s", shQuote("offset"), shQuote("Offset")),
       fixed = TRUE
     )
   })
@@ -478,8 +481,9 @@ describe("stage_create: embed user-written parquet verbatim", {
         message = "column 'size' must be uint64 (cozip spec 13.3), got double"
       )
     )
-    for (case in cases) {
-      pq <- file.path(ctx$tmp_path, "typed.parquet")
+    for (i in seq_along(cases)) {
+      case <- cases[[i]]
+      pq <- file.path(ctx$tmp_path, sprintf("typed-%d.parquet", i))
       arrow::write_parquet(case$table, pq)
       expect_error(
         cozip::stage_create(file.path(ctx$tmp_path, "out.zip"),

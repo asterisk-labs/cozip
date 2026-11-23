@@ -146,7 +146,8 @@ describe("read", {
       cozip::read(archive),
       paste0(
         "cozip: the manifest has columns that differ only in case: ",
-        "'offset' and 'Offset'; DuckDB, which decodes the manifest, ",
+        shQuote("offset"), " and ", shQuote("Offset"),
+        "; DuckDB, which decodes the manifest, ",
         "cannot tell them apart"
       ),
       fixed = TRUE
@@ -160,7 +161,7 @@ describe("read", {
     })
     expect_error(
       cozip::read(archive),
-      "cozip: the manifest lacks required column(s) 'size'",
+      paste0("cozip: the manifest lacks required column(s) ", shQuote("size")),
       fixed = TRUE
     )
   })
@@ -189,8 +190,10 @@ describe("read", {
     expect_error(
       cozip::read(archive, columns = c("Category", "missing", "category")),
       paste0(
-        "cozip: unknown column(s) 'Category', 'missing'; ",
-        "the manifest has 'name', 'offset', 'size', 'category'"
+        "cozip: unknown column(s) ",
+        paste(shQuote(c("Category", "missing")), collapse = ", "), "; ",
+        "the manifest has ",
+        paste(shQuote(c("name", "offset", "size", "category")), collapse = ", ")
       ),
       fixed = TRUE
     )
