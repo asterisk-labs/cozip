@@ -1,42 +1,39 @@
 # Changelog
 
-All notable changes to cozip are documented here. Releases take their version
-from the repository's `VERSION` file; `make sync` updates the package copies.
+Releases use [CalVer](https://calver.org/) `YYYY.M.D` from `VERSION`.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
-
-## [Unreleased]
+## [2026.11.23] — 2026-11-23
 
 ### Changed
 
-- Python, R and Julia `read()` fetch the index and `__metadata__` through libcozip
-  and Karu. DuckDB decodes the local Parquet without installing an extension.
-- Remote reads use environment or file credentials instead of DuckDB secrets.
-  `r2://` and account-in-host `abfss://` sources are no longer supported.
-- The reader needs C++23, libcurl and OpenSSL. `COZIP_READER=OFF` builds the
-  writer alone. R now requires R 4.3 and these build dependencies.
-- Release libraries link curl and OpenSSL statically; the Windows DLL also
-  links the C runtime statically. Bundles include their license notices.
-  macOS artifacts are built per architecture rather than as a universal binary.
+- Python, R and Julia now read Flat manifests through libcozip and DuckDB,
+  without the cozip DuckDB extension. Reader builds need C++23, libcurl and
+  OpenSSL; R needs 4.3 or newer.
+- `write()` uses compact Parquet encodings and zstd (when available in R).
+  Writers now replace outputs atomically and detect source-size changes.
+  Julia needs DuckDB.jl 1.2.
+- Release libraries link curl and OpenSSL statically. macOS libraries now ship
+  per architecture.
 
 ### Added
 
-- C functions `cozip_read_flat_metadata()`, `cozip_location_base()` and
-  `cozip_free()`, plus reader status codes.
+- `verify()` in C, Python, R, Julia and JavaScript checks the index, ranges,
+  hash and ZIP end record without reading file payloads. The C API also gains
+  `cozip_read_flat_metadata()` and `cozip_location_base()`.
+- `cozip:location` supports `~/`, `file://`, `abfs://` and `source://`; `hf://`
+  paths are percent-encoded.
 
 ### Fixed
 
-- Reader errors hide credentials in URL userinfo and query strings.
-- The Flat reader rejects indexes with extra priority files.
-- `cozip:location` maps `az://` to `/vsiaz/` and `s3a://` or `s3n://`
-  to `/vsis3/`.
-- A `key=value` directory in an archive path no longer adds a Hive column.
+- ZIP32 boundary cases at byte `0xFFFFFFFF` and 65,535 entries, including
+  final TACO priority blocks.
+- Readers reject broken indexes, manifest headers and ZIP endings. Errors
+  follow the spec and redact credentials; JavaScript pins later reads to the
+  first strong `ETag`.
 
 ### Removed
 
-- The `duckdb/` submodule, the `COZIP_EXTENSION` override, and the fallbacks
-  to `read_flat(gdal_vsi := ...)` and `read_cozip()`.
+- The `duckdb/` submodule, `COZIP_EXTENSION` and extension-reader fallbacks.
 
 ## [2026.9.27] — 2026-09-27
 
@@ -433,6 +430,7 @@ Versioning is [CalVer](https://calver.org/) `YYYY.M.D`.
 - GitHub Release with `libcozip-<version>-<platform>.{tar.gz,zip}`
   archives for C-standalone consumers.
 
+[2026.11.23]: https://github.com/asterisk-labs/cozip/compare/v2026.9.27...v2026.11.23
 [2026.9.27]: https://github.com/asterisk-labs/cozip/compare/v2026.9.17...v2026.9.27
 [2026.9.17]: https://github.com/asterisk-labs/cozip/compare/v2026.9.9...v2026.9.17
 [2026.9.9]: https://github.com/asterisk-labs/cozip/compare/v2026.9.4...v2026.9.9
