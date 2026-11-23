@@ -8,8 +8,7 @@ r/src/zlib/**     linguist-vendored
 
 
 # ---- Website assets ----
-playground.html       linguist-documentation
-index.html            linguist-documentation
+docs/**               linguist-documentation
 
 # ---- Generated files ----
 julia/Artifacts.toml  linguist-generated

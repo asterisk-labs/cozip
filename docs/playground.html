@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="Open a public cozip in the browser, read its manifest with range requests, and see its rows and GeoParquet geometries on a map.">
+<title>cozip · Playground</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+<link rel="stylesheet" href="assets/css/playground.css?v=1">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="assets/data/natural-earth-countries.js"></script>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html">API</a>
+      <a href="playground.html" class="here">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="play">
+    <header class="play-head">
+      <h1>Playground</h1>
+      <p class="play-lede">Open a public cozip over HTTPS. The <a href="api-js.html">JavaScript reader</a> runs in this page. It fetches the index and the manifest with range requests, lists every row, and draws GeoParquet geometries on the map. Nothing is uploaded.</p>
+    </header>
+
+    <form class="play-bar" id="play-form" autocomplete="off">
+      <label class="visually-hidden" for="url">Archive URL</label>
+      <input id="url" type="text" inputmode="url"
+        value="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"
+        placeholder="https://example.org/dataset.zip"
+        spellcheck="false">
+      <button class="play-go" id="go" type="submit">Load</button>
+    </form>
+
+    <div class="play-picks" id="picks" role="group" aria-label="Example archives">
+      <span class="play-picks-label">Examples</span>
+      <button class="pick" type="button" aria-pressed="true" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip">Cities <span>12 points</span></button>
+      <button class="pick" type="button" aria-pressed="false" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/routes.zip">Routes <span>11 lines</span></button>
+      <button class="pick" type="button" aria-pressed="false" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/regions.zip">Regions <span>18 polygons</span></button>
+      <button class="pick" type="button" aria-pressed="false" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/geometry-showcase.zip">Geometry showcase <span>mixed</span></button>
+      <button class="pick" type="button" aria-pressed="false" data-url="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/plain-files.zip">Plain files <span>no map</span></button>
+    </div>
+
+    <dl class="play-stats" id="stats" aria-live="polite">
+      <div><dt>entries</dt><dd id="stat-count">-</dd></div>
+      <div><dt>load time</dt><dd id="stat-time">-</dd></div>
+      <div><dt>geometry</dt><dd id="stat-geom">-</dd></div>
+    </dl>
+
+    <p class="play-banner is-error" id="error" role="alert"></p>
+    <p class="play-banner is-info" id="info"></p>
+
+    <div class="play-grid" id="grid">
+      <section class="play-map" aria-label="Map">
+        <div id="map"></div>
+        <div class="play-empty" id="map-empty">
+          <p class="play-empty-title">No geometry</p>
+          <p id="manifest-sub">This cozip has no GeoParquet geometry, so the map is empty. Pick a row to inspect it.</p>
+        </div>
+        <div class="play-loading" id="loading" role="status">
+          <span class="play-loading-bar" aria-hidden="true"></span>
+          <span id="loading-text">Reading the index and the manifest&hellip;</span>
+        </div>
+      </section>
+
+      <section class="play-side" aria-label="Manifest">
+        <div class="play-side-head">
+          <h2>Manifest</h2>
+          <span class="play-count"><span id="manifest-count">-</span> entries</span>
+        </div>
+        <div class="play-table-wrap">
+          <table class="play-table">
+            <thead><tr><th>name</th><th class="num">offset</th><th class="num">size</th></tr></thead>
+            <tbody id="manifest-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="play-detail" id="meta-panel" aria-live="polite">
+          <div class="play-detail-head">
+            <div>
+              <p class="play-detail-title" id="meta-title">Pick a row or a feature</p>
+              <p class="play-detail-range" id="meta-range"></p>
+            </div>
+            <button class="play-close" id="meta-close" type="button" aria-label="Close the entry">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+            </button>
+          </div>
+          <div class="play-detail-body" id="meta-body"></div>
+          <div class="play-actions">
+            <button id="copy-vsi" type="button" title="Copy the GDAL path of this entry">Copy location</button>
+            <button id="copy-name" type="button" title="Copy the entry name">Copy name</button>
+            <button class="play-download" id="download-tile" type="button" title="Fetch this entry with one range request and save it">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>
+              <span class="play-download-label">Download</span>
+              <span class="filename" id="download-filename"></span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <p class="play-note">The archive must answer range requests and allow them from other origins, as Hugging Face and Source Cooperative do. The map assumes longitude and latitude, the GeoParquet default. Basemap from <a href="https://www.naturalearthdata.com/" rel="noopener noreferrer">Natural Earth</a>.</p>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script type="module" src="assets/js/playground.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="The cozip API in Python, R, Julia, C and JavaScript.">
+<title>cozip · API</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+<link rel="stylesheet" href="assets/css/docs.css?v=4">
+
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html" class="here">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="doc">
+    <nav class="toc" aria-label="Contents">
+      <p class="toc-title">API</p>
+      <ol class="toc-pages">
+        <li><a href="api.html" class="here" aria-current="page">Overview</a></li>
+        <li class="toc-group">Languages</li>
+        <li><a href="api-python.html">Python</a></li>
+        <li><a href="api-r.html">R</a></li>
+        <li><a href="api-julia.html">Julia</a></li>
+        <li><a href="api-c.html">C</a></li>
+        <li><a href="api-js.html">JavaScript</a></li>
+      </ol>
+    </nav>
+
+    <article class="content">
+      <h1>API</h1>
+<p class="lede">Python, R and Julia share libcozip; JavaScript reads archives with <code>fetch</code>. This page covers their common rules. Each language page has types and examples.</p>
+
+      <h2 class="part" id="how">How it works</h2>
+      <p>A cozip is an ordinary ZIP with a small index at byte 0 that points to a Parquet manifest. The manifest lists each file's byte range and can carry your metadata. The figures below compare its size and read path with an ordinary ZIP.</p>
+      <p>The figures use one reference archive, measured on a laptop: a million files of 1,000 bytes, <code>000000.tif</code> to <code>999999.tif</code>, with six columns of metadata. The code examples further down use <code>cities.zip</code>, a small public archive on <a href="https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures" rel="noopener noreferrer">Hugging Face</a> and <a href="https://source.coop/asterisk-labs/cozip-api-fixtures" rel="noopener noreferrer">Source Cooperative</a>, so you can run them. Step through each figure with the names under it or the arrow keys.</p>
+      <figure class="steps" data-step="1">
+        <div class="steps-say">
+          <p data-k="1" data-name="zip"><b>A ZIP.</b> Every cozip is an ordinary ZIP, so <code>unzip</code> lists and extracts it. Each file sits after its local header, stored as it is, and <mark class="steps-mark">the Central Directory at the end</mark> lists every entry: 56 MB for these million files.</p>
+          <p data-k="2" data-name="index"><b>The index.</b> The first entry, <code>__cozip__</code>, starts at byte 0. Its 41-byte payload at byte 51 gives <mark class="steps-mark">the offset and size of the manifest</mark>, so a reader finds it without the Central Directory.</p>
+          <p data-k="3" data-name="manifest"><b>The manifest.</b> <code>__metadata__</code> is a Parquet file with <mark class="steps-mark">one row per file</mark>: <code>name</code>, <code>offset</code> and <code>size</code>, then any columns you add. Here they are a split, a date, cloud cover, a position and a land cover class, 11.7 MB in all.</p>
+          <p data-k="4" data-name="file"><b>A file.</b> A row gives the exact bytes of its file: <code>000002.tif</code> is <mark class="steps-mark is-green">the 1,000 bytes at 2,212</mark>, one range request away.</p>
+          <p data-k="5" data-name="hash"><b>The hash.</b> Bytes 43 to 50 hold an FNV-1a hash of the index and <mark class="steps-mark">the last 32 KiB</mark>, where the end records are, so a truncated upload or a rewritten end is caught before any offset is used. An archive under 32,819 bytes is padded to that size, so the tail never reaches the hash.</p>
+        </div>
+        <div class="steps-view">
+        <svg viewBox="0 0 660 232" role="img" aria-label="The reference archive of a million files from byte 0 to the end, not to scale: the __cozip__ header and index, the files, the 11.7 MB manifest, the 56 MB Central Directory and the end records. The steps show the ZIP parts, the index that points at the manifest, the manifest with one row per file and its metadata columns, the row of 000002.tif pointing at its 1,000 bytes at 2,212, and the hash over the index and the last 32 KiB.">
+          <defs><marker id="czb-head" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#492ae8"></path></marker></defs>
+          <rect class="cz-seg" x="0" y="128" width="22" height="52" fill="#2b1a8f"></rect>
+          <rect class="cz-seg" x="22" y="128" width="36" height="52" fill="#492ae8"></rect>
+          <text class="cz-label is-light" x="40" y="158">index</text>
+          <rect class="cz-file" x="58" y="128" width="30" height="52" fill="#f2d4dc" data-dim="4"></rect>
+          <rect class="cz-file" x="88" y="128" width="30" height="52" fill="#f3e6b3" data-dim="4"></rect>
+          <rect class="cz-file" x="118" y="128" width="30" height="52" fill="#d8efd6"></rect>
+          <rect class="cz-file" x="148" y="128" width="30" height="52" fill="#d3e5f3" data-dim="4"></rect>
+          <rect class="cz-file" x="178" y="128" width="152" height="52" fill="#fff" data-dim="4"></rect>
+          <text class="cz-label is-faint" x="254" y="158" data-dim="4">... 999,995 more</text>
+          <rect class="cz-file" x="330" y="128" width="30" height="52" fill="#f2d4dc" data-dim="4"></rect>
+          <rect class="cz-seg" x="360" y="128" width="80" height="52" fill="#492ae8"></rect>
+          <text class="cz-label is-light" x="400" y="158">manifest</text>
+          <rect class="cz-seg cz-cd" x="440" y="128" width="176" height="52" data-dim="2 3 4"></rect>
+          <text class="cz-label" x="528" y="158" data-dim="2 3 4">Central Directory</text>
+          <rect class="cz-seg cz-end" x="616" y="128" width="44" height="52" data-dim="2 3 4"></rect>
+          <text class="cz-label is-light" x="638" y="158" data-dim="2 3 4">end</text>
+          <text class="cz-note" x="209" y="198" text-anchor="middle">1,000,000 files, 1.04 GB</text>
+          <text class="cz-note" x="400" y="198" text-anchor="middle">11.7 MB</text>
+          <text class="cz-note" x="528" y="198" text-anchor="middle">56.0 MB</text>
+          <text class="cz-note" x="638" y="198" text-anchor="middle">98 B</text>
+          <text class="cz-ruler" x="0" y="224">byte 0</text>
+          <text class="cz-ruler" x="330" y="224" text-anchor="middle">the reference archive, not to scale</text>
+          <text class="cz-ruler" x="660" y="224" text-anchor="end">1.12 GB</text>
+
+          <g data-k="1">
+            <path class="cz-span" d="M58 120 V112 H360 V120"></path>
+            <text class="cz-say" x="209" y="102" text-anchor="middle">files, each after its local header</text>
+            <path class="cz-span" d="M440 120 V112 H660 V120"></path>
+            <text class="cz-say" x="550" y="102" text-anchor="middle">the ZIP's own directory</text>
+          </g>
+
+          <g data-k="2">
+            <rect class="cz-lit is-ink" x="0" y="128" width="58" height="52"></rect>
+            <rect class="cz-box" x="0" y="4" width="336" height="104"></rect>
+            <path class="cz-link" d="M29 108 V126"></path>
+            <text class="cz-title" x="12" y="25">__cozip__, bytes 0 to 91</text>
+            <text class="cz-mono is-faint" x="12" y="46">0 to 50</text>
+            <text class="cz-mono" x="84" y="46">local header, with the hash</text>
+            <text class="cz-mono is-faint" x="12" y="64">51 to 91</text>
+            <text class="cz-mono" x="84" y="64">CZIP, version 1, profile 1 (Flat)</text>
+            <text class="cz-mono" x="84" y="82">__metadata__ at 1,040,000,134</text>
+            <text class="cz-mono" x="84" y="100">11,742,751 bytes long</text>
+          </g>
+
+          <g data-k="3 4">
+            <rect class="cz-box" x="200" y="4" width="356" height="104"></rect>
+            <rect class="cz-row" x="204" y="62" width="348" height="15" data-k="4"></rect>
+            <text class="cz-mono is-head" x="212" y="22">name</text>
+            <text class="cz-mono is-head is-num" x="318" y="22">offset</text>
+            <text class="cz-mono is-head is-num" x="360" y="22">size</text>
+            <text class="cz-mono is-head" x="372" y="22">split</text>
+            <text class="cz-mono is-head" x="418" y="22">date</text>
+            <text class="cz-mono is-head is-num" x="546" y="22">cloud_cover</text>
+            <text class="cz-mono" x="212" y="39">000000.tif</text><text class="cz-mono is-num" x="318" y="39">132</text><text class="cz-mono is-num" x="360" y="39">1,000</text><text class="cz-mono" x="372" y="39">train</text><text class="cz-mono" x="418" y="39">2024-01-01</text><text class="cz-mono is-num" x="546" y="39">22.6</text>
+            <text class="cz-mono" x="212" y="56">000001.tif</text><text class="cz-mono is-num" x="318" y="56">1,172</text><text class="cz-mono is-num" x="360" y="56">1,000</text><text class="cz-mono" x="372" y="56">train</text><text class="cz-mono" x="418" y="56">2024-01-02</text><text class="cz-mono is-num" x="546" y="56">19.9</text>
+            <text class="cz-mono" x="212" y="73">000002.tif</text><text class="cz-mono is-num" x="318" y="73">2,212</text><text class="cz-mono is-num" x="360" y="73">1,000</text><text class="cz-mono" x="372" y="73">train</text><text class="cz-mono" x="418" y="73">2024-01-03</text><text class="cz-mono is-num" x="546" y="73">36.3</text>
+            <text class="cz-mono is-faint" x="212" y="96">... 1,000,000 rows, then lon, lat and landcover</text>
+            <path class="cz-link" d="M400 108 V126"></path>
+          </g>
+          <rect class="cz-lit is-ink" x="360" y="128" width="80" height="52" data-k="3"></rect>
+
+          <g data-k="4">
+            <rect class="cz-lit" x="118" y="128" width="30" height="52"></rect>
+            <path class="cz-arrow" d="M202 70 C150 70 133 88 133 122" marker-end="url(#czb-head)"></path>
+            <text class="cz-say" x="0" y="40">offset 2,212, size 1,000</text>
+          </g>
+
+          <g data-k="5">
+            <rect x="15" y="128" width="7" height="52" fill="#f7cc09" stroke="#000" stroke-width="0.8"></rect>
+            <path class="cz-link" d="M18 182 V188"></path>
+            <text class="cz-say" x="0" y="200">hash, bytes 43 to 50</text>
+            <path class="cz-span" d="M596 120 V112 H660 V120"></path>
+            <text class="cz-say" x="660" y="102" text-anchor="end">the last 32 KiB</text>
+            <path class="cz-span" d="M22 120 V112 H58 V120"></path>
+            <text class="cz-say" x="40" y="102" text-anchor="middle">the index</text>
+          </g>
+        </svg>
+        </div>
+      </figure>
+      <p>An ordinary ZIP keeps its table of contents, the Central Directory, at the end, so finding one file takes three requests one after another. The directory has a 46-byte record plus the name for every file, 56 MB for the reference archive, and no columns to choose files by.</p>
+      <figure class="steps" data-step="1">
+        <div class="steps-say">
+          <p data-k="1" data-name="first read"><b>First read.</b> An ordinary ZIP reader starts with the end record, only to learn where the directory is. A cozip reader asks for <mark class="steps-mark">the first 64 KiB</mark>, where the index is.</p>
+          <p data-k="2" data-name="second read"><b>Second read.</b> The ZIP reader needs <mark class="steps-mark is-red">the whole Central Directory</mark>, 56 MB for the million files. The cozip reader needs only the manifest, 11.7 MB with all its metadata, and skips this read when the manifest came in the first one.</p>
+          <p data-k="3" data-name="third read"><b>Third read.</b> Both now know where the file is. The cozip reader got there without the Central Directory, and its manifest has <mark class="steps-mark is-green">columns to choose files by</mark>.</p>
+        </div>
+        <div class="steps-view">
+        <svg viewBox="0 0 660 214" role="img" aria-label="Two archives with the same files. To read one file, an ordinary ZIP reader fetches the end record, then the whole Central Directory, then the file. A cozip reader fetches the first 64 KiB, where the index is, then the manifest unless it came in that read, then the file, and never parses the Central Directory.">
+          <text class="cz-title" x="0" y="54">ordinary ZIP</text>
+          <rect class="cz-seg" x="110" y="34" width="400" height="30" fill="#f4f4f6"></rect>
+          <rect class="cz-seg cz-file" x="290" y="34" width="22" height="30" fill="#f2d4dc" data-on="3"></rect>
+          <rect class="cz-seg cz-cd" x="510" y="34" width="128" height="30" data-on="2"></rect>
+          <rect x="511" y="35" width="126" height="28" fill="#ffc4c2" data-k="2 3"></rect>
+          <text class="cz-label" x="574" y="53">Central Directory</text>
+          <rect class="cz-seg cz-end" x="638" y="34" width="22" height="30" data-on="1"></rect>
+          <text class="cz-say" x="660" y="24" text-anchor="end" data-k="1">the end record</text>
+          <text class="cz-say" x="660" y="24" text-anchor="end" data-k="2">the whole directory, 56 MB</text>
+          <text class="cz-say" x="301" y="24" text-anchor="middle" data-k="3">the file</text>
+          <text class="cz-num" x="649" y="84" data-k="1 2 3">1</text>
+          <text class="cz-num" x="574" y="84" data-k="2 3">2</text>
+          <text class="cz-num" x="301" y="84" data-k="3">3</text>
+
+          <text class="cz-title" x="0" y="164">cozip</text>
+          <rect class="cz-seg" x="110" y="144" width="550" height="30" fill="#f4f4f6"></rect>
+          <rect class="cz-seg is-strong" x="110" y="144" width="14" height="30" fill="#492ae8" data-on="1"></rect>
+          <rect class="cz-seg cz-file" x="290" y="144" width="22" height="30" fill="#f2d4dc" data-on="3"></rect>
+          <rect class="cz-seg is-strong" x="430" y="144" width="80" height="30" fill="#492ae8" data-on="2"></rect>
+          <text class="cz-label is-light" x="470" y="163">manifest</text>
+          <rect class="cz-seg cz-cd" x="510" y="144" width="128" height="30" data-dim="2 3"></rect>
+          <text class="cz-label" x="574" y="163" data-dim="2 3">Central Directory</text>
+          <rect class="cz-seg cz-end" x="638" y="144" width="22" height="30"></rect>
+          <g data-k="1">
+            <path class="cz-span" d="M110 136 V128 H180 V136"></path>
+            <text class="cz-say" x="145" y="120" text-anchor="middle">first 64 KiB</text>
+          </g>
+          <text class="cz-say" x="470" y="132" text-anchor="middle" data-k="2">the manifest, 11.7 MB</text>
+          <text class="cz-say" x="301" y="132" text-anchor="middle" data-k="3">the file</text>
+          <text class="cz-num" x="117" y="194" data-k="1 2 3">1</text>
+          <text class="cz-num" x="470" y="194" data-k="2 3">2</text>
+          <text class="cz-num" x="301" y="194" data-k="3">3</text>
+          <text class="cz-no" x="574" y="194" text-anchor="middle" data-k="2 3">never parsed</text>
+        </svg>
+        </div>
+      </figure>
+      <p>A cozip reader never parses the Central Directory, which stays valid for ZIP tools. The index also holds a profile byte. These packages write and read Flat archives, whose only indexed file is the manifest, and the <a href="https://asterisk.coop/taco/" rel="noopener noreferrer">TACO</a> package writes and reads TACO archives. The <a href="spec.html">specification</a> defines every byte.</p>
+      <p>What the reader fetches instead of the directory is the manifest, a Parquet table.</p>
+      <figure class="steps" data-step="1">
+        <div class="steps-say">
+          <p data-k="1" data-name="smaller"><b>Smaller.</b> For the same million files, the manifest is <mark class="steps-mark">11.7 MB against 56 MB</mark> of Central Directory, and it carries six columns of metadata the directory has no room for. With only <code>name</code>, <code>offset</code> and <code>size</code>, it is 0.5 MB.</p>
+          <p data-k="2" data-name="any metadata"><b>Any metadata.</b> A directory record holds what the ZIP format fixes: a name, sizes, a CRC and a date. A manifest row holds <code>name</code>, <code>offset</code> and <code>size</code>, then <mark class="steps-mark is-green">any column you add</mark>.</p>
+          <p data-k="3" data-name="query"><b>Queryable.</b> The manifest is Parquet, so DuckDB, pandas or Polars filter it like any table. This query keeps <mark class="steps-mark">3,368 of the million files in 35 ms</mark> on the manifest itself, or in 0.19 s on the table <code>cozip.read</code> returns.</p>
+        </div>
+        <div class="steps-view">
+        <svg viewBox="0 0 660 212" role="img" aria-label="Measured on the reference archive of a million files. The Central Directory is 56.0 MB. The manifest with nine columns is 11.7 MB, and 0.5 MB with name, offset and size only. A directory record holds a name, sizes, a CRC and a date, fixed by the ZIP format; a manifest row holds name, offset, size and any columns you add. A DuckDB query on split, cloud cover, date and position keeps 3,368 of the million files in 35 ms.">
+          <g data-k="1">
+            <text class="cz-note" x="0" y="34">Central Directory</text>
+            <rect class="cz-seg cz-cd" x="190" y="16" width="400" height="26"></rect>
+            <text class="cz-mono" x="598" y="34">56.0 MB</text>
+            <text class="cz-note" x="0" y="88">manifest, 9 columns</text>
+            <rect class="cz-seg" x="190" y="70" width="84" height="26" fill="#492ae8"></rect>
+            <text class="cz-mono" x="282" y="88">11.7 MB</text>
+            <text class="cz-note" x="0" y="142">manifest, 3 columns</text>
+            <rect class="cz-seg" x="190" y="124" width="4" height="26" fill="#492ae8"></rect>
+            <text class="cz-mono" x="202" y="142">0.5 MB</text>
+            <text class="cz-ruler" x="190" y="190">a million files, measured</text>
+          </g>
+
+          <g data-k="2">
+            <text class="cz-title" x="0" y="24">a Central Directory record</text>
+            <text class="cz-mono" x="0" y="52">name</text>
+            <text class="cz-mono" x="0" y="72">compressed and uncompressed size</text>
+            <text class="cz-mono" x="0" y="92">CRC-32</text>
+            <text class="cz-mono" x="0" y="112">date and time</text>
+            <text class="cz-mono" x="0" y="132">offset of the local header</text>
+            <text class="cz-note" x="0" y="164">fixed by the ZIP format</text>
+            <text class="cz-title" x="340" y="24">a manifest row</text>
+            <text class="cz-mono" x="340" y="52">name</text>
+            <text class="cz-mono" x="340" y="72">offset</text>
+            <text class="cz-mono" x="340" y="92">size</text>
+            <text class="cz-mono" x="470" y="52" data-on="2">split</text>
+            <text class="cz-mono" x="470" y="72" data-on="2">date</text>
+            <text class="cz-mono" x="470" y="92" data-on="2">cloud_cover</text>
+            <text class="cz-mono" x="470" y="112" data-on="2">lon, lat</text>
+            <text class="cz-mono" x="470" y="132" data-on="2">landcover</text>
+            <text class="cz-note" x="340" y="164">required</text>
+            <text class="cz-say" x="470" y="164">yours, any type</text>
+          </g>
+
+          <g data-k="3">
+            <rect x="0" y="4" width="660" height="128" fill="#f6f6f4"></rect>
+            <text class="cz-mono" x="16" y="30">SELECT name, offset, size</text>
+            <text class="cz-mono" x="16" y="50">FROM manifest</text>
+            <text class="cz-mono" x="16" y="70">WHERE split = 'train' AND cloud_cover &lt; 10</text>
+            <text class="cz-mono" x="40" y="90">AND date &gt;= DATE '2024-06-01'</text>
+            <text class="cz-mono" x="40" y="110">AND lon BETWEEN 0 AND 10 AND lat BETWEEN 40 AND 50</text>
+            <text class="cz-say" x="0" y="166" style="font-size: 17px">3,368 of 1,000,000 files, in 35 ms</text>
+            <text class="cz-note" x="0" y="190">DuckDB on the 11.7 MB manifest, on a laptop</text>
+          </g>
+        </svg>
+        </div>
+      </figure>
+      <p>Listing the plain ZIP of the same million files with Python's <code>zipfile</code> takes 1.6 s and gives names and sizes only. <code>cozip.read</code> returns the whole manifest, with a location for every file, in 0.32 s. All timings are on a laptop, from local disk.</p>
+      <p>Python, R and Julia read through one C reader, in four steps.</p>
+      <ol class="list">
+        <li><b>Both ends, at once.</b> It asks for the first 64 KiB and the last 32 KiB together. The head holds the <code>__cozip__</code> header and the index, and the tail holds the ZIP end records.</li>
+        <li><b>Checks.</b> Before it trusts an offset, it checks the header, the index and the profile in the order of <a href="spec.html#85-reader-verification">section 8.5</a>, recomputes the integrity hash, and requires the end record to be the last 22 bytes. A failure stops the read with the code <a href="spec.html#9-error-codes">section 9</a> gives it.</li>
+        <li><b>The manifest.</b> If the manifest lies in either range, the reader already has it, as with any archive up to 64 KiB. Otherwise one more request fetches it with its local header, which must match the index.</li>
+        <li><b>Your files.</b> The manifest is now a table in memory, so filtering it costs no request. Each file you open is one range request, or one for a run of neighbouring files.</li>
+      </ol>
+      <table class="spec">
+        <thead><tr><th>archive</th><th>requests before the first file</th></tr></thead>
+        <tr><td>The manifest lies in the first 64 KiB or the last 32 KiB</td><td>2, sent at once</td></tr>
+        <tr><td>Any other Flat archive, however many files it holds, such as the reference archive</td><td>3, the two ends, then the manifest</td></tr>
+      </table>
+      <p>If the server sends a strong ETag, the later requests carry it in <code>If-Match</code>, so an archive replaced between two requests fails the read. Without one, the check of the manifest's local header can still catch a replaced archive, but not every replacement of the same size.</p>
+      <p>The JavaScript reader makes the same checks. It sends its ranges one at a time and skips the ones the first response already covers, so a small archive takes one request. Its <a href="api-js.html#requests">page</a> lists them.</p>
+
+      <h2 class="part" id="languages">Languages</h2>
+      <table class="spec">
+        <thead><tr><th>language</th><th>install</th><th>tables</th></tr></thead>
+        <tr><td><a href="api-python.html">Python</a></td><td><code>pip install cozip</code></td><td>pyarrow in, pandas out</td></tr>
+        <tr><td><a href="api-r.html">R</a></td><td><code>install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")</code></td><td>Arrow in, tibble out</td></tr>
+        <tr><td><a href="api-julia.html">Julia</a></td><td><code>Pkg.add("Cozip")</code>, after adding the Asterisk registry</td><td>any Tables.jl table in, <code>DataFrame</code> out</td></tr>
+        <tr><td><a href="api-c.html">C</a></td><td>vendor <code>core/</code>, or a release library</td><td>entry arrays in, manifest bytes out</td></tr>
+        <tr><td><a href="api-js.html">JavaScript</a></td><td><code>npm install @asterisk-labs/cozip</code></td><td>reads only, plain objects out</td></tr>
+      </table>
+
+      <h2 class="part" id="calls">Calls</h2>
+      <table class="spec">
+        <thead><tr><th>call</th><th>Python, R, Julia</th><th>C</th><th>does</th></tr></thead>
+        <tr><td>write</td><td><code>write</code>, also named <code>create</code></td><td><code>cozip_write_flat</code></td><td>Writes an archive from a table of names, paths and your columns.</td></tr>
+        <tr><td>plan</td><td><code>stage_metadata</code></td><td><code>cozip_plan_flat</code></td><td>Computes every offset without writing, and returns the manifest table.</td></tr>
+        <tr><td>build</td><td><code>stage_create</code></td><td><code>cozip_write_flat</code></td><td>Writes an archive around a manifest Parquet you wrote yourself.</td></tr>
+        <tr><td>read</td><td><code>read</code></td><td><code>cozip_read_flat_metadata</code>, <code>cozip_location_base</code></td><td>Verifies the index, returns the manifest and builds the locations.</td></tr>
+        <tr><td>verify</td><td><code>verify</code></td><td><code>cozip_verify</code></td><td>Checks the index and the integrity hash of an archive of any profile, without fetching the manifest.</td></tr>
+      </table>
+      <p>JavaScript has <code>read</code> and <code>verify</code>. The <a href="https://asterisk.coop/taco/" rel="noopener noreferrer">TACO</a> package writes TACO archives through <code>cozip_plan_taco</code> and <code>cozip_write_taco</code>, a contract between the two projects outlined on the <a href="api-c.html#taco">C page</a>.</p>
+
+      <h2 class="part" id="write">Write</h2>
+      <p>The writer takes a table with one row per file. <code>name</code> is the file's name in the archive, <code>path</code> is where it is on disk, and every other column goes into the manifest, in its order.</p>
+      <figure class="steps" data-step="1">
+        <div class="steps-say">
+          <p data-k="1" data-name="table"><b>Your table.</b> One row per file: its <code>name</code> in the archive, its <code>path</code> on disk, and <mark class="steps-mark">any columns you want in the manifest</mark>.</p>
+          <p data-k="2" data-name="plan"><b>Plan.</b> Before it writes a byte, the planner computes <mark class="steps-mark">every offset</mark> from the names and the file sizes, and drops <code>path</code>. <code>stage_metadata</code> stops here and gives you this table.</p>
+          <p data-k="3" data-name="files"><b>Files.</b> The index goes first, then <mark class="steps-mark">the files in table order</mark>, each after its local header and stored as it is.</p>
+          <p data-k="4" data-name="manifest"><b>Manifest.</b> The table goes after the last file as Parquet, so <mark class="steps-mark">its size never moves an offset</mark>. With <code>stage_create</code> it is the Parquet file you wrote. The Central Directory and the end record close the ZIP.</p>
+          <p data-k="5" data-name="check"><b>Check.</b> Under a temporary name, the writer reads the archive back, compares it with the plan, <mark class="steps-mark is-green">patches the hash</mark> into bytes 43 to 50 and renames it over the output.</p>
+        </div>
+        <div class="steps-view">
+        <svg viewBox="0 0 660 252" role="img" aria-label="A table of two files, a.txt and data/b.bin, with name, path and split. The planner adds offset and size, 127 and 96 for a.txt, 263 and 40,960 for data/b.bin, and drops path. The writer puts the index first, then the two files in table order, then the manifest, the Central Directory and the end record, checks the archive, patches the hash and renames it into place.">
+          <defs><marker id="czw-head" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#492ae8"></path></marker></defs>
+          <rect class="cz-box" x="0" y="6" width="330" height="86"></rect>
+          <text class="cz-mono is-head" x="12" y="27">name</text>
+          <text class="cz-mono is-head" x="108" y="27" data-dim="2 3 4 5">path</text>
+          <text class="cz-mono is-head" x="168" y="27">split</text>
+          <text class="cz-mono is-head is-num" x="262" y="27" data-k="2 3 4 5">offset</text>
+          <text class="cz-mono is-head is-num" x="318" y="27" data-k="2 3 4 5">size</text>
+          <text class="cz-mono" x="12" y="50">a.txt</text>
+          <text class="cz-mono" x="108" y="50" data-dim="2 3 4 5">a.txt</text>
+          <text class="cz-mono" x="168" y="50">train</text>
+          <text class="cz-mono is-num" x="262" y="50" data-k="2 3 4 5" data-on="2">127</text>
+          <text class="cz-mono is-num" x="318" y="50" data-k="2 3 4 5" data-on="2">96</text>
+          <text class="cz-mono" x="12" y="72">data/b.bin</text>
+          <text class="cz-mono" x="108" y="72" data-dim="2 3 4 5">b.bin</text>
+          <text class="cz-mono" x="168" y="72">val</text>
+          <text class="cz-mono is-num" x="262" y="72" data-k="2 3 4 5" data-on="2">263</text>
+          <text class="cz-mono is-num" x="318" y="72" data-k="2 3 4 5" data-on="2">40,960</text>
+          <g data-k="2">
+            <text class="cz-say" x="352" y="44">stage_metadata returns this table</text>
+            <text class="cz-note" x="352" y="64">path is dropped, offset and size are final</text>
+          </g>
+
+          <rect class="cz-ghost" x="0" y="176" width="660" height="48" data-k="1 2"></rect>
+          <text class="cz-note" x="330" y="205" text-anchor="middle" data-k="1 2">the archive, not written yet</text>
+          <g data-k="3 4 5">
+            <rect class="cz-seg" x="0" y="176" width="56" height="48" fill="#492ae8"></rect>
+            <text class="cz-label is-light" x="28" y="204">index</text>
+            <rect class="cz-seg cz-file" x="56" y="176" width="70" height="48" fill="#f2d4dc"></rect>
+            <text class="cz-label" x="91" y="204">a.txt</text>
+            <rect class="cz-seg cz-file" x="126" y="176" width="220" height="48" fill="#f3e6b3"></rect>
+            <text class="cz-label" x="236" y="204">data/b.bin</text>
+            <text class="cz-ruler" x="91" y="242" text-anchor="middle">at 127</text>
+            <text class="cz-ruler" x="236" y="242" text-anchor="middle">at 263</text>
+          </g>
+          <g data-k="4 5">
+            <rect class="cz-seg" x="346" y="176" width="110" height="48" fill="#492ae8"></rect>
+            <text class="cz-label is-light" x="401" y="204">manifest</text>
+            <rect class="cz-seg cz-cd" x="456" y="176" width="150" height="48"></rect>
+            <text class="cz-label" x="531" y="204">Central Directory</text>
+            <rect class="cz-seg cz-end" x="606" y="176" width="54" height="48"></rect>
+            <text class="cz-label is-light" x="633" y="204">end</text>
+          </g>
+          <g data-k="3">
+            <path class="cz-arrow" d="M232 96 C232 140 91 130 91 170" marker-end="url(#czw-head)"></path>
+            <path class="cz-arrow" d="M268 96 C268 140 236 130 236 170" marker-end="url(#czw-head)"></path>
+          </g>
+          <g data-k="4">
+            <path class="cz-arrow" d="M165 96 C165 150 401 126 401 170" marker-end="url(#czw-head)"></path>
+            <text class="cz-say" x="412" y="150">the table, as Parquet</text>
+          </g>
+          <g data-k="5">
+            <rect x="3" y="176" width="7" height="48" fill="#f7cc09" stroke="#000" stroke-width="0.8"></rect>
+            <text class="cz-say" x="0" y="166">hash</text>
+            <text class="cz-say" x="660" y="166" text-anchor="end">checked and hashed under a temporary name, then renamed to out.zip</text>
+            <rect class="cz-lit" x="0" y="176" width="660" height="48"></rect>
+          </g>
+        </svg>
+        </div>
+      </figure>
+      <p>Files are stored in table order. Sort the table first, by split, tile or date, so that files read together sit next to each other and can come back in <a href="#files">one request</a>.</p>
+      <p>Before it writes a byte, the writer refuses:</p>
+      <ul class="list">
+        <li>a table with no rows, or without <code>name</code> and <code>path</code>;</li>
+        <li>a column named <code>offset</code>, <code>size</code>, <code>cozip:location</code> or <code>taco:location</code> in any letter case, since the writer and the reader compute them;</li>
+        <li>two columns whose names differ only in case, which DuckDB cannot tell apart when it reads the manifest;</li>
+        <li>a name that breaks the <a href="spec.html#53-name-requirements">name rules</a>, or one of the reserved names <code>__cozip__</code>, <code>__metadata__</code> and <code>__cozip_padding__</code>;</li>
+        <li>a missing or empty file, and an output that is also one of the sources.</li>
+      </ul>
+      <p>The archive is written under a temporary name, checked against the plan, hashed, then renamed over the output, so a failed write leaves an existing file untouched. A source whose size changes during the write is an error. The <a href="api-c.html#checks">C page</a> lists every check.</p>
+
+      <h3 id="stages">In two stages</h3>
+      <p><code>write</code> writes a compressed manifest with the Parquet writer of each language. To choose your own writer or options, such as GeoPandas for a GeoParquet manifest or a set row group size, split the call in two.</p>
+      <ol class="list">
+        <li><code>stage_metadata</code> plans the archive without writing anything. It returns the manifest table, with <code>name</code>, then <code>offset</code> and <code>size</code> as uint64, then your columns, and the <code>(name, path)</code> pairs in the same order. <code>path</code> is dropped, and the schema metadata of the input is kept, so a GeoParquet <code>geo</code> key survives.</li>
+        <li>Write that table as a Parquet file with any library.</li>
+        <li><code>stage_create</code> writes the archive with that file stored byte for byte as <code>__metadata__</code>. It never rewrites it, so its compression, row groups and key-value metadata stay as you wrote them.</li>
+      </ol>
+      <p>The Parquet must keep <code>name</code> as a string and <code>offset</code> and <code>size</code> as uint64 (<a href="spec.html#133-schema">spec 13.3</a>), and must not hold <code>path</code>, a location column or two names that differ only in case. With validation on, the default, <code>stage_create</code> plans the paths again and stops at the first row whose name, offset or size differs. Turning it off skips only that comparison: a wrong manifest then makes a valid ZIP whose rows point at the wrong bytes.</p>
+      <p>Keep the pairs in the manifest's row order. If you sort or filter the table between the two calls, apply the same order to the pairs, or plan again. Each call reads the sizes from disk, so with validation on, a file that changed in between shows up as a mismatch.</p>
+
+      <h2 class="part" id="read">Read</h2>
+      <p><code>read</code> returns the Flat manifest with one row per file: <code>name</code>, <code>offset</code>, <code>size</code>, your columns and <code>cozip:location</code>. Native reads take two or three requests; JavaScript takes one to three. Other profiles fail with <code>PROFILE</code> in the native bindings and <code>UNKNOWN_PROFILE</code> in JavaScript. Read TACO archives with the TACO package.</p>
+      <table class="spec">
+        <tr><th>source</th><td>An ASCII <a href="#sources">path or URL</a> in the native bindings; an ASCII HTTP(S) URL in JavaScript.</td></tr>
+        <tr><th>columns</th><td>The extra columns to return. <code>name</code>, <code>offset</code> and <code>size</code> always come back. Names are matched with case, and one the manifest does not have is an error. <code>cozip:location</code>, <code>taco:location</code> and <code>cozip:gdal_vsi</code> in the list are ignored. Left out, every column comes back.</td></tr>
+        <tr><th>location</th><td>False leaves out <code>cozip:location</code>.</td></tr>
+      </table>
+      <p>Python, R and Julia decode the manifest with DuckDB. Extension autoloading and autoinstall are off, so DuckDB downloads and loads nothing, and Hive partitioning is off, so a <code>key=value</code> folder in the path adds no column. A stored <code>cozip:location</code>, <code>taco:location</code> or <code>cozip:gdal_vsi</code> column, which no conforming writer produces, is dropped in any case and the location is computed again. A manifest with two columns that differ only in case is refused.</p>
+
+      <h3 id="sources">Sources</h3>
+      <p><code>cozip:location</code> joins the byte range of a row with the source of the archive.</p>
+      <figure class="steps" data-step="1">
+        <div class="steps-say">
+          <p data-k="1" data-name="range"><b>The range.</b> <code>offset</code> and <code>size</code> come from the row, so <code>/vsisubfile/2212_1000,</code> means <mark class="steps-mark">1,000 bytes from byte 2,212</mark> of what follows.</p>
+          <p data-k="2" data-name="archive"><b>The archive.</b> The rest is <mark class="steps-mark">the source you passed to <code>read</code></mark>, wrapped for GDAL. The table below gives the wrapping for each kind of source.</p>
+          <p data-k="3" data-name="open"><b>Open.</b> GeoPandas, rasterio, terra and ogrinfo open the path and read <mark class="steps-mark is-green">only those bytes</mark>. Nothing is extracted, and the path is built at read time, never stored.</p>
+        </div>
+        <div class="steps-view">
+        <svg viewBox="0 0 660 196" role="img" aria-label="The row of 000002.tif in the reference archive has offset 2212 and size 1000. Read from s3://bucket/tiles.zip, its cozip:location is /vsisubfile/2212_1000,/vsis3/bucket/tiles.zip: the range comes from the row and the rest from the source. GDAL opens it and reads only those 1,000 bytes.">
+          <defs><marker id="czl-head" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#492ae8"></path></marker></defs>
+          <text class="cz-note" x="0" y="42">manifest row</text>
+          <rect class="cz-cell" x="120" y="26" width="110" height="24"></rect>
+          <text class="cz-mono" x="130" y="42">000002.tif</text>
+          <rect class="cz-cell" x="230" y="26" width="60" height="24" data-on="1"></rect>
+          <text class="cz-mono" x="260" y="42" text-anchor="middle" data-on="1">2212</text>
+          <rect class="cz-cell" x="290" y="26" width="60" height="24" data-on="1"></rect>
+          <text class="cz-mono" x="320" y="42" text-anchor="middle" data-on="1">1000</text>
+          <rect class="cz-cell" x="350" y="26" width="60" height="24"></rect>
+          <text class="cz-mono" x="380" y="42" text-anchor="middle">train</text>
+          <text class="cz-ruler" x="260" y="18" text-anchor="middle">offset</text>
+          <text class="cz-ruler" x="320" y="18" text-anchor="middle">size</text>
+          <text class="cz-ruler" x="380" y="18" text-anchor="middle">split</text>
+
+          <text class="cz-note" x="0" y="104">source</text>
+          <text class="cz-mono" x="120" y="104" data-on="2">s3://bucket/tiles.zip</text>
+
+          <text class="cz-note" x="0" y="164">cozip:location</text>
+          <text class="cz-mono" x="120" y="164" xml:space="preserve"><tspan data-on="3">/vsisubfile/</tspan><tspan data-on="1 3">2212</tspan><tspan data-on="3">_</tspan><tspan data-on="1 3">1000</tspan><tspan data-on="3">,</tspan><tspan data-on="2 3">/vsis3/bucket/tiles.zip</tspan></text>
+
+          <g data-k="1">
+            <path class="cz-arrow" d="M260 52 C260 100 212 104 212 146" marker-end="url(#czl-head)"></path>
+            <path class="cz-arrow" d="M320 52 C320 104 245 108 245 146" marker-end="url(#czl-head)"></path>
+          </g>
+          <g data-k="2">
+            <path class="cz-arrow" d="M190 110 C190 130 341 124 341 146" marker-end="url(#czl-head)"></path>
+          </g>
+          <g data-k="3">
+            <path class="cz-span" d="M120 174 V182 H420 V174"></path>
+            <text class="cz-say" x="270" y="194" text-anchor="middle">GDAL reads the 1,000 bytes of 000002.tif, nothing else</text>
+          </g>
+        </svg>
+        </div>
+      </figure>
+      <p>Python, R, Julia and C read through <a href="https://asterisk.coop/karu/" rel="noopener noreferrer">Karu</a>, which takes these sources. The archive part of the location repeats the source as given, wrapped for GDAL.</p>
+      <table class="spec">
+        <thead><tr><th>source</th><th>archive part of the location</th></tr></thead>
+        <tr><td><code>data/tiles.zip</code></td><td><code>data/tiles.zip</code>, relative as given</td></tr>
+        <tr><td><code>~/tiles.zip</code></td><td>the same path under the home directory</td></tr>
+        <tr><td><code>file:///data/tiles.zip</code></td><td><code>/data/tiles.zip</code></td></tr>
+        <tr><td><code>https://host/tiles.zip</code></td><td><code>/vsicurl/https://host/tiles.zip</code></td></tr>
+        <tr><td><code>s3://bucket/tiles.zip</code>, also <code>s3a://</code>, <code>s3n://</code></td><td><code>/vsis3/bucket/tiles.zip</code></td></tr>
+        <tr><td><code>gs://bucket/tiles.zip</code>, also <code>gcs://</code></td><td><code>/vsigs/bucket/tiles.zip</code></td></tr>
+        <tr><td><code>az://container/tiles.zip</code>, also <code>azure://</code></td><td><code>/vsiaz/container/tiles.zip</code></td></tr>
+        <tr><td><code>abfs://container/tiles.zip</code>, also <code>abfss://</code></td><td><code>/vsiadls/container/tiles.zip</code></td></tr>
+        <tr><td><code>hf://datasets/org/repo@v1/tiles.zip</code></td><td><code>/vsicurl/https://huggingface.co/datasets/org/repo/resolve/v1/tiles.zip</code>, with <code>main</code> when no revision is given and the path percent-encoded</td></tr>
+        <tr><td><code>source://account/product/tiles.zip</code></td><td><code>/vsicurl/https://data.source.coop/account/product/tiles.zip</code></td></tr>
+        <tr><td><code>/vsis3/bucket/tiles.zip</code> and the other <code>/vsi</code> prefixes Karu knows</td><td>unchanged</td></tr>
+      </table>
+      <p>A relative path stays relative, so read with an absolute path or a URL when the locations will be used from another directory or machine. The JavaScript reader takes <code>http://</code> and <code>https://</code> URLs only.</p>
+
+      <h3 id="credentials">Credentials</h3>
+      <p>Karu looks for credentials where the usual tools keep them, and its <a href="https://asterisk.coop/karu/configuration.html" rel="noopener noreferrer">configuration page</a> lists every option. DuckDB secrets are not used.</p>
+      <table class="spec">
+        <thead><tr><th>store</th><th>credentials</th></tr></thead>
+        <tr><td>Hugging Face</td><td><code>HF_TOKEN</code>, or the token file <code>huggingface-cli login</code> writes</td></tr>
+        <tr><td>S3</td><td><code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code>, <code>AWS_PROFILE</code> with <code>~/.aws</code>, web identity, container or instance credentials</td></tr>
+        <tr><td>GCS</td><td><code>GOOGLE_APPLICATION_CREDENTIALS</code>, gcloud's application default credentials, or metadata credentials</td></tr>
+        <tr><td>Azure</td><td><code>AZURE_STORAGE_CONNECTION_STRING</code>, or <code>AZURE_STORAGE_ACCOUNT</code> with a key, a SAS token or a client secret</td></tr>
+      </table>
+      <p>GDAL needs credentials of its own to open a private location. The JavaScript reader uses <code>fetch</code>, so it reads public and presigned URLs.</p>
+
+      <h2 class="part" id="verify">Verify</h2>
+      <p><code>verify</code> checks the access path of any profile, TACO included, without decoding its manifest. It accepts unknown profile values, as <a href="spec.html#71-header">spec 7.1</a> allows. Native bindings accept the <a href="#sources">sources below</a>; JavaScript accepts HTTP(S). It returns nothing when its checks pass and names the first rule that fails.</p>
+      <table class="spec">
+        <thead><tr><th>check</th><th>error</th></tr></thead>
+        <tr><td>the 51-byte <code>__cozip__</code> header</td><td><code>INVALID_LFH</code></td></tr>
+        <tr><td>an archive of at least 32,819 bytes</td><td><code>ARCHIVE_TOO_SMALL</code></td></tr>
+        <tr><td>the index magic and version</td><td><code>INVALID_MAGIC</code>, <code>UNSUPPORTED_VERSION</code></td></tr>
+        <tr><td>the integrity hash over the index and the last 32 KiB</td><td><code>HASH_MISMATCH</code></td></tr>
+        <tr><td>a comment-free end record</td><td><code>INVALID_ZIP_STRUCTURE</code></td></tr>
+        <tr><td>index sections that fill its payload exactly</td><td><code>TRUNCATED_INDEX</code>, <code>INVALID_INDEX</code></td></tr>
+        <tr><td>indexed names that follow the name rules, none of them <code>__cozip__</code>, <code>__cozip_padding__</code> or repeated</td><td><code>INVALID_NAME</code>, <code>DUPLICATE_NAME</code></td></tr>
+        <tr><td>indexed ranges that are non-empty and lie inside the archive</td><td><code>INVALID_OFFSET</code></td></tr>
+      </table>
+      <p>It uses the first 64 KiB, the last 32 KiB and any missing index bytes. JavaScript reuses the first response when it holds the whole archive. The check does not parse the Central Directory, compare indexed names with ZIP entries, enforce profile rules or check payloads. A changed payload outside the hash window can pass.</p>
+<pre><code class="language-python">cozip.verify("https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip")   # None</code></pre>
+
+      <h2 class="part" id="files">Open a file</h2>
+      <p>A row's file is the <code>size</code> bytes that start at <code>offset</code>, stored as they were. GDAL opens it through <code>cozip:location</code>, so rasterio, terra, GeoPandas and other GDAL-based readers need no extraction:</p>
+<pre><code class="language-sh">ogrinfo -ro -so -al "/vsisubfile/1092_172,/vsicurl/https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"</code></pre>
+      <p>Any client that reads a byte range reads it too. HTTP ranges include their last byte, so the range is <code>offset</code> to <code>offset + size - 1</code>, and this returns the 172 bytes of <code>cities/paris.geojson</code>:</p>
+<pre><code class="language-sh">curl -L -r 1092-1263 https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip</code></pre>
+      <p>Files next to each other come back in one request. Fetch from the first offset to the end of the last file and slice. The bytes between two files are a local header, 30 bytes plus the name, and 20 more for a ZIP64 entry.</p>
+
+      <h2 class="part" id="geoparquet">GeoParquet manifests</h2>
+      <p>A manifest with a geometry column and the <code>geo</code> key is a GeoParquet file (<a href="spec.html#136-geoparquet-metadata-informative">spec 13.6</a>). Readers that know GeoParquet, such as DuckDB, GeoPandas and the <a href="playground.html">playground</a> map, can pick files by location before fetching any. The others see an ordinary manifest.</p>
+      <p>Without <code>crs</code> in the <code>geo</code> key, the coordinates are longitude and latitude, OGC:CRS84. Python, R and Julia return the geometry as WKB without the CRS, and JavaScript returns a GeoJSON geometry. Each language page shows how to write one.</p>
+
+      <h2 class="part" id="errors">Errors</h2>
+      <p>Each binding checks its arguments and tables before it calls C, and raises its own error type. libcozip reports the rest with a status name, which is the code from <a href="spec.html#9-error-codes">section 9</a> of the specification where it has one. Each language page shows how the two look.</p>
+      <table class="spec">
+        <thead><tr><th>error</th><th>cause</th><th>fix</th></tr></thead>
+        <tr><td>missing required column(s)</td><td>The input has no <code>name</code> or no <code>path</code>.</td><td>Add both.</td></tr>
+        <tr><td>reserved column(s)</td><td>The input has <code>offset</code>, <code>size</code> or a location column, in any case.</td><td>Drop it. The writer computes it.</td></tr>
+        <tr><td>columns that differ only in case</td><td>Such as <code>label</code> and <code>Label</code>.</td><td>Rename one.</td></tr>
+        <tr><td>duplicate name</td><td>Two rows have the same <code>name</code>.</td><td>Make the names unique.</td></tr>
+        <tr><td>source not found</td><td>A <code>path</code> does not point at a file.</td><td>Check the paths.</td></tr>
+        <tr><td>name mismatch at row</td><td>The pairs passed to <code>stage_create</code> are not in the manifest's order.</td><td>Reorder them, or plan again.</td></tr>
+        <tr><td>unknown column(s)</td><td><code>columns</code> names a column the manifest does not have.</td><td>Ask only for columns it has.</td></tr>
+        <tr><td><code>INVALID_ARGUMENT</code></td><td>The C writer refused an input: an empty file, a non-ASCII or absolute name, an output that is also a source.</td><td>Fix the input the message names.</td></tr>
+        <tr><td><code>IO</code>, <code>NOT_FOUND</code></td><td>A missing file, a failed transfer, or a remote object that does not exist.</td><td>Check the path, the URL and the <a href="#credentials">credentials</a>.</td></tr>
+        <tr><td><code>ARCHIVE_TOO_SMALL</code></td><td>Fewer than 32,819 bytes, often an HTML error page.</td><td>The source is not a cozip.</td></tr>
+        <tr><td><code>INVALID_LFH</code></td><td>The first 51 bytes are not the <code>__cozip__</code> header.</td><td>The source is not a cozip.</td></tr>
+        <tr><td><code>INVALID_MAGIC</code>, <code>UNSUPPORTED_VERSION</code></td><td>The index does not start with <code>CZIP</code>, or has a version other than 1.</td><td>The source is not a cozip, or a newer one.</td></tr>
+        <tr><td><code>PROFILE</code></td><td>The archive is not Flat. JavaScript and the specification call it <code>UNKNOWN_PROFILE</code>.</td><td>Read a TACO archive with the TACO package.</td></tr>
+        <tr><td><code>HASH_MISMATCH</code></td><td>The hash does not match the index and the last 32 KiB.</td><td>The archive was modified, truncated or re-encoded after it was written.</td></tr>
+        <tr><td><code>INVALID_ZIP_STRUCTURE</code></td><td>The archive does not end with a comment-free end record.</td><td>Remove the ZIP comment, or the bytes appended after the archive.</td></tr>
+        <tr><td><code>TRUNCATED_INDEX</code>, <code>INVALID_INDEX</code>, <code>INVALID_OFFSET</code></td><td>The index does not fit or fill its payload, is not one entry named <code>__metadata__</code> for <code>read</code>, or points outside the archive.</td><td>The archive is damaged. Write it again.</td></tr>
+        <tr><td><code>INVALID_NAME</code>, <code>DUPLICATE_NAME</code></td><td><code>verify</code> found an indexed name that breaks the name rules or repeats.</td><td>The archive is damaged or came from a writer that does not follow the specification.</td></tr>
+        <tr><td><code>MISSING_ENTRY</code></td><td>The local header before the manifest does not match the index.</td><td>The index points at the wrong bytes, or the archive changed during the read.</td></tr>
+      </table>
+
+      <h2 class="part" id="hosting">Hosting</h2>
+      <p>Upload the <code>.zip</code> to a bucket, Hugging Face or Source Cooperative. Publish a new version at a new key or revision, because readers may hold offsets from the old one, and pin revisions in tests and training runs. For a collection that changes in parts, use several archives. Their manifests concatenate, because each <code>cozip:location</code> names its archive.</p>
+      <p>The server must answer range requests with the stored bytes.</p>
+      <table class="spec">
+        <thead><tr><th>requirement</th><th>why</th></tr></thead>
+        <tr><td>Answer <code>Range</code> with 206 and a valid <code>Content-Range: bytes start-end/total</code>.</td><td>Readers fetch a few small ranges. The JavaScript reader takes the archive size from <code>Content-Range</code> and checks every response against the range it asked for, accepting an end clamped to the last byte.</td></tr>
+        <tr><td>Apply no <code>Content-Encoding</code> on the fly.</td><td>Offsets, sizes and the hash refer to the stored bytes.</td></tr>
+        <tr><td>Keep the object unchanged during a read.</td><td>A 412, a new ETag or a new size between two responses fails the read.</td></tr>
+        <tr><td>For browsers, allow the <code>Range</code> header across origins and expose <code>Content-Range</code> with <code>Access-Control-Expose-Headers</code>.</td><td>Otherwise the browser hides the header and the read fails with <code>range response has no valid Content-Range header</code>.</td></tr>
+        <tr><td>For browsers, allow <code>If-Match</code> when <code>ETag</code> is exposed.</td><td>The reader sends a strong ETag back as <code>If-Match</code>, and the preflight would refuse it.</td></tr>
+      </table>
+      <p>Hugging Face and Source Cooperative do this for public files. An S3, GCS or Azure bucket serves ranges as stored, unless the object was uploaded with a <code>Content-Encoding</code>, and needs a CORS rule only for browsers. To check an upload, run <a href="#verify"><code>verify</code></a> on its URL, or paste a public URL into the <a href="playground.html">playground</a>.</p>
+
+      <h2 class="part" id="duckdb">SQL with DuckDB</h2>
+      <p>The optional <a href="https://github.com/asterisk-labs/cozip_reader" rel="noopener noreferrer">cozip_reader</a> extension reads manifests in SQL and queries a Parquet file stored inside an archive in place. It lives in its own repository with its own versions, and nothing in these packages installs or loads it. Its README lists its functions.</p>
+<pre><code class="language-sql">INSTALL cozip FROM community;
+LOAD cozip;
+
+SELECT name, offset, size
+FROM read_flat('https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip')
+WHERE continent = 'Europe';</code></pre>
+
+      <nav class="pager" aria-label="Pages">
+        <a class="next" href="api-python.html"><span>Next</span>Python</a>
+      </nav>
+    </article>
+
+    <nav class="toc onpage" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ol class="toc-sections">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#languages">Languages</a></li>
+        <li><a href="#calls">Calls</a></li>
+        <li><a href="#write">Write</a></li>
+        <li><a href="#read">Read</a></li>
+        <li><a href="#verify">Verify</a></li>
+        <li><a href="#files">Open a file</a></li>
+        <li><a href="#geoparquet">GeoParquet manifests</a></li>
+        <li><a href="#errors">Errors</a></li>
+        <li><a href="#hosting">Hosting</a></li>
+        <li><a href="#duckdb">SQL with DuckDB</a></li>
+      </ol>
+    </nav>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/toc.js?v=1" defer></script>
+<script src="assets/js/code.js?v=1" defer></script>
+<script src="assets/js/steps.js?v=1" defer></script>
+
+</body>
+</html>

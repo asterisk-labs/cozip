@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" data-route="home">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>cozip</title>
+<meta name="description" content="An ordinary ZIP with a Parquet manifest of its files, read with range requests from any object store.">
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/tokens.css?v=1">
+<link rel="stylesheet" href="assets/css/base.css?v=1">
+<link rel="stylesheet" href="assets/css/shell.css?v=1">
+<link rel="stylesheet" href="assets/css/content.css?v=1">
+<link rel="stylesheet" href="assets/css/home.css?v=3">
+<link rel="stylesheet" href="assets/css/figure.css?v=11">
+</head>
+
+<body>
+<div class="ambient" aria-hidden="true">
+  <span class="ambient-orb ambient-orb--violet"></span>
+  <span class="ambient-orb ambient-orb--mint"></span>
+  <canvas class="ambient-tiles" id="backdrop"></canvas>
+</div>
+
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main id="view">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Cloud-Optimized ZIP</p>
+
+        <h1 id="hero-title">Open a ZIP <span class="hero-line"><span class="hero-highlight">like a table</span>.</span></h1>
+
+        <p class="hero-summary">
+          An ordinary ZIP with a <strong class="hero-summary-highlight">Parquet manifest</strong> of its files, read with range requests from any object store.
+        </p>
+
+        <div class="install" data-copy-root>
+          <div class="install-command">
+            <span class="prompt" aria-hidden="true">$</span>
+            <code>pip install cozip</code>
+            <button class="copy-command" type="button" data-copy="pip install cozip" aria-label="Copy the install command">
+              <svg class="icon-copy" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h10v10H8z"></path><path d="M6 15H4V4h11v2"></path></svg>
+              <svg class="icon-check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>
+              <span>Copy</span>
+            </button>
+          </div>
+          <span class="copy-toast" aria-hidden="true">Copied</span>
+          <p class="copy-feedback" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <figure class="read" id="read" data-label="A cozip of a million files drawn as a column: the index at byte 0, the first six files, the manifest and the ZIP directory. Four steps, chosen with the arrows or the step names. Index: the index gives the offset and size of the manifest, 11,742,751 bytes at 1,040,000,134. Manifest: the manifest is a table with one row per file, beside its file, with a cloud_cover column. Filter: the rows with cloud_cover under 25 are kept. Read: only those three files are read, one range each, and the ZIP directory is never read."></figure>
+    </section>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/backdrop.js?v=1"></script>
+<script src="assets/js/read.js?v=15"></script>
+<script src="assets/js/home.js?v=1"></script>
+</body>
+</html>

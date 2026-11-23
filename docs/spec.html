@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="The Cloud-Optimized ZIP format specification.">
+<title>cozip · Specification</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html" class="here">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="doc">
+    <nav class="toc" aria-label="Contents">
+      <p class="toc-title">Spec</p>
+      <ol class="toc-pages">
+        <li><a href="spec.html" class="here" aria-current="page">Specification</a></li>
+      </ol>
+    </nav>
+
+    <article class="content spec-text">
+      <h1>Specification</h1>
+<!-- COZIP_SPEC_FACTS_START -->
+<ul class="facts">
+<li>Version 0.1.0</li>
+<li>Binary format version 1</li>
+<li>Status Stable</li>
+<li>Date 2026-09-09</li>
+<li>License CC BY 4.0</li>
+</ul>
+<!-- COZIP_SPEC_FACTS_END -->
+<p class="lede">The normative definition of a cozip archive, rendered from <a href="https://github.com/asterisk-labs/cozip/blob/main/SPEC.md" rel="noopener noreferrer"><code>SPEC.md</code></a>. Any conforming reader reads any conforming writer.</p>
+      <!-- COZIP_SPEC_BODY_START -->
+<h2 class="part" id="part-i-core-format">Part I. Core format</h2>
+<h2 class="part" id="1-summary">1. Summary</h2>
+<p>A <strong>cozip</strong> file (Cloud Optimized ZIP) is a ZIP archive built for random access over byte-addressable storage. It targets workloads where a dataset contains many files and a consumer needs to reach any one of them quickly, in arbitrary order, without downloading the full archive. Machine learning training is the canonical example: a dataloader samples items in random order across an epoch, and every cold lookup must be fast.</p>
+<p>A standard ZIP archive places its table of contents, the Central Directory, at the end of the file. A reader must first find and read that table before locating any entry. On archives with millions of files the Central Directory can be very large, and every current ZIP reader pays that cost. A cozip moves the fast access path to the start of the file.</p>
+<p>Simply put, a compact binary index sits at byte 0 and lists the offsets and sizes of the files the creator chose to prioritize. A cozip-aware reader fetches that index and then jumps directly to any priority file. The Central Directory remains present and valid, so standard ZIP tools can still open the archive, but cozip-aware readers do not need the Central Directory for priority-file access.</p>
+<p>In practice, priority files often include metadata containers such as Parquet, which encode structured, typed information about archive entries. Query engines such as DuckDB or Arrow can read this metadata to resolve byte ranges and access underlying data directly, treating the cozip like a database.</p>
+<p>Part I defines the on-disk format and the semantics of the index. Part II defines optional <strong>profiles</strong> that fix the names and roles of priority files for specific use cases.</p>
+<h2 class="part" id="2-conformance">2. Conformance</h2>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>, <strong>MAY</strong>, and <strong>OPTIONAL</strong> in this specification are to be interpreted as described in RFC 2119 and RFC 8174.</p>
+<p>Unless explicitly marked informative, all requirements in this document are normative.</p>
+<h2 class="part" id="3-terminology">3. Terminology</h2>
+<p><strong>Local File Header (LFH).</strong> A ZIP record that precedes each entry's payload inside the archive.</p>
+<p><strong>Central Directory (CD).</strong> A table at the end of a ZIP archive listing all entries.</p>
+<p><strong>End of Central Directory Record (EOCD).</strong> The final ZIP record in a non-commented archive. It points to the Central Directory or, in ZIP64 archives, is paired with ZIP64 end records.</p>
+<p><strong>Index entry.</strong> The first ZIP entry in a cozip archive. Its filename is always <code>__cozip__</code>. Its payload holds the cozip index.</p>
+<p><strong>Index.</strong> The binary structure stored in the payload of the index entry, defined in section 7.</p>
+<p><strong>Priority file.</strong> A file the creator chose to list in the cozip index. Priority files are reachable by a cozip-aware reader without reading the Central Directory.</p>
+<p><strong>Non-priority file.</strong> A file present as a ZIP entry inside the archive but not listed in the cozip index. Non-priority files are reachable through the Central Directory or through profile metadata that names their byte ranges.</p>
+<p><strong>Payload.</strong> The raw bytes of a ZIP entry's content, immediately following that entry's Local File Header. Since cozip forbids compression, encryption, data descriptors, and explicit directory entries, the payload corresponds exactly to the original file bytes.</p>
+<p><strong>Payload offset.</strong> The byte position, measured from byte 0 of the archive, where a ZIP entry's payload begins.</p>
+<p><strong>Half-open range.</strong> An internal byte interval written <code>[start, end)</code>, including <code>start</code> and excluding <code>end</code>.</p>
+<p><strong>Profile.</strong> A named convention layered on top of the core format that fixes the names and roles of certain priority files.</p>
+<h2 class="part" id="4-goals">4. Goals</h2>
+<ol class="list">
+<li>Provide fast remote access to priority files inside a ZIP archive.</li>
+<li>Remain a valid ZIP archive readable by standard ZIP tools.</li>
+<li>Keep the format parseable in any language with minimal dependencies.</li>
+<li>Prohibit ZIP features that break direct byte-range access: compression, encryption, data descriptors, split/spanned archives, explicit directory entries, and zero-byte entries.</li>
+<li>Detect accidental structural modification of the cozip access path through a compact integrity hash.</li>
+<li>Allow higher-level conventions through profiles without changing the core binary index.</li>
+</ol>
+<h2 class="part" id="5-archive-layout">5. Archive layout</h2>
+<p>A cozip archive is a valid, single-segment ZIP archive whose first entry is the index entry.</p>
+<p>Byte 0 of the archive is the first byte of the Local File Header of the index entry. No header, padding, spanning marker, self-extracting executable, or metadata precedes it.</p>
+<p>The top-level layout is:</p>
+<pre><code class="language-text">[LFH for __cozip__][cozip index payload]
+[file entry 1]
+[file entry 2]
+...
+[file entry n]
+[Central Directory]
+[optional ZIP64 EOCD record and ZIP64 EOCD locator]
+[EOCD]
+</code></pre>
+<p>The ZIP archive comment length in the EOCD <strong>MUST</strong> be zero. Therefore, the EOCD is the final ZIP record and the final bytes of the archive.</p>
+<h3 id="51-core-requirements">5.1 Core requirements</h3>
+<h4 id="index-entry">Index entry</h4>
+<ol class="list">
+<li>The first four archive bytes <strong>MUST</strong> be the ZIP Local File Header signature <code>0x04034b50</code> in little-endian order.</li>
+<li>The first ZIP entry <strong>MUST</strong> have filename <code>__cozip__</code>, encoded as the 9 ASCII bytes <code>5F 5F 63 6F 7A 69 70 5F 5F</code>.</li>
+<li>The Local File Header of the index entry <strong>MUST</strong> carry exactly one extra field: the cozip integrity hash block defined in section 8 (12 bytes). Therefore the Local File Header has a fixed size of 51 bytes (30 + 9 + 12), and the cozip index payload always begins at archive byte 51.</li>
+<li>The index entry <strong>MUST NOT</strong> use ZIP64. Its 32-bit <code>compressed_size</code> and <code>uncompressed_size</code> fields <strong>MUST</strong> be equal, greater than zero, and strictly less than <code>0xFFFFFFFF</code>.</li>
+</ol>
+<h4 id="all-zip-entries">All ZIP entries</h4>
+<ol start="5" class="list">
+<li>Every ZIP entry <strong>MUST</strong> use compression method <code>0</code> (STORE), and its resolved compressed size and resolved uncompressed size <strong>MUST</strong> be equal and greater than zero. Explicit directory entries (zero-byte folder records) are not allowed.</li>
+<li>Every ZIP entry <strong>MUST</strong> be unencrypted: General Purpose Bit Flag bits 0, 6, and 13 <strong>MUST NOT</strong> be set, compression method <code>99</code> <strong>MUST NOT</strong> be used, and archive-level Central Directory Encryption <strong>MUST NOT</strong> be used.</li>
+<li>General Purpose Bit Flag bit 3 (Data Descriptor) <strong>MUST NOT</strong> be set for any entry.</li>
+<li>Every ZIP entry filename <strong>MUST</strong> contain only ASCII bytes from <code>0x01</code> through <code>0x7F</code>. General Purpose Bit Flag bit 11 (UTF-8 language encoding) <strong>MAY</strong> be set or unset. Readers <strong>MUST</strong> reject names containing <code>0x00</code> or a byte greater than or equal to <code>0x80</code>.</li>
+<li>All ZIP entry filenames <strong>MUST</strong> be unique within the archive.</li>
+</ol>
+<h4 id="archive-level">Archive-level</h4>
+<ol start="10" class="list">
+<li>The archive <strong>MUST</strong> be a single-segment ZIP file. Split, spanned, and multi-disk ZIP archives are not allowed.</li>
+<li>The EOCD archive comment length <strong>MUST</strong> be zero.</li>
+<li>The archive size <strong>MUST</strong> be at least <code>32768 + 51</code> bytes. This prevents the integrity-hash bytes (archive offsets 43 through 50) from falling inside the mandatory 32 KiB verification suffix.</li>
+</ol>
+<h3 id="52-zip64-policy">5.2 ZIP64 policy</h3>
+<ol class="list">
+<li>The <code>__cozip__</code> index entry <strong>MUST NOT</strong> use ZIP64 and <strong>MUST NOT</strong> contain a ZIP64 extra field.</li>
+<li>Non-index entries and archive-level structures (Central Directory, EOCD) <strong>MAY</strong> use ZIP64 as defined in APPNOTE 6.3.10. When a 32-bit field carries the sentinel <code>0xFFFFFFFF</code>, or a 16-bit field carries <code>0xFFFF</code>, the corresponding ZIP64 extra field or ZIP64 end record <strong>MUST</strong> provide the real value. If ZIP64 is required for the archive, the writer <strong>MUST</strong> emit both the ZIP64 End of Central Directory Record and ZIP64 End of Central Directory Locator.</li>
+</ol>
+<h3 id="53-name-requirements">5.3 Name requirements</h3>
+<p>A cozip filename is a non-empty ASCII string stored in the ZIP filename field. Bytes outside <code>0x01</code> through <code>0x7F</code> are not allowed.</p>
+<ol class="list">
+<li>A filename <strong>MUST NOT</strong> be empty.</li>
+<li>A filename <strong>MUST NOT</strong> start with <code>/</code>.</li>
+<li>A filename <strong>MUST NOT</strong> contain a drive-letter prefix such as <code>C:</code>.</li>
+<li>A filename <strong>MUST</strong> use <code>/</code> as the path separator when a path separator is needed, and <strong>MUST NOT</strong> end with <code>/</code>.</li>
+<li>A filename <strong>MUST NOT</strong> contain a path component equal to <code>.</code> or <code>..</code>.</li>
+<li>The name <code>__cozip__</code> is reserved for the index entry and <strong>MUST NOT</strong> be used by any other entry. Profiles may reserve additional names.</li>
+<li>The name <code>__cozip_padding__</code> is reserved. A writer <strong>MAY</strong> emit a single ZIP entry with this name to satisfy §5.1.12. Such an entry <strong>MUST NOT</strong> appear in the cozip index, and no other entry <strong>MAY</strong> use this name. Its payload contents and byte length are unspecified; readers <strong>MUST</strong> treat it as an ordinary non-priority ZIP entry with no semantic meaning.</li>
+</ol>
+<h2 class="part" id="6-writer-model">6. Writer model</h2>
+<p>This section is normative for writers.</p>
+<p>A cozip writer <strong>MUST</strong> construct a final, internally consistent ZIP archive. The recommended model is planned construction: before writing to the output object, the writer must compute all final archive metadata—Local File Header sizes, payload offsets and sizes, ZIP64 requirements, profile metadata, and Central Directory records.</p>
+<p>A writer <strong>MUST</strong> reject a source whose final payload size is zero and <strong>SHOULD</strong> report that condition directly. A planning API <strong>MAY</strong> use a zero-size placeholder for metadata that has not been materialized yet, but the placeholder <strong>MUST NOT</strong> be written as an archive entry.</p>
+<p>The writer <strong>MUST</strong> know all final payload offsets and sizes before writing the index payload. The index payload, its CRC-32, and its 32-bit size fields <strong>MUST</strong> be final when the index entry is emitted.</p>
+<p>The archive is finalized after the writer has:</p>
+<ol class="list">
+<li>generated all profile metadata, including Parquet metadata where required;</li>
+<li>written the index entry with final index payload bytes;</li>
+<li>written all non-index entries;</li>
+<li>written the Central Directory and EOCD or ZIP64 EOCD structures;</li>
+<li>computed and patched the cozip integrity hash (section 8.4).</li>
+</ol>
+<p>The hash patch is the only mutation permitted during finalization. It does not invalidate any ZIP CRC-32, because ZIP CRC-32 covers entry payload bytes, not Local File Header extra-field metadata. After finalization the archive <strong>MUST NOT</strong> be modified.</p>
+<p><em>Informative.</em> A planned archive whose total predicted size is below the §5.1.12 minimum cannot be finalized as-is, because the integrity-hash bytes at offsets 43–50 would fall inside the 32 KiB suffix region and produce a self-referential hash input. To resolve this, the writer must extend the archive past the floor through any mechanism that does not violate the requirements of this section. The recommended mechanism, and the one used by the reference writer, is to insert a single non-indexed entry named <code>__cozip_padding__</code> (§5.3.7) after all payloads whose offsets must remain stable. It is normally the final entry; a profile that requires a final priority block may instead require the padding immediately before that block, as TACO does in §14.3. The padding entry's payload contents and length are at the writer's discretion. Writers that satisfy §5.1.12 by other means (for example, by enlarging a profile-controlled metadata payload) are equally valid; the only spec-level requirement is that the resulting archive conform to Part I in full.</p>
+<h2 class="part" id="7-index-layout">7. Index layout</h2>
+<p>The index is the payload of the <code>__cozip__</code> entry. It is organised as five contiguous sections.</p>
+<pre><code class="language-text">┌──────────────────────────────────────────────────────────────┐
+│ Section 1. Header                         11 bytes           │
+├──────────────────────────────────────────────────────────────┤
+│ Section 2. Name lengths                   n_entries × 2      │
+├──────────────────────────────────────────────────────────────┤
+│ Section 3. Names (ASCII concatenated)     sum(name_lens) B   │
+├──────────────────────────────────────────────────────────────┤
+│ Section 4. Offsets                        n_entries × 8      │
+├──────────────────────────────────────────────────────────────┤
+│ Section 5. Sizes                          n_entries × 8      │
+└──────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="71-header">7.1 Header</h3>
+<table class="spec">
+<thead>
+<tr>
+<th style="text-align:right">Offset</th>
+<th style="text-align:right">Size</th>
+<th>Field</th>
+<th>Type</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">0</td>
+<td style="text-align:right">4</td>
+<td><code>magic</code></td>
+<td>bytes</td>
+<td>ASCII <code>CZIP</code> = <code>0x43 0x5A 0x49 0x50</code></td>
+</tr>
+<tr>
+<td style="text-align:right">4</td>
+<td style="text-align:right">2</td>
+<td><code>version</code></td>
+<td>u16 LE</td>
+<td><code>1</code> for this binary format</td>
+</tr>
+<tr>
+<td style="text-align:right">6</td>
+<td style="text-align:right">1</td>
+<td><code>profile</code></td>
+<td>u8</td>
+<td>Profile identifier; see Part II</td>
+</tr>
+<tr>
+<td style="text-align:right">7</td>
+<td style="text-align:right">4</td>
+<td><code>n_entries</code></td>
+<td>u32 LE</td>
+<td>Number of priority files in the index</td>
+</tr>
+</tbody>
+</table>
+<p>The header is 11 bytes long. A reader <strong>MUST</strong> reject the archive if <code>magic</code> is not <code>CZIP</code> or if <code>version</code> is greater than the reader supports.</p>
+<p>A reader that does not recognise the declared <code>profile</code> <strong>MAY</strong> still parse the index and access priority files by literal name, but <strong>MUST NOT</strong> assume profile-specific semantics.</p>
+<h3 id="72-name-lengths">7.2 Name lengths</h3>
+<p><code>n_entries</code> consecutive u16 little-endian values, giving the byte length of each name in section 7.3. Each name length <strong>MUST</strong> be greater than zero.</p>
+<h3 id="73-names">7.3 Names</h3>
+<p>The concatenation of all priority filenames, in the same order as section 7.2, encoded as ASCII without null terminators. Names within the index <strong>MUST</strong> be unique. The index <strong>MUST NOT</strong> include <code>__cozip__</code>.</p>
+<h3 id="74-offsets">7.4 Offsets</h3>
+<p><code>n_entries</code> consecutive u64 little-endian values. Each value is the payload offset of the corresponding file, measured in bytes from byte 0 of the archive — that is, the first byte after that entry's Local File Header.</p>
+<p>The order of entries in the index has no semantic meaning unless a profile adds a profile-specific ordering rule.</p>
+<h3 id="75-sizes">7.5 Sizes</h3>
+<p><code>n_entries</code> consecutive u64 little-endian values. Each value is the byte length of the corresponding file's payload, and <strong>MUST</strong> be greater than zero.</p>
+<p>For every indexed entry, the writer <strong>MUST</strong> ensure <code>offset + size</code> does not overflow u64 arithmetic and does not exceed the archive size. A reader <strong>SHOULD</strong> validate these conditions when the archive size is known.</p>
+<h2 class="part" id="8-cozip-integrity-hash-block">8. Cozip integrity hash block</h2>
+<p>The cozip integrity hash block is a ZIP extra field attached to the Local File Header of the <code>__cozip__</code> entry. It carries an FNV-1a 64-bit hash over the cozip index payload and the final 32 KiB of the archive.</p>
+<p>The hash is a compact structural integrity check designed to detect accidental modification of the fast access path: the index payload, the ZIP tail, the EOCD, and ZIP64 end structures. It is not a cryptographic signature and does not cover every data byte in the archive.</p>
+<h3 id="81-block-layout">8.1 Block layout</h3>
+<p>The hash block is exactly 12 bytes long.</p>
+<table class="spec">
+<thead>
+<tr>
+<th>LFH byte range</th>
+<th style="text-align:right">Block offset</th>
+<th style="text-align:right">Size</th>
+<th>Field</th>
+<th>Type</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>39–40</td>
+<td style="text-align:right">0</td>
+<td style="text-align:right">2</td>
+<td><code>header_id</code></td>
+<td>u16 LE</td>
+<td><code>0xCA0C</code></td>
+</tr>
+<tr>
+<td>41–42</td>
+<td style="text-align:right">2</td>
+<td style="text-align:right">2</td>
+<td><code>data_size</code></td>
+<td>u16 LE</td>
+<td><code>8</code></td>
+</tr>
+<tr>
+<td><strong>43–50</strong></td>
+<td style="text-align:right">4</td>
+<td style="text-align:right">8</td>
+<td><code>integrity_hash</code></td>
+<td>u64 LE</td>
+<td>FNV-1a 64 over the hash input (§8.2)</td>
+</tr>
+</tbody>
+</table>
+<p>Within the archive, the hash block occupies bytes 39 through 50 inclusive. The <code>integrity_hash</code> value occupies bytes 43 through 50; this is the <strong>only</strong> byte range mutated during finalization (§8.4).</p>
+<h3 id="82-hash-input">8.2 Hash input</h3>
+<p>Let:</p>
+<pre><code class="language-text">INDEX_OFFSET      = 51
+HASH_WINDOW_SIZE  = 32768
+index_size        = resolved compressed size of the __cozip__ entry
+index_region      = [INDEX_OFFSET, INDEX_OFFSET + index_size)
+suffix_region     = [archive_size - HASH_WINDOW_SIZE, archive_size)
+</code></pre>
+<p>The archive size <strong>MUST</strong> be at least <code>HASH_WINDOW_SIZE + INDEX_OFFSET</code> (see 5.1.12).</p>
+<p>The hash input is the union of <code>index_region</code> and <code>suffix_region</code>, hashed in ascending archive-byte order. If the two regions overlap, overlapping bytes are included only once.</p>
+<p>Because the suffix region is 32 KiB and the ZIP archive comment is prohibited, the suffix region includes the EOCD and, when present, the ZIP64 EOCD Locator and ZIP64 EOCD Record.</p>
+<h3 id="83-hash-function">8.3 Hash function</h3>
+<p>FNV-1a 64-bit is used because it is tiny to implement, fast, and sufficient for accidental corruption detection of a small structural window.</p>
+<pre><code class="language-text">offset_basis = 0xCBF29CE484222325
+prime        = 0x100000001B3
+
+h = offset_basis
+for each byte b in input:
+    h = h XOR b
+    h = (h × prime) mod 2^64
+return h
+</code></pre>
+<h3 id="84-writer-procedure">8.4 Writer procedure</h3>
+<p>A writer <strong>MUST</strong> initially write <code>integrity_hash</code> as eight zero bytes. After the full archive has been written, the writer <strong>MUST</strong> compute FNV-1a 64 over the hash input defined in §8.2 and overwrite the 8 bytes at archive offsets 43 through 50 with the computed value. No other bytes may be modified during finalization.</p>
+<h3 id="85-reader-verification">8.5 Reader verification</h3>
+<p>A reader <strong>SHOULD</strong> validate the integrity hash before trusting indexed offsets when the archive is read from remote storage or an untrusted cache.</p>
+<p>The canonical validation procedure is:</p>
+<ol class="list">
+<li>Read the first 51 bytes of the archive and validate the index Local File Header:
+<ol class="list">
+<li>signature is <code>0x04034b50</code>;</li>
+<li>General Purpose Bit Flag bit 11 may be either set or unset; the literal <code>__cozip__</code> is pure ASCII, so the flag is informational for the index entry;</li>
+<li>General Purpose Bit Flag bits 0, 3, 6, and 13 are <strong>unset</strong>;</li>
+<li>compression method is <code>0</code>;</li>
+<li><code>compressed_size</code> and <code>uncompressed_size</code> are equal, greater than zero, and strictly less than <code>0xFFFFFFFF</code>;</li>
+<li>filename length is <code>9</code>;</li>
+<li>extra field length is <code>12</code>;</li>
+<li>filename equals the 9 ASCII bytes <code>5F 5F 63 6F 7A 69 70 5F 5F</code>;</li>
+<li>extra field <code>header_id</code> is <code>0xCA0C</code> and <code>data_size</code> is <code>8</code>.</li>
+</ol>
+</li>
+<li>Read <code>integrity_hash</code> from archive bytes 43–50.</li>
+<li>Read the index payload <code>[51, 51 + index_size)</code>.</li>
+<li>Obtain the archive size from <code>Content-Length</code>, <code>Content-Range</code>, filesystem metadata, or an equivalent byte-exact source.</li>
+<li>Reject the archive if <code>archive_size &lt; 32768 + 51</code>.</li>
+<li>Read the suffix region <code>[archive_size - 32768, archive_size)</code>.</li>
+<li>Compute FNV-1a 64 over the union of the index region and suffix region (§8.2).</li>
+<li>Compare the computed value with the stored <code>integrity_hash</code>. If they differ, reject the archive with <code>HASH_MISMATCH</code>.</li>
+</ol>
+<h2 class="part" id="9-error-codes">9. Error codes</h2>
+<p>Implementations <strong>SHOULD</strong> map parse and validation failures to the following canonical names.</p>
+<table class="spec">
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>INVALID_LFH</code></td>
+<td>The index Local File Header is malformed, not at byte 0, or fails any check in §8.5 step 1, including a non-conforming hash block.</td>
+</tr>
+<tr>
+<td><code>INVALID_MAGIC</code></td>
+<td>Index header magic is not <code>CZIP</code>.</td>
+</tr>
+<tr>
+<td><code>UNSUPPORTED_VERSION</code></td>
+<td>Index header version is greater than the reader supports.</td>
+</tr>
+<tr>
+<td><code>UNKNOWN_PROFILE</code></td>
+<td>Index declares a profile the reader does not support and profile semantics are required by the application.</td>
+</tr>
+<tr>
+<td><code>HASH_MISMATCH</code></td>
+<td>The computed integrity hash does not match the stored value.</td>
+</tr>
+<tr>
+<td><code>ARCHIVE_TOO_SMALL</code></td>
+<td>The archive is smaller than <code>32768 + 51</code> bytes.</td>
+</tr>
+<tr>
+<td><code>TRUNCATED_INDEX</code></td>
+<td>The index payload is shorter than required by <code>n_entries</code> and the declared name lengths.</td>
+</tr>
+<tr>
+<td><code>DUPLICATE_NAME</code></td>
+<td>Two entries share the same name, either within the index or within the archive.</td>
+</tr>
+<tr>
+<td><code>INVALID_NAME</code></td>
+<td>A filename violates §5.3 or contains a byte outside the allowed ASCII range.</td>
+</tr>
+<tr>
+<td><code>MISSING_ENTRY</code></td>
+<td>An indexed name has no corresponding ZIP entry, or its offset/size disagrees with the matching ZIP entry.</td>
+</tr>
+<tr>
+<td><code>INVALID_OFFSET</code></td>
+<td>An offset/size pair overflows u64 arithmetic or extends beyond the archive size.</td>
+</tr>
+<tr>
+<td><code>INVALID_ZIP_STRUCTURE</code></td>
+<td>A ZIP entry or archive-level structure violates §5.1: compression method other than STORE, encrypted, data descriptor present, explicit directory entry, zero or unequal sizes, non-ASCII filename, non-zero EOCD comment, or split/multi-disk archive.</td>
+</tr>
+<tr>
+<td><code>INVALID_ZIP64</code></td>
+<td>A ZIP64 sentinel lacks a valid corresponding ZIP64 value, ZIP64 values are inconsistent, or the index entry uses ZIP64.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 class="part" id="part-ii-profiles">Part II. Profiles</h2>
+<h2 class="part" id="12-profile-mechanism">12. Profile mechanism</h2>
+<p>A profile is a named convention layered on top of the core format. It fixes the names and roles of certain priority files so a reader that recognises the profile can rely on a known shape without inspecting producer-specific documentation.</p>
+<p>A cozip declares its profile through the <code>profile</code> field of the index header (§7.1).</p>
+<h3 id="121-profile-values">12.1 Profile values</h3>
+<table class="spec">
+<thead>
+<tr>
+<th style="text-align:right">Value</th>
+<th>Profile</th>
+<th>Section</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">0</td>
+<td>None</td>
+<td>12.2</td>
+</tr>
+<tr>
+<td style="text-align:right">1</td>
+<td>Flat</td>
+<td>13</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td>TACO</td>
+<td>14</td>
+</tr>
+</tbody>
+</table>
+<p>Values from <code>3</code> to <code>255</code> are reserved for future use and <strong>MUST NOT</strong> be assigned by external specifications unless this document or a successor specification registers them.</p>
+<h3 id="122-profile-0-none">12.2 Profile 0: None</h3>
+<p>A value of <code>0</code> means the cozip conforms to no profile. Priority filenames are free except for names reserved by the core format. Readers <strong>MUST</strong> inspect priority files by literal name as documented by the producer.</p>
+<h3 id="123-profile-constraints">12.3 Profile constraints</h3>
+<p>A profile <strong>MAY</strong> reserve additional filenames, require certain priority files to exist, define their formats and schemas, fix their position in the archive, and define conventions for non-priority files.</p>
+<p>A profile <strong>MUST NOT</strong> modify or relax any requirement of Part I, including the binary structure of the cozip index and the Local File Header layout of the <code>__cozip__</code> entry. A registered profile value <strong>MUST NOT</strong> be reassigned or redefined by a successor profile.</p>
+<p>The column names <code>cozip:location</code> and <code>taco:location</code> are owned by readers and reserved across all profiles. A producer <strong>MUST NOT</strong> store either column in any archive metadata file. A reader <strong>MUST</strong> compute location values at read time from the physical payload location and <strong>MUST NOT</strong> trust or expose a stored value under either protected name.</p>
+<h3 id="124-reader-behavior">12.4 Reader behavior</h3>
+<p>Reader behavior for unrecognized profiles is defined in §7.1. A reader <strong>MAY</strong> raise <code>UNKNOWN_PROFILE</code> when profile-specific guarantees are required by the application. A reader that supports the declared profile <strong>SHOULD</strong> validate the profile-specific requirements before exposing profile semantics to its caller.</p>
+<h2 class="part" id="13-flat-profile">13. Flat profile</h2>
+<p>The Flat profile describes a cozip whose priority metadata forms a single flat manifest for the archive's data entries.</p>
+<h3 id="131-profile-value">13.1 Profile value</h3>
+<p><code>profile = 1</code>.</p>
+<h3 id="132-priority-files">13.2 Priority files</h3>
+<p>A Flat-profile cozip <strong>MUST</strong> contain exactly one priority file in its index, named <code>__metadata__</code>. The <code>__metadata__</code> file is a Parquet file.</p>
+<p>Writers <strong>MAY</strong> place <code>__metadata__</code> as the last file entry in the archive before the Central Directory. This is a convenience for ZIP-only readers that prefetch the archive tail; cozip-aware readers locate it through the index regardless of position.</p>
+<h3 id="133-schema">13.3 Schema</h3>
+<p>The <code>__metadata__</code> Parquet file <strong>MUST</strong> contain one row for every ZIP data entry except the <code>__cozip__</code> index entry, the <code>__metadata__</code> entry itself, and the <code>__cozip_padding__</code> entry if present (§5.3.7).</p>
+<p>The Parquet file <strong>MUST</strong> contain at least the following columns:</p>
+<table class="spec">
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>The entry's filename in the archive.</td>
+</tr>
+<tr>
+<td><code>offset</code></td>
+<td>uint64</td>
+<td>The entry's payload offset, from byte 0 of the archive.</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>uint64</td>
+<td>The entry's payload byte length. Greater than zero per §5.1.5.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>offset</code> and <code>size</code> values are computed by the writer at archive-creation time; the <code>name</code> value matches the filename of the corresponding ZIP entry. A producer <strong>MAY</strong> add additional columns to carry user-defined metadata. The names <code>name</code>, <code>offset</code>, and <code>size</code> are reserved by this profile. The reader-owned names <code>cozip:location</code> and <code>taco:location</code> are also prohibited by §12.3.</p>
+<h3 id="134-reader-output-columns">13.4 Reader output columns</h3>
+<p>A Flat-profile reader <strong>MUST</strong> compute <code>cozip:location</code> at read time and emit it by default. A reader <strong>MAY</strong> omit the column only when the caller explicitly opts out. The column <strong>MUST NOT</strong> be stored in <code>__metadata__</code> (§12.3).</p>
+<table class="spec">
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cozip:location</code></td>
+<td>string</td>
+<td>Where the entry's payload can be read from.</td>
+</tr>
+</tbody>
+</table>
+<p>For an archive opened at <code>A</code>, the value is <code>/vsisubfile/{offset}_{size},A</code>. When <code>A</code> is an HTTP or HTTPS URL, it is wrapped as <code>/vsicurl/A</code> first. The reader composes it because only the reader knows <code>A</code>.</p>
+<h3 id="135-file-extension">13.5 File extension</h3>
+<p>A Flat-profile cozip uses the file extension <code>.zip</code>. The MIME type is <code>application/zip</code>.</p>
+<h3 id="136-geoparquet-metadata-informative">13.6 GeoParquet metadata (informative)</h3>
+<p>Because the Flat profile permits additional columns in <code>__metadata__</code> (§13.3), a producer <strong>MAY</strong> encode <code>__metadata__</code> as a <a href="https://geoparquet.org/">GeoParquet</a> file by attaching a geometry column and the required <code>geo</code> key in the Parquet file-level metadata. The reserved <code>name</code>, <code>offset</code>, and <code>size</code> columns and the one-row-per-entry semantics of §13.3 apply unchanged.</p>
+<p>A GeoParquet <code>__metadata__</code> is still a conforming Flat-profile manifest: readers that recognise GeoParquet can spatially filter the manifest before fetching any data entry; readers that do not still see a valid Flat manifest and ignore the geometry column.</p>
+<p>See the GeoParquet specification, version 1.1.0 or later, for the geometry encoding (WKB or, in 2.0, the native Parquet <code>GEOMETRY</code> / <code>GEOGRAPHY</code> logical types), CRS conventions, and the <code>geo</code> metadata schema.</p>
+<h2 class="part" id="14-taco-profile">14. TACO profile</h2>
+<p>The TACO profile describes a cozip whose priority files form the ZIP-mode access contract of a TACO dataset.</p>
+<h3 id="141-profile-value">14.1 Profile value</h3>
+<p><code>profile = 2</code>.</p>
+<h3 id="142-priority-files">14.2 Priority files</h3>
+<p>A TACO-profile cozip <strong>MUST</strong> include the following priority files in its index:</p>
+<ol class="list">
+<li><code>COLLECTION.json</code>;</li>
+<li>every Parquet file under the <code>METADATA/</code> directory.</li>
+</ol>
+<p>The <code>DATA/</code> and <code>METADATA/</code> layouts, and the contents of <code>COLLECTION.json</code> and the metadata Parquet files, are defined by the TACO specification (§14.4). A Parquet file under <code>METADATA/</code> <strong>MUST NOT</strong> contain <code>cozip:location</code> or <code>taco:location</code> (§12.3).</p>
+<h3 id="143-position-and-contiguity">14.3 Position and contiguity</h3>
+<p>All TACO priority files <strong>MUST</strong> form one contiguous final file-entry block immediately before the Central Directory. No non-priority entry <strong>MAY</strong> appear between two TACO priority entries, and no entry <strong>MAY</strong> appear after the priority block. The relative order of priority files within this block is unspecified; readers locate each by name through the cozip index.</p>
+<p>A <code>__cozip_padding__</code> entry (§5.3.7), when present, <strong>MUST</strong> be placed before the priority block; it <strong>MUST NOT</strong> appear inside or after it.</p>
+<p>This guarantees that the priority payloads are addressable through one contiguous archive region. A reader <strong>MAY</strong> compute:</p>
+<pre><code class="language-text">priority_region_start = min(priority_payload_offsets)
+priority_region_end   = max(priority_payload_offset + priority_payload_size)
+</code></pre>
+<p>and fetch:</p>
+<pre><code class="language-http">Range: bytes=&lt;priority_region_start&gt;-&lt;priority_region_end - 1&gt;
+</code></pre>
+<p>The returned region may contain Local File Headers between priority payloads; the reader slices out each payload using the offsets and sizes from the cozip index.</p>
+<h3 id="144-reference-semantics">14.4 Reference semantics</h3>
+<p>The semantics of <code>COLLECTION.json</code>, the Parquet files under <code>METADATA/</code>, the <code>DATA/</code> layout, TACO metadata columns such as <code>internal:offset</code> and <code>internal:size</code>, and the dataset contract are defined by the TACO specification. This cozip profile only defines how the TACO ZIP-mode priority files are made byte-addressable through the cozip index.</p>
+<h3 id="145-reader-output-columns">14.5 Reader output columns</h3>
+<p>In the unpivoted file-row view, a TACO-profile reader <strong>MUST</strong> compute and emit <code>taco:location</code>, not the Flat profile's column. In the pivoted sample view, the computed location values populate the file columns named by <code>taco:structure</code>. A raw metadata-level view does not synthesize location columns. A reader <strong>MAY</strong> replace computed locations with nulls or omit them only when the caller explicitly opts out.</p>
+<table class="spec">
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>taco:location</code></td>
+<td>string</td>
+<td>Where a file can be read from.</td>
+</tr>
+</tbody>
+</table>
+<p>The value is <code>/vsisubfile/{offset}_{size},A</code>, composed from <code>internal:offset</code>, <code>internal:size</code>, and the archive location <code>A</code>. It <strong>MUST NOT</strong> be stored in a metadata Parquet file (§12.3). The TACO specification defines the column.</p>
+<h3 id="146-file-extension">14.6 File extension</h3>
+<p>A TACO-profile cozip uses the file extension <code>.zip</code>. The MIME type is <code>application/zip</code>. The authoritative machine-readable signal for the TACO container is <code>profile = 2</code> in the cozip index, not the extension.</p>
+<hr />
+<h2 class="part" id="appendices">Appendices</h2>
+<h2 class="part" id="appendix-a-mime-type-and-file-extension">Appendix A. MIME type and file extension</h2>
+<p>A cozip archive uses the standard ZIP file extension <code>.zip</code> and MIME type <code>application/zip</code>, regardless of profile.</p>
+<p>cozip is a structural profile of ZIP — analogous to how Cloud Optimized GeoTIFF uses <code>.tif</code> — and is detected authoritatively by the presence of a <code>__cozip__</code> index entry at byte 0, not by extension.</p>
+<p>When serving a cozip archive over HTTP, servers must preserve byte-exact object bytes for range requests. Transparent content encoding is incompatible with cozip byte offsets.</p>
+<h2 class="part" id="appendix-b-references">Appendix B. References</h2>
+<ol class="list">
+<li>PKWARE Inc. <strong>.ZIP File Format Specification</strong>, APPNOTE.TXT, version 6.3.10, 2022. https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.10.TXT</li>
+<li>IETF. <strong>HTTP Semantics</strong>, RFC 9110, 2022. https://datatracker.ietf.org/doc/html/rfc9110</li>
+<li>Bradner, S. <strong>Key words for use in RFCs to Indicate Requirement Levels</strong>, RFC 2119, 1997. https://datatracker.ietf.org/doc/html/rfc2119</li>
+<li>Leiba, B. <strong>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</strong>, RFC 8174, 2017. https://datatracker.ietf.org/doc/html/rfc8174</li>
+<li>Fowler, G., Noll, L. C., Vo, K. P. <strong>FNV Hash</strong>, non-cryptographic hash function. http://www.isthe.com/chongo/tech/comp/fnv/</li>
+<li>Apache Software Foundation. <strong>Apache Parquet Format</strong>. https://parquet.apache.org/</li>
+<li>Asterisk Labs. <strong>The TACO Specification</strong>, version 3.0.0, released 2026-04-13. https://asterisk.coop/taco/spec/</li>
+<li>Open Geospatial Consortium. <strong>GeoParquet Specification</strong>, version 1.1.0, 2024. https://geoparquet.org/releases/v1.1.0/</li>
+</ol>
+<!-- COZIP_SPEC_BODY_END -->
+
+    </article>
+
+    <nav class="toc onpage" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ol class="toc-sections">
+        <!-- COZIP_SPEC_TOC_START -->
+<li><a href="#part-i-core-format">Part I. Core format</a></li>
+<li><a href="#1-summary">1. Summary</a></li>
+<li><a href="#2-conformance">2. Conformance</a></li>
+<li><a href="#3-terminology">3. Terminology</a></li>
+<li><a href="#4-goals">4. Goals</a></li>
+<li><a href="#5-archive-layout">5. Archive layout</a></li>
+<li><a href="#6-writer-model">6. Writer model</a></li>
+<li><a href="#7-index-layout">7. Index layout</a></li>
+<li><a href="#8-cozip-integrity-hash-block">8. Cozip integrity hash block</a></li>
+<li><a href="#9-error-codes">9. Error codes</a></li>
+<li><a href="#part-ii-profiles">Part II. Profiles</a></li>
+<li><a href="#12-profile-mechanism">12. Profile mechanism</a></li>
+<li><a href="#13-flat-profile">13. Flat profile</a></li>
+<li><a href="#14-taco-profile">14. TACO profile</a></li>
+<li><a href="#appendices">Appendices</a></li>
+<li><a href="#appendix-a-mime-type-and-file-extension">Appendix A. MIME type and file extension</a></li>
+<li><a href="#appendix-b-references">Appendix B. References</a></li>
+<!-- COZIP_SPEC_TOC_END -->
+      </ol>
+    </nav>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/toc.js?v=1" defer></script>
+<script src="assets/js/code.js?v=1" defer></script>
+
+</body>
+</html>

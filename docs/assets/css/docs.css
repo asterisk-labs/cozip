@@ -1,0 +1,200 @@
+/* The API and spec pages, on top of reading.css. */
+
+.content pre.output {
+  background: var(--wash);
+}
+
+/* Step figures (assets/js/steps.js), drawn like the landing figure: the
+   sentence of the step, the drawing, then the step names. data-k lists the
+   steps an element shows in, data-dim the steps it fades in and data-on the
+   steps it is lit in. */
+.steps { margin: 2em 0 2.2em; }
+
+.steps-say { display: grid; margin: 0 0 16px; }
+
+.steps-say p {
+  grid-area: 1 / 1;
+  margin: 0;
+  font: 400 16px/1.5 var(--sans);
+  color: var(--ink-soft);
+  visibility: hidden;
+}
+
+.steps-say p b { font-weight: 600; color: var(--ink); }
+
+.steps-mark {
+  padding: 0 0.06em;
+  background: linear-gradient(transparent 48%, var(--yellow) 48%, var(--yellow) 94%, transparent 94%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  color: inherit;
+}
+
+.steps-mark.is-green { background: linear-gradient(transparent 48%, var(--mint) 48%, var(--mint) 94%, transparent 94%); }
+.steps-mark.is-red { background: linear-gradient(transparent 48%, #ffc4c2 48%, #ffc4c2 94%, transparent 94%); }
+
+.steps-view { outline: none; cursor: pointer; }
+.steps-view:focus-visible { box-shadow: 0 0 0 2px var(--violet); }
+
+.steps-view svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: var(--sans);
+}
+
+.steps [data-k] { opacity: 0; transition: opacity 0.4s ease; }
+.steps [data-dim] { transition: opacity 0.4s ease; }
+.steps [data-on] { transition: fill 0.35s ease, stroke 0.35s ease, stroke-width 0.35s ease; }
+
+.steps[data-step="1"] [data-k~="1"],
+.steps[data-step="2"] [data-k~="2"],
+.steps[data-step="3"] [data-k~="3"],
+.steps[data-step="4"] [data-k~="4"],
+.steps[data-step="5"] [data-k~="5"] { opacity: 1; visibility: visible; }
+
+.steps[data-step="1"] [data-dim~="1"],
+.steps[data-step="2"] [data-dim~="2"],
+.steps[data-step="3"] [data-dim~="3"],
+.steps[data-step="4"] [data-dim~="4"],
+.steps[data-step="5"] [data-dim~="5"] { opacity: 0.22; }
+
+.steps[data-step="1"] rect[data-on~="1"],
+.steps[data-step="2"] rect[data-on~="2"],
+.steps[data-step="3"] rect[data-on~="3"],
+.steps[data-step="4"] rect[data-on~="4"],
+.steps[data-step="5"] rect[data-on~="5"] { stroke: var(--violet); stroke-width: 3; }
+
+.steps[data-step="1"] text[data-on~="1"],
+.steps[data-step="2"] text[data-on~="2"],
+.steps[data-step="3"] text[data-on~="3"],
+.steps[data-step="4"] text[data-on~="4"],
+.steps[data-step="5"] text[data-on~="5"],
+.steps[data-step="1"] tspan[data-on~="1"],
+.steps[data-step="2"] tspan[data-on~="2"],
+.steps[data-step="3"] tspan[data-on~="3"],
+.steps[data-step="4"] tspan[data-on~="4"],
+.steps[data-step="5"] tspan[data-on~="5"] { fill: var(--violet); font-weight: 600; }
+
+/* the index and the manifest are violet already, so a lit one takes ink */
+.steps[data-step="1"] rect.is-strong[data-on~="1"],
+.steps[data-step="2"] rect.is-strong[data-on~="2"],
+.steps[data-step="3"] rect.is-strong[data-on~="3"],
+.steps[data-step="4"] rect.is-strong[data-on~="4"],
+.steps[data-step="5"] rect.is-strong[data-on~="5"] { stroke: var(--ink); }
+
+.steps-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 10px auto 0;
+  min-height: 36px;
+  font-family: var(--mono);
+}
+
+.steps:not(.is-ready) .steps-nav { display: none; }
+
+.steps-arrow {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.steps-arrow svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.steps-arrow:hover:not(:disabled),
+.steps-arrow:focus-visible { color: var(--ink); }
+.steps-arrow:disabled { opacity: 0.3; cursor: default; }
+
+.steps-names { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; }
+
+.steps-name {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.steps-name:hover,
+.steps-name:focus-visible { color: var(--ink-soft); }
+.steps-name.is-active { color: var(--ink); border-bottom-color: var(--ink); }
+.steps-arrow:focus-visible,
+.steps-name:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+
+.steps-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* The drawings */
+.cz-seg { stroke: var(--ink); stroke-width: 1.2; }
+.cz-file { stroke: #9b9ea6; stroke-width: 0.8; }
+.cz-cd { fill: #e4e4e8; }
+.cz-end { fill: #3a3a40; }
+.cz-label { fill: var(--ink); font: 600 12px var(--sans); text-anchor: middle; }
+.cz-label.is-light { fill: #fff; }
+.cz-label.is-faint { fill: var(--faint); font-weight: 500; }
+.cz-title { fill: var(--ink); font: 600 13px var(--sans); }
+.cz-note { fill: var(--dim); font: 400 11.5px var(--sans); }
+.cz-ruler { fill: var(--faint); font: 400 10px var(--mono); }
+.cz-say { fill: var(--violet); font: 600 12px var(--sans); }
+.cz-no { fill: #b42318; font: 600 12px var(--sans); }
+.cz-num { fill: var(--violet); font: 650 13px var(--sans); text-anchor: middle; }
+.cz-span, .cz-arrow { fill: none; stroke: var(--violet); stroke-width: 1.6; }
+.cz-link { fill: none; stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
+.cz-lit { fill: none; stroke: var(--violet); stroke-width: 3; }
+.cz-lit.is-ink { stroke: var(--ink); }
+.cz-box { fill: #fff; stroke: var(--ink); stroke-width: 1; }
+.cz-mono { fill: var(--ink-soft); font: 400 10.5px var(--mono); font-variant-ligatures: none; }
+.cz-mono.is-head { fill: var(--faint); font-size: 9.5px; }
+.cz-mono.is-num { text-anchor: end; }
+.cz-mono.is-faint { fill: var(--faint); }
+.cz-row { fill: var(--mint); }
+.cz-cell { fill: #fff; stroke: var(--ink); stroke-width: 1; }
+.cz-ghost { fill: none; stroke: #b8bac2; stroke-width: 1.2; stroke-dasharray: 4 4; }
+
+/* On a phone the drawing keeps a readable size and scrolls sideways */
+@media (max-width: 600px) {
+  .steps-view { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .steps-view svg { width: 600px; max-width: none; }
+  .steps-view::before {
+    content: "Swipe sideways to see the whole figure";
+    position: sticky;
+    left: 0;
+    display: block;
+    margin-bottom: 8px;
+    font: 500 11px var(--mono);
+    color: var(--dim);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .steps [data-k], .steps [data-dim], .steps [data-on], .steps-arrow, .steps-name { transition: none; }
+}

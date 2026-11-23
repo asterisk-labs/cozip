@@ -1,0 +1,17 @@
+/* The cozip landing page, on top of the shell shared with Rumi, GeoZL and Karu. */
+
+.hero h1 .hero-highlight::before,
+.hero-summary-highlight::before {
+  border-radius: 0;
+}
+
+/* the title takes the green marker and the summary the yellow one, as on the
+   Rumi, GeoZL and Karu pages */
+.hero h1 .hero-highlight::before {
+  background: #c4ffc2;
+}
+
+/* One screen: the hero takes the height it needs and the view centers it. */
+@media (min-width: 861px) {
+  html[data-route="home"] .hero { min-height: 0; }
+}

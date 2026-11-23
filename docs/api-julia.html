@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="The cozip Julia API, function by function.">
+<title>cozip · Julia</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+<link rel="stylesheet" href="assets/css/docs.css?v=4">
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html" class="here">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="doc">
+    <nav class="toc" aria-label="Contents">
+      <p class="toc-title">API</p>
+      <ol class="toc-pages">
+        <li><a href="api.html">Overview</a></li>
+        <li class="toc-group">Languages</li>
+        <li><a href="api-python.html">Python</a></li>
+        <li><a href="api-r.html">R</a></li>
+        <li><a href="api-julia.html" class="here" aria-current="page">Julia</a></li>
+        <li><a href="api-c.html">C</a></li>
+        <li><a href="api-js.html">JavaScript</a></li>
+      </ol>
+    </nav>
+
+    <article class="content">
+      <h1>Julia</h1>
+<ul class="facts">
+        <li>Package <code>Cozip</code> in the <a href="https://github.com/asterisk-labs/AsteriskRegistry" rel="noopener noreferrer">Asterisk registry</a>, on Julia 1.10 or newer, with the native library for Linux x86-64 and aarch64, macOS and Windows x86-64.</li>
+      </ul>
+<pre><code class="language-julia">using Pkg
+Pkg.Registry.add(Pkg.RegistrySpec(url = "https://github.com/asterisk-labs/AsteriskRegistry"))
+Pkg.add("Cozip")</code></pre>
+      <p>Cozip uses libcozip for archive I/O and DuckDB to write and decode manifests. The native library is downloaded on first use. <a href="#create"><code>create</code></a>, <a href="#stage_metadata"><code>stage_metadata</code></a> and <a href="#stage_create"><code>stage_create</code></a> are exported. Call <code>Cozip.write</code> and <a href="#read"><code>Cozip.read</code></a> with the module name. The rules every binding shares are on the <a href="api.html">API overview</a>.</p>
+
+      <h2 class="part" id="writing">Writing</h2>
+
+      <h3 id="create">create</h3>
+<pre><code class="sig language-julia">Cozip.write(out_path, table; temp_dir = nothing) -&gt; String
+create(out_path, table; temp_dir = nothing) -&gt; String</code></pre>
+      <p>Writes a Flat archive from a table, as <a href="api.html#write">Write</a> describes, and returns <code>abspath(out_path)</code>.</p>
+      <table class="spec">
+        <tr><th>out_path</th><td>The destination archive. An existing file is replaced.</td></tr>
+        <tr><th>table</th><td>Any Tables.jl source with <code>name</code>, <code>path</code> and your columns, copied into a <code>DataFrame</code>.</td></tr>
+        <tr><th>temp_dir</th><td>Where the temporary manifest Parquet goes, created if missing. The default is <code>tempdir()</code>.</td></tr>
+      </table>
+<pre><code class="language-julia">using Cozip, DataFrames
+
+tbl = DataFrame(
+    name  = ["a.txt", "data/b.bin"],
+    path  = ["a.txt", "b.bin"],
+    split = ["train", "val"],
+)
+Cozip.write("out.zip", tbl)</code></pre>
+      <p>DuckDB writes the manifest with native scalar types: <code>UInt64</code> as <code>UBIGINT</code>, <code>Vector{UInt8}</code> as <code>BLOB</code>, and <code>missing</code> as null. An element type it cannot store raises <code>ArgumentError</code>. Table-level metadata, a GeoParquet <code>geo</code> entry included, is kept.</p>
+
+      <h3 id="stage_metadata">stage_metadata</h3>
+<pre><code class="sig language-julia">stage_metadata(table) -&gt; (metadata = DataFrame, paths = Vector{Tuple{String,String}})</code></pre>
+      <p>Plans the archive without writing anything, the first of the <a href="api.html#stages">two stages</a>. It returns the manifest as a <code>DataFrame</code> and the <code>(name, path)</code> tuples in the same order. <code>table</code> is as for <a href="#create"><code>create</code></a>.</p>
+<pre><code class="language-julia">metadata, paths = stage_metadata(tbl)
+metadata</code></pre>
+<pre class="output"><code>2×4 DataFrame
+ Row │ name        offset  size    split
+     │ String      UInt64  UInt64  String
+─────┼────────────────────────────────────
+   1 │ a.txt          127      96  train
+   2 │ data/b.bin     263   40960  val</code></pre>
+
+      <h3 id="stage_create">stage_create</h3>
+<pre><code class="sig language-julia">stage_create(out_path, paths, metadata_parquet; validate = true) -&gt; String</code></pre>
+      <p>Writes the archive around a manifest Parquet you wrote and returns <code>abspath(out_path)</code>.</p>
+      <table class="spec">
+        <tr><th>out_path</th><td>The destination archive.</td></tr>
+        <tr><th>paths</th><td>An iterable of two-element <code>Tuple</code>s <code>(name, source_path)</code>, in the manifest's row order. Vectors of vectors are refused.</td></tr>
+        <tr><th>metadata_parquet</th><td>The Parquet file, stored byte for byte as <code>__metadata__</code>.</td></tr>
+        <tr><th>validate</th><td>A <code>Bool</code>. The first mismatch with a fresh plan raises <code>ArgumentError</code>.</td></tr>
+      </table>
+
+      <h2 class="part" id="reading">Reading</h2>
+
+      <h3 id="read">read</h3>
+<pre><code class="sig language-julia">Cozip.read(source; columns = nothing, location = true) -&gt; DataFrame</code></pre>
+      <p>Reads the manifest of a Flat archive into a <code>DataFrame</code>, one row per file. The arguments are described under <a href="api.html#read">Read</a>.</p>
+      <table class="spec">
+        <tr><th>source</th><td>A string, in one of the <a href="api.html#sources">source forms</a>.</td></tr>
+        <tr><th>columns</th><td><code>nothing</code>, or a vector of names. With a vector, the columns are <code>name</code>, <code>offset</code>, <code>size</code>, <code>cozip:location</code>, then the listed ones. An unknown name throws an <code>ArgumentError</code>.</td></tr>
+        <tr><th>location</th><td>A <code>Bool</code>.</td></tr>
+      </table>
+<pre><code class="language-julia">url = "https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"
+manifest = Cozip.read(url; columns = ["label", "continent"])
+filter(:continent =&gt; ==("Europe"), manifest)[:, [:name, :offset, :size]]</code></pre>
+<pre class="output"><code>2×3 DataFrame
+ Row │ name                  offset  size
+     │ String                UInt64  UInt64
+─────┼──────────────────────────────────────
+   1 │ cities/paris.geojson    1092     172
+   2 │ cities/oslo.geojson     1313     171</code></pre>
+      <p>DuckDB decodes the manifest through a locked connection. Column types follow the Parquet file, so a <code>Cozip.write</code> manifest returns <code>UInt64</code> offsets and sizes.</p>
+      <p>On Windows, <code>Cozip.read</code> throws an <code>ErrorException</code> before it reads anything, because the native reader has not been verified there from Julia. Writing works on Windows. Read with Python there, or under WSL.</p>
+
+      <h3 id="verify">verify</h3>
+<pre><code class="sig language-julia">Cozip.verify(source) -&gt; Nothing</code></pre>
+      <p>Checks an archive of any profile, as described under <a href="api.html#verify">Verify</a>. Returns <code>nothing</code>, or throws a <code>Cozip.LibCozip.CozipError</code> whose <code>name</code> is the broken rule. Like <code>Cozip.read</code>, it is not exported and throws on Windows.</p>
+
+      <h3 id="files">Opening the files</h3>
+      <p>ArchGDAL and other GDAL readers open <code>cozip:location</code>. A local archive also opens with a seek and a read of the <a href="api.html#files">byte range</a>.</p>
+<pre><code class="language-julia">out = Cozip.write("out.zip", tbl)
+m = Cozip.read(out; columns = ["split"])
+bytes = open(out) do io
+    seek(io, m.offset[1])
+    read(io, m.size[1])   # the 96 bytes of a.txt
+end</code></pre>
+
+      <h2 class="part" id="geoparquet">GeoParquet manifests</h2>
+      <p>Write the manifest with GeoParquet.jl and pass it to <code>stage_create</code> with the <code>paths</code> from <code>stage_metadata</code>.</p>
+<pre><code class="language-julia">using GeoParquet
+import GeoInterface as GI
+
+md, paths = stage_metadata(tbl)
+md.geometry = [GI.Point((-77.04, -12.05)), GI.Point((2.35, 48.86))]
+GeoParquet.write("meta.parquet", md, (:geometry,))
+stage_create("out.zip", paths, "meta.parquet")</code></pre>
+      <p>GeoParquet.jl stores <code>offset</code> and <code>size</code> as unsigned 64-bit integers with a logical type and no converted type. pyarrow reads them as <code>uint64</code>, but DuckDB reads them as signed, so <code>Cozip.read</code> returns them as <code>Int64</code> for this manifest.</p>
+
+      <h2 class="part" id="errors">Errors</h2>
+      <p>A check made in Julia throws an <code>ArgumentError</code>, a missing file included, with a message that starts with <code>cozip: </code> and counts rows from one. A failure inside libcozip throws <code>Cozip.LibCozip.CozipError</code>, with the fields <code>code</code>, <code>name</code> and <code>message</code>, and counts entries from zero. The <a href="api.html#errors">API overview</a> lists the causes.</p>
+<pre class="output"><code>ArgumentError: cozip: row 1 ("a"): source not found: nope.txt
+CozipError [INVALID_ARGUMENT] entry 0 ('e') has a zero-byte payload; FLAT user entries must be non-empty
+CozipError [HASH_MISMATCH] cozip integrity hash mismatch: bad.zip</code></pre>
+
+      <h2 class="part" id="native">Native library</h2>
+      <p><code>Cozip.LibCozip.cozip_version()</code> returns the version of the loaded library, such as <code>2026.11.23</code>. Set <code>COZIP_LIB_PATH</code> to an absolute path before using Cozip to load another build instead of the artifact, such as one made from <code>core/</code> with CMake.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="api-r.html"><span>Previous</span>R</a>
+        <a class="next" href="api-c.html"><span>Next</span>C</a>
+      </nav>
+    </article>
+
+    <nav class="toc onpage" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ol class="toc-sections">
+        <li><a href="#writing">Writing</a></li>
+        <li><a href="#reading">Reading</a></li>
+        <li><a href="#geoparquet">GeoParquet manifests</a></li>
+        <li><a href="#errors">Errors</a></li>
+        <li><a href="#native">Native library</a></li>
+      </ol>
+    </nav>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/toc.js?v=1" defer></script>
+<script src="assets/js/code.js?v=1" defer></script>
+
+</body>
+</html>

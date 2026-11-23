@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="The cozip C API, function by function.">
+<title>cozip · C</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html" class="here">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="doc">
+    <nav class="toc" aria-label="Contents">
+      <p class="toc-title">API</p>
+      <ol class="toc-pages">
+        <li><a href="api.html">Overview</a></li>
+        <li class="toc-group">Languages</li>
+        <li><a href="api-python.html">Python</a></li>
+        <li><a href="api-r.html">R</a></li>
+        <li><a href="api-julia.html">Julia</a></li>
+        <li><a href="api-c.html" class="here" aria-current="page">C</a></li>
+        <li><a href="api-js.html">JavaScript</a></li>
+      </ol>
+    </nav>
+
+    <article class="content">
+      <h1>C</h1>
+<ul class="facts">
+        <li>Header <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>core/cozip.h</code></a>, C11</li>
+        <li>Writer with libzip 1.11.4 and zlib 1.3.1, reader with Karu 0.4.0</li>
+      </ul>
+<p class="lede">libcozip writes archives and reads Flat manifests for Python, R and Julia. The writer plans the ZIP layout and verifies its output; the reader fetches and checks the index through <a href="https://asterisk.coop/karu/" rel="noopener noreferrer">Karu</a>.</p>
+      <p>libcozip handles payloads as bytes. Bindings use Arrow or DuckDB to write and decode the Parquet manifest.</p>
+
+      <h2 class="part" id="start">A complete program</h2>
+      <p class="section-intro">The program writes two buffers as an archive of profile 0 that indexes both, then reads the manifest of the public <code>cities.zip</code> and the location base of its files.</p>
+<pre><code class="language-c">#include &lt;cozip.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    /* 1. Write two buffers as a profile 0 archive that indexes both. */
+    static const char notes[] = "first file\n";
+    static const char table[] = "id,label\n1,lima\n";
+    cozip_entry_t entries[3] = {0};          /* n + 1: room for padding */
+    const char *names[] = {"notes.txt", "data/table.csv"};
+    const char *data[] = {notes, table};
+    size_t sizes[] = {sizeof notes - 1, sizeof table - 1};
+
+    for (int i = 0; i &lt; 2; i++) {
+        entries[i].arc_name = names[i];
+        entries[i].payload_size = sizes[i];
+        entries[i].in_index = true;
+        entries[i].source.kind = COZIP_SOURCE_BUFFER;
+        entries[i].source.u.buffer.data = (const uint8_t *)data[i];
+        entries[i].source.u.buffer.size = sizes[i];
+    }
+
+    cozip_error_t err = {0};
+    cozip_status_t s = cozip_finalize("small.zip", entries, 2, 3,
+                                      COZIP_PROFILE_NONE, &amp;err);
+    if (s != COZIP_OK) {
+        fprintf(stderr, "%s: %s\n", cozip_status_string(s), err.message);
+        return 1;
+    }
+    for (int i = 0; i &lt; 2; i++)
+        printf("%s at %llu, %llu bytes\n", entries[i].arc_name,
+               (unsigned long long)entries[i].payload_offset,
+               (unsigned long long)entries[i].payload_size);
+
+    /* 2. Read the manifest of a public Flat archive. */
+    const char *url = "https://huggingface.co/datasets/asterisk-labs/"
+                      "cozip-api-fixtures/resolve/v0.1.0/data/cities.zip";
+    uint8_t *parquet = NULL;
+    size_t parquet_size = 0;
+    char *message = NULL;
+    char *base = NULL;
+    int failed = 1;
+
+    s = cozip_read_flat_metadata(url, &amp;parquet, &amp;parquet_size, &amp;message);
+    if (s != COZIP_OK) {
+        fprintf(stderr, "%s: %s\n", cozip_status_string(s),
+                message ? message : "out of memory");
+        goto cleanup;
+    }
+    s = cozip_location_base(url, &amp;base, &amp;message);
+    if (s != COZIP_OK) {
+        fprintf(stderr, "%s: %s\n", cozip_status_string(s),
+                message ? message : "out of memory");
+        goto cleanup;
+    }
+    printf("manifest: %zu bytes of Parquet, magic %.4s\n", parquet_size,
+           (const char *)parquet);
+    printf("location: /vsisubfile/141_181,%s\n", base);
+    failed = 0;
+
+cleanup:
+    cozip_free(parquet);
+    cozip_free(base);
+    cozip_free(message);
+    return failed;
+}</code></pre>
+<pre class="output"><code>notes.txt at 160, 11 bytes
+data/table.csv at 215, 16 bytes
+manifest: 11868 bytes of Parquet, magic PAR1
+location: /vsisubfile/141_181,/vsicurl/https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip</code></pre>
+      <p>The index of two entries is 11 + (18 + 9) + (18 + 14) = 70 bytes, so the first local header is at byte 121 and <code>notes.txt</code> starts 30 + 9 bytes later, at 160. The planned archive is smaller than 32,819 bytes, so <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_finalize</code></a> used the spare slot for a <code>__cozip_padding__</code> entry, and <code>unzip -l small.zip</code> lists four entries. The manifest bytes start with the Parquet magic <code>PAR1</code>, and any Parquet reader decodes them.</p>
+
+      <h2 class="part" id="build">Build and link</h2>
+      <p class="section-intro">libcozip builds with CMake from <code>core/</code>. libzip, zlib and Karu are vendored, so nothing is downloaded at build time.</p>
+<pre><code class="language-sh">cmake -S core -B core/build -G Ninja
+cmake --build core/build
+cc -std=c11 app.c -Icore -Icore/build core/build/cozip.dylib -Wl,-rpath,$PWD/core/build -o app</code></pre>
+      <table class="spec"><thead><tr><th>Option</th><th>Default</th><th>Effect</th></tr></thead><tbody>
+        <tr><td><code>COZIP_READER</code></td><td><code>ON</code></td><td>Builds the Flat reader. It links Karu, so it needs a C++23 compiler, libcurl 7.83 or newer and OpenSSL 3. With <code>OFF</code> the library is C11 with no system dependency, <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_location_base</code></a> still works and <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_read_flat_metadata</code></a> returns <code>COZIP_ERR_UNSUPPORTED</code>. Emscripten builds force it off.</td></tr>
+        <tr><td><code>COZIP_BUILD_TESTS</code></td><td><code>OFF</code></td><td>Builds the test suite in <code>core/tests</code>, run with <code>ctest</code>.</td></tr>
+        <tr><td><code>COZIP_INSTALL</code></td><td><code>ON</code></td><td>Generates install rules and a <code>cozipConfig.cmake</code> that exports <code>cozip::cozip</code>. Emscripten builds force it off.</td></tr>
+      </tbody></table>
+      <ul class="list">
+        <li>The shared library has no <code>lib</code> prefix, so it is <code>cozip.dylib</code>, <code>cozip.so</code> or <code>cozip.dll</code> and <code>-lcozip</code> does not find it. Link the file itself and set an rpath, as above.</li>
+        <li>Inside a CMake project, <code>add_subdirectory(core)</code> and link <code>cozip::cozip</code>.</li>
+        <li>The version comes from the repository's <code>VERSION</code> file into the generated <code>version.h</code>, and <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_version_string</code></a> returns it, such as <code>"2026.11.23"</code>.</li>
+        <li>The build type defaults to <code>Release</code> and the macOS deployment target to 11.0.</li>
+        <li>Only <code>cozip_*</code> symbols are exported. libzip, zlib, Karu, curl and OpenSSL stay hidden inside the library, so a host with its own copies does not bind to them.</li>
+      </ul>
+      <p>Each <a href="https://github.com/asterisk-labs/cozip/releases" rel="noopener noreferrer">GitHub release</a> carries a <code>libcozip-&lt;version&gt;-&lt;platform&gt;</code> archive with <code>include/cozip.h</code>, <code>include/version.h</code> and the shared library, for Linux x86-64 and aarch64, macOS and Windows x86-64.</p>
+
+      <h2 class="part" id="conventions">Conventions</h2>
+      <p class="section-intro">Every writer function returns a <code>cozip_status_t</code> and fills an optional error. The reader reports errors as heap strings instead, because its messages can name long URLs.</p>
+      <ul class="list">
+        <li>Writer functions take a last argument <code>cozip_error_t *err</code>, which may be <code>NULL</code>. On failure it holds the status in <code>err-&gt;code</code> and a NUL-terminated UTF-8 message of at most 192 bytes (<code>COZIP_ERROR_MESSAGE_SIZE</code>) in <code>err-&gt;message</code>. On success <code>err-&gt;code</code> is <code>COZIP_OK</code> and the message is empty.</li>
+        <li>Outputs are unspecified after a failure.</li>
+        <li>Archive names are NUL-terminated ASCII. File system paths are UTF-8; the Windows build converts them to UTF-16.</li>
+        <li>The caller owns every string, entry array and buffer it passes, and they must stay valid for the whole call. libcozip keeps no pointer to them after it returns.</li>
+        <li><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_status_string</code></a> returns the stable name of a status, such as <code>"INVALID_ARGUMENT"</code>. It and the other string accessors return static storage, never <code>NULL</code>.</li>
+      </ul>
+      <p>The status names match the errors on the <a href="api.html#errors">API overview</a>, which gives the cause and the fix of each.</p>
+      <table class="spec"><thead><tr><th>Status</th><th>Value</th><th>Returned by</th></tr></thead><tbody>
+        <tr><td><code>COZIP_OK</code></td><td>0</td><td>Every call, on success.</td></tr>
+        <tr><td><code>COZIP_ERR_INVALID_LFH</code></td><td>1</td><td>The reader. Also <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_patch_integrity_hash</code></a> when byte 0 holds no <code>__cozip__</code> header, and the writer when the file on disk does not match the plan in the post-write check, after removing it.</td></tr>
+        <tr><td><code>COZIP_ERR_ARCHIVE_TOO_SMALL</code></td><td>2</td><td>The reader, and <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_patch_integrity_hash</code></a>.</td></tr>
+        <tr><td><code>COZIP_ERR_INVALID_INDEX</code></td><td>3</td><td>The reader, for a Flat index of the wrong shape, and <code>cozip_verify</code>, for an index with bytes after its last section. Section 9 of the specification has no name for it.</td></tr>
+        <tr><td><code>COZIP_ERR_PROFILE</code></td><td>4</td><td><code>cozip_read_flat_metadata</code>, for any profile but Flat. The specification calls it <code>UNKNOWN_PROFILE</code>.</td></tr>
+        <tr><td><code>COZIP_ERR_INVALID_MAGIC</code></td><td>5</td><td>The reader.</td></tr>
+        <tr><td><code>COZIP_ERR_UNSUPPORTED_VERSION</code></td><td>6</td><td>The reader, for a version of 0 or above 1.</td></tr>
+        <tr><td><code>COZIP_ERR_HASH_MISMATCH</code></td><td>7</td><td>The reader.</td></tr>
+        <tr><td><code>COZIP_ERR_TRUNCATED_INDEX</code></td><td>8</td><td>The reader.</td></tr>
+        <tr><td><code>COZIP_ERR_DUPLICATE_NAME</code>, <code>COZIP_ERR_INVALID_NAME</code></td><td>9, 10</td><td><code>cozip_verify</code>, for an indexed name that repeats or breaks the name rules. The writer reports a bad name as <code>COZIP_ERR_INVALID_ARGUMENT</code>.</td></tr>
+        <tr><td><code>COZIP_ERR_MISSING_ENTRY</code></td><td>11</td><td><code>cozip_read_flat_metadata</code>, when the manifest's local header does not match the index.</td></tr>
+        <tr><td><code>COZIP_ERR_INVALID_OFFSET</code></td><td>12</td><td>The reader.</td></tr>
+        <tr><td><code>COZIP_ERR_INVALID_ZIP_STRUCTURE</code></td><td>13</td><td>The reader.</td></tr>
+        <tr><td><code>COZIP_ERR_INVALID_ARGUMENT</code></td><td>100</td><td>The writer, for a bad name, size, source, capacity, path, profile value or profile rule, or a layout libzip cannot record. The reader, for a malformed URI or an <code>hf://</code> path it cannot map.</td></tr>
+        <tr><td><code>COZIP_ERR_BUFFER_TOO_SMALL</code></td><td>101</td><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_build_index_payload</code></a>, when <code>out_size</code> is short.</td></tr>
+        <tr><td><code>COZIP_ERR_IO</code></td><td>102</td><td>Any call, for an open, stat, read, write, libzip, allocation or cleanup failure. The reader, for a transport failure, a missing local file included.</td></tr>
+        <tr><td><code>COZIP_ERR_NOT_FOUND</code></td><td>103</td><td>The reader, for a remote object that does not exist.</td></tr>
+        <tr><td><code>COZIP_ERR_UNSUPPORTED</code></td><td>104</td><td>The reader, when the library was built without <code>COZIP_READER</code> or Karu does not read the source.</td></tr>
+      </tbody></table>
+
+      <h2 class="part" id="entries">Entries and sources</h2>
+      <p class="section-intro">The writer works on an array of <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_entry_t</code></a> in archive order. The caller fills the input fields and the planner fills the offsets in place.</p>
+      <table class="spec"><thead><tr><th>Field</th><th>Set by</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td><code>arc_name</code></td><td>caller</td><td>The ASCII name in the archive, 1 to 65,535 bytes.</td></tr>
+        <tr><td><code>payload_size</code></td><td>caller</td><td>The payload length in bytes. It must match the file or the buffer.</td></tr>
+        <tr><td><code>in_index</code></td><td>caller</td><td>Lists the entry in the byte-0 index, as a priority file.</td></tr>
+        <tr><td><code>source</code></td><td>caller</td><td>Where the payload comes from, a <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_source_t</code></a>.</td></tr>
+        <tr><td><code>lfh_offset</code></td><td>planner</td><td>Where the entry's local header starts.</td></tr>
+        <tr><td><code>lfh_size</code></td><td>planner</td><td>30 bytes plus the name, plus 20 for a ZIP64 extra when the payload is larger than <code>0xFFFFFFFF</code> bytes.</td></tr>
+        <tr><td><code>payload_offset</code></td><td>planner</td><td><code>lfh_offset + lfh_size</code>, the first payload byte from byte 0. This is the <code>offset</code> of a manifest row.</td></tr>
+      </tbody></table>
+      <p>A <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_source_t</code></a> has a <code>kind</code> and a union. <code>COZIP_SOURCE_PATH</code> reads a regular file from <code>u.path</code>, and <code>COZIP_SOURCE_BUFFER</code> reads <code>u.buffer.size</code> bytes from <code>u.buffer.data</code>, which must equal <code>payload_size</code>. <code>COZIP_SOURCE_NONE</code> is refused by every write.</p>
+      <p>The high-level calls use the array as scratch space, so it needs spare slots.</p>
+      <table class="spec"><thead><tr><th>Call</th><th>Array length</th><th>What it changes</th></tr></thead><tbody>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_finalize</code></a></td><td><code>capacity &gt;= n_entries + 1</code></td><td>Fills the offsets. When padding is needed it writes a <code>__cozip_padding__</code> entry into a spare slot, whose buffer is freed before the call returns. A padding entry placed before a final priority block moves that block one slot to the right.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_plan_flat</code></a></td><td>at least <code>n_users + 1</code></td><td>Sets <code>in_index = false</code> on the user entries and turns <code>entries[n_users]</code> into a <code>__metadata__</code> placeholder of size 0.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_write_flat</code></a></td><td><code>capacity &gt;= n_users + 2</code></td><td>As <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_plan_flat</code></a>, with the real manifest in <code>entries[n_users]</code> and room for padding after it.</td></tr>
+      </tbody></table>
+
+      <h2 class="part" id="write">Writing</h2>
+      <p class="section-intro">Three calls cover the common cases. <code>cozip_finalize</code> and <code>cozip_write_flat</code> plan, pad, build the index, write under a temporary name, check, patch the hash and rename the finished archive over the output.</p>
+      <table class="spec"><thead><tr><th>Function</th><th>Behaviour</th></tr></thead><tbody>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_finalize</code></a><br><code>(out_path, entries, n_entries, capacity, profile, err)</code></td><td>Writes every entry in array order with the given profile byte and enforces that profile's priority files: exactly <code>__metadata__</code> for Flat (spec 13.2), and <code>COLLECTION.json</code> with every <code>METADATA/*.parquet</code> as one final block for TACO (spec 14.2). Profile 0 has no such rule, so you choose its priority files with <code>in_index</code>. Profiles 3 to 255 are refused. For Flat archives <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_write_flat</code></a> also sets up the manifest slot.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_plan_flat</code></a><br><code>(entries, n_users, err)</code></td><td>Plans the user files of a Flat archive with a <code>__metadata__</code> placeholder after them, and fills every <code>payload_offset</code>. Refuses zero-byte files and the names <code>__cozip__</code>, <code>__metadata__</code> and <code>__cozip_padding__</code>.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_write_flat</code></a><br><code>(out_path, entries, n_users, capacity, metadata_path, err)</code></td><td>Writes the Flat archive with the Parquet file at <code>metadata_path</code> as <code>__metadata__</code>, byte for byte. It does not open the Parquet, so the rows must already hold the offsets <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_plan_flat</code></a> returned.</td></tr>
+      </tbody></table>
+      <p>A Flat archive therefore takes two stages, with the manifest written in between.</p>
+<pre><code class="language-c">cozip_entry_t entries[N_USERS + 2] = {0};
+/* fill arc_name, payload_size and a source for each user file */
+cozip_error_t err = {0};
+if (cozip_plan_flat(entries, N_USERS, &amp;err) != COZIP_OK) { /* report err.message */ }
+
+/* entries[i].payload_offset and payload_size are final. Write metadata.parquet with
+   the columns name (string), offset (uint64) and size (uint64), one row per user
+   file in array order, plus any columns of your own. */
+
+if (cozip_write_flat("dataset.zip", entries, N_USERS, N_USERS + 2,
+                     "metadata.parquet", &amp;err) != COZIP_OK) { /* report err.message */ }</code></pre>
+      <p>The user offsets do not depend on the size of the manifest, because <code>__metadata__</code> comes after every user file and a Flat index is always 41 bytes. Leave the source files untouched between the two calls. The second call checks each file's size again, but not its contents.</p>
+
+      <h2 class="part" id="primitives">Primitives</h2>
+      <p class="section-intro"><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_finalize</code></a> is built from these functions, which a binding can call on its own to drive a custom pipeline.</p>
+      <table class="spec"><thead><tr><th>Function</th><th>Behaviour</th></tr></thead><tbody>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_plan</code></a></td><td>Validates the names and fills <code>lfh_offset</code>, <code>lfh_size</code> and <code>payload_offset</code> with checked 64-bit arithmetic. A size of zero is accepted as a planning placeholder. A payload of exactly <code>0xFFFFFFFF</code> bytes is refused, because libzip cannot write its header.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_index_payload_size</code></a></td><td>Returns in <code>*out_size</code> the size of the index for the entries with <code>in_index</code>: 11 bytes plus 18 and the name length per entry. At most <code>UINT32_MAX</code> entries, and the payload stays below 4 GiB.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_build_index_payload</code></a></td><td>Serializes the index into <code>out</code> in entry order, with the profile byte. Returns <code>COZIP_ERR_BUFFER_TOO_SMALL</code> when <code>out_size</code> is short.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_build_extra_field</code></a></td><td>Writes the 12-byte <code>0xCA0C</code> extra field with the hash set to zero.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_write_archive</code></a></td><td>Writes <code>__cozip__</code> and every planned entry as STORE through libzip, then reads the file back and compares it with the plan. The hash stays zero. Refuses the layouts libzip records wrongly: a local header or the Central Directory starting at byte <code>0xFFFFFFFF</code>, and exactly 65,535 entries.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_patch_integrity_hash</code></a></td><td>Computes FNV-1a 64 over the index and the last 32 KiB and writes it to bytes 43 to 50. The file must start with the 51-byte <code>__cozip__</code> header for an index of that size, or nothing is written and the call returns <code>COZIP_ERR_INVALID_LFH</code>. Returns <code>COZIP_ERR_ARCHIVE_TOO_SMALL</code> below 32,819 bytes.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_predict_zip32_archive_size</code></a></td><td>Returns the size a planned archive will have without ZIP64, or <code>UINT64_MAX</code> on overflow.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_required_padding_payload</code></a></td><td>Returns the <code>__cozip_padding__</code> payload size that lifts a predicted size to 32,819 bytes, or 0 when none is needed.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_index_name</code></a>, <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_padding_name</code></a>, <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_flat_metadata_name</code></a></td><td>Return the reserved names <code>"__cozip__"</code>, <code>"__cozip_padding__"</code> and <code>"__metadata__"</code>, for bindings that do not read macros.</td></tr>
+      </tbody></table>
+
+      <h2 class="part" id="checks">What the writer checks</h2>
+      <p class="section-intro">Everything that can be checked from the inputs is checked before the output path is touched.</p>
+      <ul class="list">
+        <li><b>Names.</b> ASCII, 1 to 65,535 bytes, unique in the archive, relative, with <code>/</code> as the separator and no backslash, drive letter, trailing <code>/</code>, or <code>.</code> or <code>..</code> component. <code>__cozip__</code> is reserved. <code>__cozip_padding__</code> may not be indexed, and <code>cozip_finalize</code> refuses it in any entry of yours.</li>
+        <li><b>Sizes.</b> No zero-byte payload in a written archive, no 64-bit overflow anywhere in the layout.</li>
+        <li><b>Sources.</b> A path must be a regular file whose current size equals <code>payload_size</code>, and a buffer must have exactly that size.</li>
+        <li><b>Output.</b> The output may not be one of the sources, compared by spelling and, when the output exists, by file identity.</li>
+        <li><b>Layout.</b> libzip 1.11 writes a ZIP32 sentinel without its ZIP64 value for a local header or a Central Directory that starts at byte <code>0xFFFFFFFF</code>, and for exactly 65,535 entries. <code>cozip_finalize</code> steps around these with the padding entry, placing it before a final indexed entry when that is what moves the Central Directory. A local header at that byte that nothing can move is refused.</li>
+      </ul>
+      <p><code>cozip_finalize</code> writes beside the output, verifies the headers and ZIP end records, patches the hash, then renames the finished file into place. On failure it removes the temporary file and leaves the existing output untouched. If cleanup fails, it returns <code>COZIP_ERR_IO</code> and reports that an invalid temporary file may remain.</p>
+
+      <h2 class="part" id="read">Reading</h2>
+      <p class="section-intro">The reader verifies the access path of an archive: <code>cozip_verify</code> for any profile, and <code>cozip_read_flat_metadata</code> for a Flat archive, whose manifest it then returns. In the status table above, "the reader" is both. The location base turns the source into the GDAL path that a manifest row's location starts with.</p>
+      <table class="spec"><thead><tr><th>Function</th><th>Behaviour</th></tr></thead><tbody>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_read_flat_metadata</code></a><br><code>(source, &amp;data, &amp;size, &amp;error)</code></td><td>Reads and verifies the byte-0 index, requires profile 1 with <code>__metadata__</code> as the only priority file, checks the manifest's local header against the index, and returns the manifest bytes in <code>*out_data</code> and <code>*out_size</code>.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_verify</code></a><br><code>(source, &amp;error)</code></td><td>Checks the access path of any profile (<a href="spec.html#85-reader-verification">spec 8.5</a> and 7): header, index, indexed names and ranges, hash and end record. Returns <code>COZIP_OK</code> when these checks pass. It reads both ends and any missing index bytes, but does not parse the Central Directory or check payloads.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_location_base</code></a><br><code>(source, &amp;base, &amp;error)</code></td><td>Returns in <code>*out_base</code> the part of <code>cozip:location</code> after <code>/vsisubfile/{offset}_{size},</code>. It reads nothing, and works in a build without the reader.</td></tr>
+        <tr><td><a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_free</code></a><br><code>(ptr)</code></td><td>Releases memory the reader returned. <code>NULL</code> is ignored.</td></tr>
+      </tbody></table>
+      <p>The reader functions set <code>*out_error</code> to <code>NULL</code> first and, on failure, to a message the caller releases with <a href="https://github.com/asterisk-labs/cozip/blob/main/core/cozip.h"><code>cozip_free</code></a>. It is <code>NULL</code> after a failure only when the message itself could not be allocated. Credentials in URL user info and query strings are replaced by <code>&lt;redacted&gt;</code> in messages.</p>
+      <p>The sources the reader takes, and the base <code>cozip_location_base</code> returns for each, are listed under <a href="api.html#sources">Sources</a>. A leading <code>~/</code> is expanded with <code>HOME</code>, or <code>USERPROFILE</code> on Windows. The requests the reader makes are in <a href="api.html#how">How it works</a>.</p>
+
+      <h2 class="part" id="taco">TACO</h2>
+      <p><code>cozip_plan_taco</code>, <code>cozip_plan_taco_sized</code>, <code>cozip_write_taco</code>, <code>cozip_path_entry_t</code> and <code>cozip_taco_plan_t</code> are the contract between libcozip and the <a href="https://asterisk.coop/taco/" rel="noopener noreferrer">TACO</a> package, which validates a dataset, writes <code>COLLECTION.json</code> and the <code>METADATA/</code> Parquet files, and asks libcozip to lay them out as the final priority block of a profile 2 archive. Applications write TACO datasets through TACO. The contract is described in <a href="https://github.com/asterisk-labs/cozip/blob/main/docs/taco-writer-internal.md"><code>docs/taco-writer-internal.md</code></a>.</p>
+
+      <h2 class="part" id="constants">Constants</h2>
+      <table class="spec"><thead><tr><th>Macro</th><th>Value</th></tr></thead><tbody>
+        <tr><td><code>COZIP_FORMAT_VERSION</code></td><td>1, the binary format version written into the index</td></tr>
+        <tr><td><code>COZIP_INDEX_OFFSET</code></td><td>51, where the index starts</td></tr>
+        <tr><td><code>COZIP_HASH_WINDOW_SIZE</code></td><td>32768, the hashed suffix</td></tr>
+        <tr><td><code>COZIP_MIN_ARCHIVE_SIZE</code></td><td>32819</td></tr>
+        <tr><td><code>COZIP_INDEX_HEADER_SIZE</code>, <code>COZIP_INDEX_PER_ENTRY_OVERHEAD</code></td><td>11 and 18</td></tr>
+        <tr><td><code>COZIP_INDEX_NAME</code>, <code>COZIP_PADDING_NAME</code>, <code>COZIP_FLAT_METADATA_NAME</code></td><td><code>"__cozip__"</code>, <code>"__cozip_padding__"</code>, <code>"__metadata__"</code>, with <code>_LEN</code> macros 9, 17 and 12</td></tr>
+        <tr><td><code>COZIP_MAGIC</code></td><td><code>"CZIP"</code></td></tr>
+        <tr><td><code>COZIP_EXTRA_HEADER_ID</code>, <code>COZIP_EXTRA_DATA_SIZE</code>, <code>COZIP_EXTRA_FIELD_SIZE</code></td><td><code>0xCA0C</code>, 8 and 12</td></tr>
+        <tr><td><code>COZIP_FNV_OFFSET_BASIS</code>, <code>COZIP_FNV_PRIME</code></td><td><code>0xCBF29CE484222325</code> and <code>0x100000001B3</code></td></tr>
+        <tr><td><code>COZIP_ERROR_MESSAGE_SIZE</code></td><td>192</td></tr>
+      </tbody></table>
+
+      <h2 class="part" id="threads">Threads and bindings</h2>
+      <p>libcozip keeps no state between calls; each read creates its own Karu client. Concurrent writers to one output race, and the last rename wins. The library does not <code>fsync</code> the output.</p>
+      <p>On 64-bit targets <code>cozip_entry_t</code> is 72 bytes, with <code>source</code> at 24 and <code>lfh_offset</code> at 48, and <code>cozip_error_t</code> is 196 bytes. Enums cross the ABI as <code>int</code>. Python mirrors the structs in the cffi definitions of <code>python/cozip/_core.py</code>, Julia in <code>julia/src/LibCozip.jl</code> and R in its C glue, and nothing checks them against the header, so a change to a struct means changing all three.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="api-julia.html"><span>Previous</span>Julia</a>
+        <a class="next" href="api-js.html"><span>Next</span>JavaScript</a>
+      </nav>
+    </article>
+
+    <nav class="toc onpage" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ol class="toc-sections">
+        <li><a href="#start">A complete program</a></li>
+        <li><a href="#build">Build and link</a></li>
+        <li><a href="#conventions">Conventions</a></li>
+        <li><a href="#entries">Entries and sources</a></li>
+        <li><a href="#write">Writing</a></li>
+        <li><a href="#primitives">Primitives</a></li>
+        <li><a href="#checks">What the writer checks</a></li>
+        <li><a href="#read">Reading</a></li>
+        <li><a href="#taco">TACO</a></li>
+        <li><a href="#constants">Constants</a></li>
+        <li><a href="#threads">Threads and bindings</a></li>
+      </ol>
+    </nav>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/toc.js?v=1" defer></script>
+<script src="assets/js/code.js?v=1" defer></script>
+
+</body>
+</html>

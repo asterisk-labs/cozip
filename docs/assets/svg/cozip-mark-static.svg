@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="cozip">
+<rect class="q q0" x="12" y="31" width="76" height="18" fill="#f05b7f" stroke="none"/><rect class="q q1" x="12" y="49" width="76" height="18" fill="#f7cc09" stroke="none"/><rect class="q q2" x="12" y="67" width="76" height="19" fill="#c4ffc2" stroke="none"/>
+<g stroke="#000" stroke-linejoin="round">
+<path d="M12 49H88M12 67H88" stroke-width="3" fill="none"/>
+<rect x="43.5" y="32.0" width="6" height="4.4" fill="#000"/><rect x="50.5" y="38.6" width="6" height="4.4" fill="#000"/><rect x="43.5" y="45.2" width="6" height="4.4" fill="#000"/><rect x="50.5" y="51.8" width="6" height="4.4" fill="#000"/><rect x="43.5" y="58.4" width="6" height="4.4" fill="#000"/><rect x="50.5" y="65.0" width="6" height="4.4" fill="#000"/><rect x="43.5" y="71.6" width="6" height="4.4" fill="#000"/><rect x="50.5" y="78.2" width="6" height="4.4" fill="#000"/>
+<rect x="12" y="14" width="76" height="17" fill="#492ae8" stroke-width="4.6"/>
+<rect x="12" y="14" width="76" height="72" fill="none" stroke-width="4.6"/>
+<g class="qs"><rect x="42" y="22" width="16" height="15" rx="3.5" fill="#f7cc09" stroke-width="4"/><rect x="47.5" y="26.5" width="5" height="5.5" rx="1.4" fill="#fff" stroke-width="2.2"/></g>
+</g>
+</svg>

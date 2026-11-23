@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="The cozip Python API, function by function.">
+<title>cozip · Python</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+<link rel="stylesheet" href="assets/css/docs.css?v=4">
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html" class="here">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="doc">
+    <nav class="toc" aria-label="Contents">
+      <p class="toc-title">API</p>
+      <ol class="toc-pages">
+        <li><a href="api.html">Overview</a></li>
+        <li class="toc-group">Languages</li>
+        <li><a href="api-python.html" class="here" aria-current="page">Python</a></li>
+        <li><a href="api-r.html">R</a></li>
+        <li><a href="api-julia.html">Julia</a></li>
+        <li><a href="api-c.html">C</a></li>
+        <li><a href="api-js.html">JavaScript</a></li>
+      </ol>
+    </nav>
+
+    <article class="content">
+      <h1>Python</h1>
+<ul class="facts">
+        <li>Package <code>cozip</code> on <a href="https://pypi.org/project/cozip/" rel="noopener noreferrer">PyPI</a>, with wheels for Linux x86-64 and aarch64, macOS arm64 and x86-64 and Windows x86-64, on Python 3.10 or newer.</li>
+      </ul>
+<pre><code class="language-sh">pip install cozip</code></pre>
+      <p>Python calls libcozip through cffi, writes manifests with pyarrow and decodes them with DuckDB. The public names are <a href="#write"><code>write</code></a> and its alias <code>create</code>, <a href="#stage_metadata"><code>stage_metadata</code></a>, <a href="#stage_create"><code>stage_create</code></a>, <a href="#read"><code>read</code></a>, <a href="#errors"><code>CozipError</code></a>, <a href="#native"><code>lib</code>, <code>ffi</code></a> and <code>__version__</code>.</p>
+      <p>Importing <code>cozip</code> loads the native library. pyarrow is imported when a writer function is first accessed, pandas when <code>read</code> is first accessed, and DuckDB when <code>read</code> is first called. The rules every binding shares are on the <a href="api.html">API overview</a>.</p>
+
+      <h2 class="part" id="writing">Writing</h2>
+
+      <h3 id="write">write</h3>
+<pre><code class="sig language-python">cozip.write(out_path, table, temp_dir=None) -&gt; str</code></pre>
+      <p>Writes a Flat archive from a table, as <a href="api.html#write">Write</a> describes, and returns its absolute path. <code>cozip.create</code> is the same function.</p>
+      <table class="spec">
+        <tr><th>out_path</th><td>The destination, as text or a path-like object. An existing file is replaced.</td></tr>
+        <tr><th>table</th><td>A <code>pyarrow.Table</code> with <code>name</code>, <code>path</code> and your columns.</td></tr>
+        <tr><th>temp_dir</th><td>Where the temporary manifest Parquet goes, created if missing. The default is the system temporary directory.</td></tr>
+      </table>
+<pre><code class="language-python">import pyarrow as pa
+import cozip
+
+table = pa.table({
+    "name": ["a.txt", "data/b.bin"],
+    "path": ["a.txt", "b.bin"],
+    "split": ["train", "val"],
+})
+cozip.write("out.zip", table)</code></pre>
+      <p>pyarrow writes the manifest and compresses it. A pandas DataFrame raises <code>TypeError</code>, so convert it first with <code>pa.Table.from_pandas(df, preserve_index=False)</code>. Without <code>preserve_index=False</code>, a named index becomes a manifest column. The <code>__index_level_N__</code> columns of an unnamed one are left out.</p>
+
+      <h3 id="stage_metadata">stage_metadata</h3>
+<pre><code class="sig language-python">cozip.stage_metadata(table) -&gt; tuple[pyarrow.Table, list[tuple[str, str]]]</code></pre>
+      <p>Plans the archive without writing anything, the first of the <a href="api.html#stages">two stages</a>. It returns the manifest as a <code>pyarrow.Table</code> and the <code>(name, path)</code> pairs in the same order. <code>table</code> is as for <a href="#write"><code>write</code></a>.</p>
+<pre><code class="language-python">metadata, paths = cozip.stage_metadata(table)
+metadata.to_pylist()</code></pre>
+<pre class="output"><code>[{'name': 'a.txt', 'offset': 127, 'size': 96, 'split': 'train'},
+ {'name': 'data/b.bin', 'offset': 263, 'size': 40960, 'split': 'val'}]</code></pre>
+
+      <h3 id="stage_create">stage_create</h3>
+<pre><code class="sig language-python">cozip.stage_create(out_path, paths, metadata_parquet, validate=True) -&gt; str</code></pre>
+      <p>Writes the archive around a manifest Parquet you wrote and returns its absolute path.</p>
+      <table class="spec">
+        <tr><th>out_path</th><td>The destination archive.</td></tr>
+        <tr><th>paths</th><td>A sequence of <code>(name, source_path)</code> pairs, in the manifest's row order.</td></tr>
+        <tr><th>metadata_parquet</th><td>The Parquet file, stored byte for byte as <code>__metadata__</code>.</td></tr>
+        <tr><th>validate</th><td>A <code>bool</code>. The first mismatch with a fresh plan raises <code>ValueError</code>.</td></tr>
+      </table>
+<pre><code class="language-python">import pyarrow.parquet as pq
+
+metadata, paths = cozip.stage_metadata(table)
+pq.write_table(metadata, "metadata.parquet", compression="zstd")
+cozip.stage_create("out.zip", paths, "metadata.parquet")</code></pre>
+
+      <h2 class="part" id="reading">Reading</h2>
+
+      <h3 id="read">read</h3>
+<pre><code class="sig language-python">cozip.read(source, columns=None, location=True) -&gt; pandas.DataFrame</code></pre>
+      <p>Reads the manifest of a Flat archive into a DataFrame, one row per file. The arguments are described under <a href="api.html#read">Read</a>.</p>
+      <table class="spec">
+        <tr><th>source</th><td>Text or a path-like object, in one of the <a href="api.html#sources">source forms</a>.</td></tr>
+        <tr><th>columns</th><td><code>None</code>, or a list of <code>str</code>. With a list, the columns are <code>name</code>, <code>offset</code>, <code>size</code>, <code>cozip:location</code>, then the listed ones without repeats. An unknown name raises <code>ValueError</code>.</td></tr>
+        <tr><th>location</th><td>A <code>bool</code>.</td></tr>
+      </table>
+<pre><code class="language-python">url = "https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"
+manifest = cozip.read(url, columns=["label", "continent"])
+manifest[manifest.continent == "Europe"][["name", "offset", "size"]]</code></pre>
+<pre class="output"><code>                   name  offset  size
+4  cities/paris.geojson    1092   172
+5   cities/oslo.geojson    1313   171</code></pre>
+      <p>Types follow DuckDB's conversion to pandas. <code>offset</code> and <code>size</code> are <code>uint64</code>, strings use pandas' default string dtype, integer and boolean columns with nulls use the nullable dtypes such as <code>Int32</code> and <code>boolean</code>, and binary columns, a GeoParquet geometry included, arrive as <code>bytearray</code>.</p>
+      <p>The process keeps one in-memory DuckDB database, and each read uses a cursor of its own, closed before <code>read</code> returns. A forked child opens a database of its own.</p>
+
+      <h3 id="verify">verify</h3>
+<pre><code class="sig language-python">cozip.verify(source) -&gt; None</code></pre>
+      <p>Checks an archive of any profile, as described under <a href="api.html#verify">Verify</a>. Returns <code>None</code>, or raises <a href="#errors"><code>CozipError</code></a> named after the broken rule, and imports neither pandas nor DuckDB.</p>
+
+      <h3 id="files">Opening the files</h3>
+      <p>Pass <code>cozip:location</code> to a GDAL reader, such as GeoPandas here or rasterio for a raster, or read the <a href="api.html#files">byte range</a> yourself. Convert <code>offset</code> and <code>size</code> to <code>int</code> before the arithmetic. A local archive needs only <code>f.seek(offset)</code> and <code>f.read(size)</code>.</p>
+<pre><code class="language-python">import geopandas as gpd
+import requests
+
+paris = manifest[manifest.name == "cities/paris.geojson"].iloc[0]
+gdf = gpd.read_file(paris["cozip:location"])
+
+offset, size = int(paris["offset"]), int(paris["size"])
+r = requests.get(url, headers={"Range": f"bytes={offset}-{offset + size - 1}"})   # 206, 172 bytes</code></pre>
+
+      <h2 class="part" id="geoparquet">GeoParquet manifests</h2>
+      <p>With GeoPandas, plan first, add the geometry, write the Parquet and build the archive around it. <code>to_pandas()</code> keeps <code>offset</code> and <code>size</code> as <code>uint64</code>, and GeoPandas writes them back unchanged.</p>
+<pre><code class="language-python">import geopandas as gpd
+
+metadata, paths = cozip.stage_metadata(pa.table({"name": names, "path": files, "label": labels}))
+gdf = gpd.GeoDataFrame(metadata.to_pandas(), geometry=geometries, crs="EPSG:4326")
+gdf.to_parquet("metadata.parquet", index=False, compression="zstd", schema_version="1.1.0")
+cozip.stage_create("dataset.zip", paths, "metadata.parquet")</code></pre>
+      <p>With pyarrow alone, store WKB in a binary column, attach the <code>geo</code> key and call <code>write</code>.</p>
+<pre><code class="language-python">import json
+import shapely
+
+geo = {"version": "1.1.0", "primary_column": "geometry",
+       "columns": {"geometry": {"encoding": "WKB", "geometry_types": ["Polygon"]}}}
+table = pa.table({
+    "name": names,
+    "path": files,
+    "geometry": [shapely.to_wkb(g) for g in geometries],
+}).replace_schema_metadata({"geo": json.dumps(geo)})
+cozip.write("dataset.zip", table)</code></pre>
+      <p><code>read</code> returns the geometry as WKB in a <code>bytearray</code>. This turns it back into a GeoDataFrame.</p>
+<pre><code class="language-python">df = cozip.read("dataset.zip")
+gdf = gpd.GeoDataFrame(df, geometry=gpd.GeoSeries.from_wkb(df["geometry"].map(bytes)), crs="OGC:CRS84")</code></pre>
+
+      <h2 class="part" id="errors">Errors</h2>
+      <p>A check made in Python raises <code>TypeError</code>, <code>ValueError</code> or <code>FileNotFoundError</code> with the prefix <code>cozip: </code>, or <code>cozip.read: </code> for a manifest column. A failure inside libcozip raises <code>cozip.CozipError</code>, a <code>RuntimeError</code> whose text is <code>[NAME] message</code>, with the attributes <code>code</code>, an integer, <code>name</code> and <code>message</code>. The <a href="api.html#errors">API overview</a> lists the causes.</p>
+<pre class="output"><code>ValueError: cozip: input table has columns that differ only in case: 'label' and 'Label'; DuckDB, which reads manifests, cannot tell them apart
+CozipError: [INVALID_ARGUMENT] entry 0 ('e') has a zero-byte payload; FLAT user entries must be non-empty
+CozipError: [PROFILE] read_flat needs a Flat-profile archive (profile=1). Got profile=2 in: ...</code></pre>
+
+      <h2 class="part" id="native">Native library</h2>
+      <p><code>cozip.lib</code> exposes every C function through cffi, and <code>cozip.ffi</code> is its FFI object. Strings come back as <code>char *</code> values. The status, profile and source constants, such as <code>COZIP_OK</code>, <code>COZIP_ERR_INVALID_ARGUMENT</code> and <code>COZIP_PROFILE_FLAT</code>, are plain integers in <code>cozip._core</code>, not attributes of <code>lib</code>. The <a href="api-c.html">C page</a> documents the functions.</p>
+<pre><code class="language-python">cozip.__version__                                             # '2026.11.23', the package
+cozip.ffi.string(cozip.lib.cozip_version_string()).decode()   # '2026.11.23', the loaded library</code></pre>
+      <p>The library ships in the wheel as <code>cozip/_lib/cozip.so</code>, <code>cozip.dylib</code> or <code>cozip.dll</code>, without a <code>lib</code> prefix. Set <code>COZIP_LIB_PATH</code> to an absolute path before the import to load another build. The private module <code>cozip._taco</code> exists for the TACO package, and applications should not import it.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="api.html"><span>Previous</span>Overview</a>
+        <a class="next" href="api-r.html"><span>Next</span>R</a>
+      </nav>
+    </article>
+
+    <nav class="toc onpage" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ol class="toc-sections">
+        <li><a href="#writing">Writing</a></li>
+        <li><a href="#reading">Reading</a></li>
+        <li><a href="#geoparquet">GeoParquet manifests</a></li>
+        <li><a href="#errors">Errors</a></li>
+        <li><a href="#native">Native library</a></li>
+      </ol>
+    </nav>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/toc.js?v=1" defer></script>
+<script src="assets/js/code.js?v=1" defer></script>
+
+</body>
+</html>

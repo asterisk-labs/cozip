@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="How cozip adds a byte-0 index and a Parquet manifest to an ordinary ZIP, and what a reader fetches before the first file.">
+  <title>cozip · Cloud-Optimized ZIP</title>
+  <link rel="icon" href="../assets/svg/cozip-mark-static.svg?v=3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=League+Spartan:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=12">
+  <script defer src="app.js?v=1"></script>
+</head>
+<body>
+  <div class="progress" id="progress"></div>
+  <a class="site-back" href="../" aria-label="Back to the cozip website">←</a>
+
+  <main class="deck" id="deck" aria-label="cozip, the Cloud-Optimized ZIP">
+    <section class="slide cover active s01" aria-label="cozip cover">
+      <img class="cover-asterisk" src="fig/asterisk_banner.svg" alt="Asterisk Labs">
+      <div class="cover-inner">
+        <img class="cover-logo" src="../assets/svg/cozip-mark.svg?v=3" alt="">
+        <div class="cover-copy">
+          <h1>cozip</h1>
+          <p>Cloud-Optimized ZIP</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide s02" aria-label="The Asterisk stack for AI">
+  <header><span class="brand"><img class="brand-icon" src="../assets/svg/cozip-mark.svg?v=3" alt=""><span class="brand-name">cozip</span></span><span class="count">02 / 8</span></header>
+  <h1>cozip is one layer of the <span class="title-mark">Asterisk stack for AI</span></h1>
+  <figure class="st-wrap">
+    <svg class="st-fig" viewBox="0 0 864 376" role="img" aria-label="The Asterisk stack for AI, with arrows from caller to callee. The model calls TACO and Rumi. TACO calls cozip, Rumi and Karu. cozip, highlighted, is called by TACO, reads its bytes through Karu and can hold Rumi files. Rumi calls GeoZL, which runs on OpenZL, and Karu.">
+      <defs>
+        <marker id="s02-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#777"/></marker>
+        <marker id="s02-arrow-on" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#492ae8"/></marker>
+      </defs>
+      <text class="st-layer" x="0" y="32">training</text>
+      <text class="st-layer" x="0" y="112">datasets</text>
+      <text class="st-layer" x="0" y="192">files</text>
+      <text class="st-layer" x="0" y="272">codecs</text>
+      <text class="st-layer" x="0" y="352">bytes</text>
+      <rect class="st-box st-open" x="132" y="0" width="732" height="54"/>
+      <text class="st-name" x="148" y="24">PyTorch, JAX, TensorFlow</text>
+      <text class="st-text" x="148" y="44">your model, fed tensors through DLPack on a CPU or a GPU</text>
+      <rect class="st-box" x="132" y="80" width="440" height="54"/>
+      <text class="st-name" x="148" y="104">TACO</text>
+      <text class="st-text" x="148" y="124">AI-ready datasets, one sample per example</text>
+      <rect class="st-box st-on" x="172" y="160" width="280" height="54"/>
+      <text class="st-name" x="188" y="184">cozip</text>
+      <text class="st-text" x="188" y="204">a ZIP you open like a table</text>
+      <image href="../assets/svg/cozip-mark.svg?v=3" x="404" y="167" width="40" height="40"/>
+      <rect class="st-box" x="512" y="160" width="352" height="54"/>
+      <text class="st-name" x="528" y="184">Rumi</text>
+      <text class="st-text" x="528" y="204">tensors read by window, band and time</text>
+      <rect class="st-box" x="512" y="240" width="270" height="54"/>
+      <text class="st-name" x="528" y="264">GeoZL</text>
+      <text class="st-text" x="528" y="284">Earth observation codecs, on OpenZL</text>
+      <rect class="st-box" x="132" y="320" width="732" height="54"/>
+      <text class="st-name" x="148" y="344">Karu</text>
+      <text class="st-text" x="148" y="364">batched byte-range reads from files, HTTP, S3, GCS, Azure, Hugging Face and Source Cooperative</text>
+      <path class="st-call" d="M300 54 V78" marker-end="url(#s02-arrow)"/>
+      <path class="st-call on" d="M300 134 V158" marker-end="url(#s02-arrow-on)"/>
+      <path class="st-call" d="M540 134 V158" marker-end="url(#s02-arrow)"/>
+      <path class="st-call" d="M700 54 V158" marker-end="url(#s02-arrow)"/>
+      <path class="st-call" d="M640 214 V238" marker-end="url(#s02-arrow)"/>
+      <path class="st-call" d="M152 134 V318" marker-end="url(#s02-arrow)"/>
+      <path class="st-call on" d="M300 214 V318" marker-end="url(#s02-arrow-on)"/>
+      <path class="st-call" d="M823 214 V318" marker-end="url(#s02-arrow)"/>
+      <path class="st-hold on" d="M452 190 H508" marker-end="url(#s02-arrow-on)"/>
+      <text class="st-tag" x="481" y="182">holds</text>
+    </svg>
+  </figure>
+</section>
+
+    <section class="slide s03" aria-label="An ordinary ZIP lists its files at the end" data-steps="3" data-step="1">
+  <header><span class="brand"><img class="brand-icon" src="../assets/svg/cozip-mark.svg?v=3" alt=""><span class="brand-name">cozip</span></span><span class="count">03 / 8</span></header>
+  <h1>An ordinary ZIP lists its files <span class="title-mark red">at the end</span></h1>
+  <div class="zd-wr">
+    <div class="tabs" role="tablist" aria-label="Steps">
+      <button type="button" role="tab" data-to="1">end</button>
+      <button type="button" role="tab" data-to="2">directory</button>
+      <button type="button" role="tab" data-to="3">file</button>
+    </div>
+    <svg class="zd-fig" viewBox="0 0 864 270" role="img" aria-label="An ordinary ZIP of a million files: the files one after another, then the Central Directory with one record per file, then 98 bytes of end records. To read file 000002.tif a reader first reads the end, which says where the directory starts, then the whole directory, 56 MB for a million files, and only then the file. Three reads, one after the other.">
+      <defs>
+        <marker id="zd-head" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#492ae8"/></marker>
+      </defs>
+      <g class="zd-file"><rect x="0" y="70" width="92" height="100" fill="#f2d4dc"/><text class="zd-name" x="46" y="118">000000.tif</text><text class="zd-size" x="46" y="136">1,000 B</text></g><g class="zd-file"><rect x="92" y="70" width="92" height="100" fill="#f3e6b3"/><text class="zd-name" x="138" y="118">000001.tif</text><text class="zd-size" x="138" y="136">1,000 B</text></g><g class="zd-file is-target"><rect x="184" y="70" width="92" height="100" fill="#d8efd6"/><text class="zd-name" x="230" y="118">000002.tif</text><text class="zd-size" x="230" y="136">1,000 B</text></g><g class="zd-file"><rect x="276" y="70" width="92" height="100" fill="#d3e5f3"/><text class="zd-name" x="322" y="118">000003.tif</text><text class="zd-size" x="322" y="136">1,000 B</text></g><g class="zd-file"><rect x="368" y="70" width="84" height="100" fill="#fff"/><text class="zd-name is-faint" x="410" y="124">…</text></g><g class="zd-file"><rect x="452" y="70" width="88" height="100" fill="#f2d4dc"/><text class="zd-name" x="496" y="118">999999.tif</text><text class="zd-size" x="496" y="136">1,000 B</text></g>
+      <g class="zd-dir"><rect x="540" y="70" width="274" height="100" fill="#ececef"/>
+        <text class="zd-dir-title" x="552" y="90">Central Directory</text>
+        <rect class="zd-row-mark" x="546" y="129" width="262" height="15"/>
+        <text class="zd-row" x="552" y="108">000000.tif</text><text class="zd-row is-size" x="802" y="108">1,000 B</text>
+        <text class="zd-row" x="552" y="124">000001.tif</text><text class="zd-row is-size" x="802" y="124">1,000 B</text>
+        <text class="zd-row" x="552" y="140">000002.tif</text><text class="zd-row is-size" x="802" y="140">1,000 B</text>
+        <text class="zd-row is-faint" x="552" y="158">… one record per file</text>
+      </g>
+      <g class="zd-end"><rect x="814" y="70" width="50" height="100" fill="#3a3a40"/><text class="zd-end-label" x="839" y="116">end</text><text class="zd-end-size" x="839" y="134">98 B</text></g>
+      <text class="zd-ruler" x="0" y="190">byte 0</text>
+
+      <g class="zd-k" data-k="1">
+        <rect class="zd-hit" x="814" y="70" width="50" height="100"/>
+        <path class="zd-arrow" d="M839 174 C839 214 552 214 552 177" marker-end="url(#zd-head)"/>
+        <text class="zd-say" x="696" y="230">where the directory starts</text>
+      </g>
+      <g class="zd-k" data-k="2">
+        <rect class="zd-hit" x="540" y="70" width="274" height="100"/>
+        <path class="zd-span" d="M540 62 V54 H814 V62"/>
+        <text class="zd-say" x="677" y="44">read all of it to find one file</text>
+      </g>
+      <g class="zd-k" data-k="3">
+        <rect class="zd-hit" x="184" y="70" width="92" height="100"/>
+        <path class="zd-arrow" d="M600 68 C600 30 236 30 232 66" marker-end="url(#zd-head)"/>
+        <text class="zd-say" x="416" y="26">then the file</text>
+      </g>
+
+      <g class="zd-reads">
+        <g class="zd-chip" data-k="1"><rect x="0" y="236" width="120" height="30"/><text x="12" y="256"><tspan class="n">1</tspan>  end, 98 B</text></g>
+        <text class="zd-then" data-k="2" x="134" y="256">then</text>
+        <g class="zd-chip" data-k="2"><rect x="174" y="236" width="242" height="30"/><text x="186" y="256"><tspan class="n">2</tspan>  Central Directory, 56 MB</text></g>
+        <text class="zd-then" data-k="3" x="430" y="256">then</text>
+        <g class="zd-chip" data-k="3"><rect x="470" y="236" width="196" height="30"/><text x="482" y="256"><tspan class="n">3</tspan>  000002.tif, 1,000 B</text></g>
+      </g>
+    </svg>
+    <div class="zd-note">
+      <p data-k="1">A reader starts at the end of the archive. The last 98 bytes say <span class="title-mark">where the directory starts</span>.</p>
+      <p data-k="2">Then it reads the <span class="title-mark red">whole directory</span>, one record per file with its name, size and offset. For a million files that is 56 MB.</p>
+      <p data-k="3">Only then does it know where the file is. <span class="title-mark">Three reads in a row</span> before the first byte of data.</p>
+    </div>
+    <p class="path-note">Measured on a million files of 1,000 bytes. That many entries need the ZIP64 end records, 98 bytes in all.</p>
+  </div>
+</section>
+
+    <section class="slide s04" aria-label="cozip reads the manifest, not the directory" data-steps="3" data-step="1">
+  <header><span class="brand"><img class="brand-icon" src="../assets/svg/cozip-mark.svg?v=3" alt=""><span class="brand-name">cozip</span></span><span class="count">04 / 8</span></header>
+  <h1>cozip reads <span class="title-mark">the manifest</span>, not the directory</h1>
+  <div class="zd-wr">
+    <div class="tabs" role="tablist" aria-label="Steps">
+      <button type="button" role="tab" data-to="1">index</button>
+      <button type="button" role="tab" data-to="2">manifest</button>
+      <button type="button" role="tab" data-to="3">file</button>
+    </div>
+    <svg class="zd-fig" viewBox="0 0 864 270" role="img" aria-label="The same million files as a cozip: a 41-byte index at the start, the files, the manifest with one row per file, the Central Directory and the end records. To read file 000002.tif a reader first asks for the first 64 KiB, where the index says where the manifest is. Then it reads the manifest, 11.7 MB, whose row for 000002.tif gives offset 2,212 and size 1,000. Then it reads the file. The Central Directory is never parsed.">
+      <defs>
+        <marker id="cz-head" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#492ae8"/></marker>
+        <pattern id="cz-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#dcdde3" stroke-width="2"/></pattern>
+      </defs>
+      <g class="zd-index"><rect x="0" y="70" width="48" height="100" fill="#492ae8"/><text class="zd-index-label" x="24" y="116">index</text><text class="zd-index-size" x="24" y="134">41 B</text></g>
+      <g class="zd-file"><rect x="48" y="70" width="88" height="100" fill="#f2d4dc"/><text class="zd-name" x="92" y="118">000000.tif</text><text class="zd-size" x="92" y="136">1,000 B</text></g><g class="zd-file"><rect x="136" y="70" width="88" height="100" fill="#f3e6b3"/><text class="zd-name" x="180" y="118">000001.tif</text><text class="zd-size" x="180" y="136">1,000 B</text></g><g class="zd-file is-target"><rect x="224" y="70" width="88" height="100" fill="#d8efd6"/><text class="zd-name" x="268" y="118">000002.tif</text><text class="zd-size" x="268" y="136">1,000 B</text></g><g class="zd-file"><rect x="312" y="70" width="88" height="100" fill="#d3e5f3"/><text class="zd-name" x="356" y="118">000003.tif</text><text class="zd-size" x="356" y="136">1,000 B</text></g><g class="zd-file"><rect x="400" y="70" width="60" height="100" fill="#fff"/><text class="zd-name is-faint" x="430" y="124">…</text></g><g class="zd-file"><rect x="460" y="70" width="80" height="100" fill="#f2d4dc"/><text class="zd-name" x="500" y="118">999999.tif</text><text class="zd-size" x="500" y="136">1,000 B</text></g>
+      <g class="zd-man"><rect x="540" y="70" width="168" height="100" fill="#492ae8"/>
+        <text class="zd-dir-title" x="552" y="89">manifest</text>
+        <text class="zd-col" x="552" y="105">name</text><text class="zd-col is-num" x="656" y="105">offset</text><text class="zd-col" x="665" y="105">split</text>
+        <rect class="zd-row-mark" x="546" y="137" width="156" height="14"/>
+        <text class="zd-row" x="552" y="120">000000.tif</text><text class="zd-row is-num" x="656" y="120">132</text><text class="zd-row" x="665" y="120">train</text>
+        <text class="zd-row" x="552" y="134">000001.tif</text><text class="zd-row is-num" x="656" y="134">1,172</text><text class="zd-row" x="665" y="134">train</text>
+        <text class="zd-row is-marked" x="552" y="148">000002.tif</text><text class="zd-row is-num is-marked" x="656" y="148">2,212</text><text class="zd-row is-marked" x="665" y="148">train</text>
+        <text class="zd-row is-faint" x="552" y="164">… one row per file</text>
+      </g>
+      <g class="zd-cd"><rect x="708" y="70" width="106" height="100" fill="url(#cz-hatch)"/><text class="zd-cd-label" x="761" y="112">Central</text><text class="zd-cd-label" x="761" y="127">Directory</text><text class="zd-cd-size" x="761" y="145">56 MB</text></g>
+      <g class="zd-end"><rect x="814" y="70" width="50" height="100" fill="#3a3a40"/><text class="zd-end-label" x="839" y="116">end</text><text class="zd-end-size" x="839" y="134">98 B</text></g>
+      <text class="zd-ruler" x="0" y="190">byte 0</text>
+
+      <g class="zd-k" data-k="1">
+        <rect class="zd-hit is-ink" x="0" y="70" width="48" height="100"/>
+        <path class="zd-span" d="M0 62 V54 H112 V62"/>
+        <text class="zd-say" x="56" y="44">first 64 KiB</text>
+        <path class="zd-arrow" d="M40 174 C64 212 600 212 624 177" marker-end="url(#cz-head)"/>
+        <text class="zd-say" x="430" y="224">where the manifest is</text>
+      </g>
+      <g class="zd-k" data-k="2">
+        <rect class="zd-hit is-ink" x="540" y="70" width="168" height="100"/>
+        <path class="zd-span" d="M540 62 V54 H708 V62"/>
+        <text class="zd-say" x="624" y="44">a table you can filter</text>
+      </g>
+      <g class="zd-k" data-k="3">
+        <rect class="zd-hit" x="224" y="70" width="88" height="100"/>
+        <path class="zd-arrow" d="M600 68 C600 30 272 30 268 66" marker-end="url(#cz-head)"/>
+        <text class="zd-say" x="434" y="26">offset 2,212, size 1,000</text>
+        <rect class="zd-no" x="713" y="179" width="96" height="19"/>
+        <text class="zd-no-text" x="761" y="193">never parsed</text>
+      </g>
+
+      <g class="zd-reads">
+        <g class="zd-chip" data-k="1"><rect x="0" y="236" width="196" height="30"/><text x="12" y="256"><tspan class="n">1</tspan>  index, first 64 KiB</text></g>
+        <text class="zd-then" data-k="2" x="210" y="256">then</text>
+        <g class="zd-chip" data-k="2"><rect x="250" y="236" width="186" height="30"/><text x="262" y="256"><tspan class="n">2</tspan>  manifest, 11.7 MB</text></g>
+        <text class="zd-then" data-k="3" x="450" y="256">then</text>
+        <g class="zd-chip" data-k="3"><rect x="490" y="236" width="196" height="30"/><text x="502" y="256"><tspan class="n">3</tspan>  000002.tif, 1,000 B</text></g>
+      </g>
+    </svg>
+    <div class="zd-note">
+      <p data-k="1">The reader asks for the first 64 KiB. At byte 51 the index says <span class="title-mark">where the manifest is</span>.</p>
+      <p data-k="2">Then it reads the manifest, <span class="title-mark">one row per file</span> with its offset, size and your columns. Here that is 11.7 MB with six metadata columns, a fifth of the directory.</p>
+      <p data-k="3">The row gives the exact bytes, so <span class="title-mark">the next read is the file</span>. The Central Directory is <span class="title-mark red">never parsed</span>.</p>
+    </div>
+    <p class="path-note">The same million files. The manifest holds name, offset, size and six metadata columns in 11.7 MB of Parquet.</p>
+  </div>
+</section>
+
+    <section class="slide s05" aria-label="The manifest is a table" data-steps="3" data-step="1">
+  <header><span class="brand"><img class="brand-icon" src="../assets/svg/cozip-mark.svg?v=3" alt=""><span class="brand-name">cozip</span></span><span class="count">05 / 8</span></header>
+  <h1>The manifest is <span class="title-mark">a table</span></h1>
+  <div class="tb-wr">
+    <div class="tabs" role="tablist" aria-label="Steps">
+      <button type="button" role="tab" data-to="1">any column</button>
+      <button type="button" role="tab" data-to="2">query</button>
+      <button type="button" role="tab" data-to="3">smaller</button>
+    </div>
+    <div class="tb-stage">
+    <table class="tb" aria-label="The first rows of the manifest of a million files. Step 1: name, offset and size are required; split, date, cloud_cover and landcover are columns the writer added. Step 2: cloud_cover under 25 keeps 000000, 000001 and 000003.">
+      <thead>
+        <tr class="tb-grp"><th colspan="3" class="is-req"><span>required</span></th><th colspan="4" class="is-own"><span>yours, any metadata</span></th></tr>
+        <tr><th>name</th><th class="num">offset</th><th class="num">size</th><th>split</th><th>date</th><th class="num">cloud_cover</th><th>landcover</th></tr>
+      </thead>
+      <tbody>
+        <tr class="is-hit"><td>000000.tif</td><td class="num">132</td><td class="num">1,000</td><td>train</td><td>2024-01-01</td><td class="num">22.6</td><td>water</td></tr>
+        <tr class="is-hit"><td>000001.tif</td><td class="num">1,172</td><td class="num">1,000</td><td>train</td><td>2024-01-02</td><td class="num">19.9</td><td>urban</td></tr>
+        <tr><td>000002.tif</td><td class="num">2,212</td><td class="num">1,000</td><td>train</td><td>2024-01-03</td><td class="num">36.3</td><td>forest</td></tr>
+        <tr class="is-hit"><td>000003.tif</td><td class="num">3,252</td><td class="num">1,000</td><td>train</td><td>2024-01-04</td><td class="num">17.9</td><td>bare</td></tr>
+        <tr><td>000004.tif</td><td class="num">4,292</td><td class="num">1,000</td><td>train</td><td>2024-01-05</td><td class="num">34.6</td><td>bare</td></tr>
+        <tr><td>000005.tif</td><td class="num">5,332</td><td class="num">1,000</td><td>train</td><td>2024-01-06</td><td class="num">94.8</td><td>forest</td></tr>
+        <tr><td>000006.tif</td><td class="num">6,372</td><td class="num">1,000</td><td>train</td><td>2024-01-07</td><td class="num">57.3</td><td>crop</td></tr>
+        <tr><td>000007.tif</td><td class="num">7,412</td><td class="num">1,000</td><td>train</td><td>2024-01-08</td><td class="num">34.0</td><td>bare</td></tr>
+        <tr><td>000008.tif</td><td class="num">8,452</td><td class="num">1,000</td><td>val</td><td>2024-01-09</td><td class="num">27.2</td><td>bare</td></tr>
+        <tr class="is-more"><td colspan="7">... 999,991 more rows</td></tr>
+      </tbody>
+    </table>
+    <div class="sz" aria-label="Sizes for the same million files: Central Directory 56.0 MB; manifest with nine columns 11.7 MB; manifest with name, offset and size only 0.5 MB.">
+      <div class="sz-row"><span class="sz-k">Central Directory</span><span class="sz-track"><span class="sz-bar is-cd" style="--w: 100%"></span></span><span class="sz-v">56.0 MB</span></div>
+      <div class="sz-row"><span class="sz-k">manifest, 9 columns</span><span class="sz-track"><span class="sz-bar" style="--w: 21%"></span></span><span class="sz-v">11.7 MB</span></div>
+      <div class="sz-row"><span class="sz-k">manifest, 3 columns</span><span class="sz-track"><span class="sz-bar" style="--w: 1%"></span></span><span class="sz-v">0.5 MB</span></div>
+    </div>
+    </div>
+    <div class="tb-note">
+      <p data-k="1">Every manifest has <span class="mono">name</span>, <span class="mono">offset</span> and <span class="mono">size</span>. <span class="title-mark">Any other column is yours</span>: here a split, a date, cloud cover and a land cover class.</p>
+      <p data-k="2">Query it like any table. <span class="mono">cloud_cover &lt; 25</span> keeps three of these rows, and on all million rows DuckDB filters split, cloud cover, date and area in <span class="title-mark">35 ms</span>.</p>
+      <p data-k="3">With all six columns the manifest is <span class="title-mark">a fifth of the directory</span>: 11.7 MB against 56 MB. With only name, offset and size it is 0.5 MB.</p>
+    </div>
+    <p class="path-note">The reference archive: a million files of 1,000 bytes. Its manifest also has lon and lat. Timings on a laptop, from local disk.</p>
+  </div>
+</section>
+
+    <section class="slide s06" aria-label="It is still a ZIP" data-steps="2" data-step="1">
+  <header><span class="brand"><img class="brand-icon" src="../assets/svg/cozip-mark.svg?v=3" alt=""><span class="brand-name">cozip</span></span><span class="count">06 / 8</span></header>
+  <h1>It is still <span class="title-mark">a ZIP</span></h1>
+  <div class="ux-wr">
+    <div class="tabs" role="tablist" aria-label="Steps">
+      <button type="button" role="tab" data-to="1">entries</button>
+      <button type="button" role="tab" data-to="2">rules</button>
+    </div>
+    <div class="ux-row">
+      <pre class="ux-term" aria-label="unzip -l tiles.zip lists 1,000,002 entries: __cozip__, the million files, and __metadata__. The middle of the listing is left out."><span class="ux-cmd">$ unzip -l tiles.zip</span>
+Archive:  tiles.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+       41  11-22-2026 23:30   <b>__cozip__</b>
+     1000  11-22-2026 23:30   000000.tif
+     1000  11-22-2026 23:30   000001.tif
+     1000  11-22-2026 23:30   000002.tif
+<span class="ux-skip">           999,996 more lines</span>
+     1000  11-22-2026 23:30   999999.tif
+ 11742751  11-22-2026 23:30   <b>__metadata__</b>
+---------                     -------
+1011742792                     1000002 files</pre>
+      <div class="ux-side">
+        <div class="ux-panel" data-k="1">
+          <p class="ux-lead">Any ZIP tool lists it. cozip adds <span class="ux-keep"><span class="title-mark">an index and a manifest</span>.</span></p>
+          <dl class="ux-list">
+            <dt class="mono">__cozip__</dt><dd>the index, always the first entry</dd>
+            <dt class="mono">__metadata__</dt><dd>the manifest, 11.7 MB of Parquet here</dd>
+            <dt class="mono">__cozip_padding__</dt><dd>only in an archive under 32,819 bytes, so not in this one; readers ignore it</dd>
+          </dl>
+        </div>
+        <div class="ux-panel" data-k="2">
+          <p class="ux-lead">Direct ranges work because <span class="ux-keep"><span class="title-mark">files keep their bytes</span>.</span></p>
+          <dl class="ux-list">
+            <dt>Stored, never compressed</dt><dd>a file is its original bytes, at an offset with a size</dd>
+            <dt>No encryption, no data descriptors</dt><dd>nothing to decode between the offsets</dd>
+            <dt>One segment, no comment</dt><dd>the end record is always the last 22 bytes</dd>
+            <dt>Unique ASCII names</dt><dd>with <span class="mono">/</span> as the separator and no folder entries</dd>
+            <dt>ZIP64 when needed</dt><dd>above 4 GiB, or from 65,535 entries</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+    <section class="slide s07" aria-label="Five languages, one format">
+  <header><span class="brand"><img class="brand-icon" src="../assets/svg/cozip-mark.svg?v=3" alt=""><span class="brand-name">cozip</span></span><span class="count">07 / 8</span></header>
+  <h1>Five languages, <span class="title-mark">one format</span></h1>
+  <div class="lnx" data-interactive>
+    <svg class="ln-fig" viewBox="0 0 864 170" role="img" aria-label="The C core, libcozip, sits first. C calls it directly, and one line runs out of it to Python through cffi, R through .Call and Julia through ccall. JavaScript reads the same archives with its own reader and decodes the manifest with hyparquet.">
+      <rect class="ln-core" data-lang="C" x="0" y="44" width="232" height="96"/>
+      <g transform="translate(36 92)"><g class="lg"><polygon points="0,-19 16.5,-9.5 16.5,9.5 0,19 -16.5,9.5 -16.5,-9.5" fill="#00599C"/><text x="0" y="8" text-anchor="middle" font-size="22" font-weight="800" fill="#fff" font-family="Arial, Helvetica, sans-serif">C</text></g></g>
+      <text class="ln-core-name" x="66" y="84">libcozip</text>
+      <text class="ln-core-sub" x="66" y="104">writes, checks and reads</text>
+      <text class="ln-core-sub" x="66" y="122">C calls it directly</text>
+      <line class="ln-bus" x1="232" y1="92" x2="572" y2="92"/>
+      <path class="ln-edge" data-lang="Python" d="M232 92 H320 V82"/>
+      <path class="ln-edge" data-lang="R" d="M232 92 H446 V82"/>
+      <path class="ln-edge" data-lang="Julia" d="M232 92 H572 V82"/>
+      <path class="ln-edge" data-lang="JavaScript" d="M711 92 H793"/>
+      <rect class="ln-core-hit" data-lang="C" x="0" y="44" width="232" height="96"/>
+      <g class="ln" data-lang="Python" transform="translate(320 0)"><rect class="ln-hit" x="-58" y="6" width="116" height="134"/><g transform="translate(0 34)"><g class="lg"><rect x="-17" y="-17" width="22" height="22" fill="#3776AB"/><rect x="-5" y="-5" width="22" height="22" fill="#FFD43B"/><rect x="-13" y="-13" width="4" height="4" fill="#fff"/><rect x="9" y="9" width="4" height="4" fill="#fff"/></g></g><text class="ln-name" x="0" y="74">Python</text><text class="ln-how" x="0" y="128">cffi</text></g>
+      <g class="ln" data-lang="R" transform="translate(446 0)"><rect class="ln-hit" x="-58" y="6" width="116" height="134"/><g transform="translate(0 34)"><g class="lg"><ellipse cx="0" cy="-1" rx="19" ry="13" fill="none" stroke="#a9acb3" stroke-width="5"/><text x="2" y="10" text-anchor="middle" font-size="26" font-weight="800" fill="#276DC3" font-family="Arial, Helvetica, sans-serif">R</text></g></g><text class="ln-name" x="0" y="74">R</text><text class="ln-how" x="0" y="128">.Call</text></g>
+      <g class="ln" data-lang="Julia" transform="translate(572 0)"><rect class="ln-hit" x="-58" y="6" width="116" height="134"/><g transform="translate(0 34)"><g class="lg"><circle cx="0" cy="-9" r="7.5" fill="#389826"/><circle cx="-9" cy="7" r="7.5" fill="#CB3C33"/><circle cx="9" cy="7" r="7.5" fill="#9558B2"/></g></g><text class="ln-name" x="0" y="74">Julia</text><text class="ln-how" x="0" y="128">ccall</text></g>
+      <g class="ln-pq" data-lang="JavaScript" transform="translate(694 92)"><g class="lg"><rect x="-17" y="-17" width="34" height="34" fill="#492ae8"/><path d="M-17 -5.7 H17 M-17 5.7 H17 M-5 -17 V17" stroke="#fff" stroke-width="2"/></g></g>
+      <text class="ln-pq-name" x="694" y="128" text-anchor="middle">hyparquet</text>
+      <text class="ln-how" x="694" y="146">decodes Parquet</text>
+      <g class="ln" data-lang="JavaScript" transform="translate(812 0)"><rect class="ln-hit" x="-50" y="6" width="100" height="134"/><g transform="translate(0 92)"><g class="lg"><rect x="-17" y="-17" width="34" height="34" fill="#F7DF1E"/><text x="13" y="13" text-anchor="end" font-size="15" font-weight="800" fill="#111" font-family="Arial, Helvetica, sans-serif">JS</text></g></g><text class="ln-name" x="0" y="128">JavaScript</text><text class="ln-how" x="0" y="146">own reader</text></g>
+    </svg>
+    <div class="ln-code">
+      <div class="ln-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" data-lang="C" aria-selected="true">C</button><button type="button" role="tab" data-lang="Python" aria-selected="false">Python</button><button type="button" role="tab" data-lang="R" aria-selected="false">R</button><button type="button" role="tab" data-lang="Julia" aria-selected="false">Julia</button><button type="button" role="tab" data-lang="JavaScript" aria-selected="false">JavaScript</button></div>
+      <pre data-lang="C"><code><span class="tok-fn">cozip_write_flat</span>(<span class="tok-str">"tiles.zip"</span>, entries, n, capacity, <span class="tok-str">"manifest.parquet"</span>, &amp;err);
+<span class="tok-fn">cozip_read_flat_metadata</span>(<span class="tok-str">"s3://bucket/tiles.zip"</span>, &amp;parquet, &amp;size, &amp;message);</code></pre><pre data-lang="Python" hidden><code>cozip.<span class="tok-fn">write</span>(<span class="tok-str">"tiles.zip"</span>, table)
+manifest = cozip.<span class="tok-fn">read</span>(<span class="tok-str">"s3://bucket/tiles.zip"</span>)</code></pre><pre data-lang="R" hidden><code>cozip::<span class="tok-fn">write</span>(<span class="tok-str">"tiles.zip"</span>, table)
+manifest &lt;- cozip::<span class="tok-fn">read</span>(<span class="tok-str">"s3://bucket/tiles.zip"</span>)</code></pre><pre data-lang="Julia" hidden><code>Cozip.<span class="tok-fn">write</span>(<span class="tok-str">"tiles.zip"</span>, table)
+manifest = Cozip.<span class="tok-fn">read</span>(<span class="tok-str">"s3://bucket/tiles.zip"</span>)</code></pre><pre data-lang="JavaScript" hidden><code><span class="tok-kw">import</span> { read } <span class="tok-kw">from</span> <span class="tok-str">"@asterisk-labs/cozip"</span>;
+<span class="tok-kw">const</span> manifest = <span class="tok-kw">await</span> <span class="tok-fn">read</span>(<span class="tok-str">"https://example.com/tiles.zip"</span>);</code></pre>
+    </div>
+  </div>
+</section>
+
+    <section class="slide cover closing s08" aria-label="Thank you">
+      <img class="cover-asterisk" src="fig/asterisk_banner.svg" alt="Asterisk Labs">
+      <div class="cover-inner">
+        <img class="cover-logo" src="../assets/svg/cozip-mark.svg?v=3" alt="">
+        <div class="cover-copy">
+          <h1>Thank you</h1>
+          <button type="button" class="end-install" data-copy="pip install cozip" aria-label="Copy the install command">pip install cozip</button>
+          <p class="end-links">
+            <a href="https://asterisk.coop/cozip/" target="_blank" rel="noopener noreferrer">asterisk.coop/cozip</a>
+            <a href="https://github.com/asterisk-labs/cozip" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>GitHub</a>
+            <a href="../spec.html">Specification</a>
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // The install command on the closing slide copies itself when clicked.
+    (function () {
+      var button = document.querySelector('.end-install');
+      if (!button || !navigator.clipboard) return;
+      button.addEventListener('click', function () {
+        navigator.clipboard.writeText(button.dataset.copy).then(function () {
+          button.classList.add('is-copied');
+          window.setTimeout(function () { button.classList.remove('is-copied'); }, 1200);
+        });
+      });
+    })();
+  </script>
+  <script>
+    // Slides with steps. The arrows step through them before moving on (app.js), a tab jumps to
+    // a step, and leaving a slide sends it back to step 1, as on the Karu deck.
+    document.querySelectorAll('.slide[data-steps]').forEach(function (slide) {
+      var tabs = slide.querySelectorAll('.tabs button');
+
+      function sync() {
+        var step = slide.dataset.step || '1';
+        tabs.forEach(function (btn) {
+          btn.setAttribute('aria-selected', String(btn.dataset.to === step));
+        });
+      }
+
+      tabs.forEach(function (btn) {
+        btn.addEventListener('click', function (event) {
+          event.stopPropagation();
+          slide.dataset.step = btn.dataset.to;
+        });
+      });
+      new MutationObserver(function (list) {
+        list.forEach(function (m) {
+          if (m.attributeName === 'class' && !slide.classList.contains('active')) slide.dataset.step = '1';
+        });
+        sync();
+      }).observe(slide, { attributes: true, attributeFilter: ['class', 'data-step'] });
+      sync();
+    });
+  </script>
+  <script>
+    // The languages slide. Pointing at a language, or clicking its tab, shows its call in
+    // the one code block and lights its path, as on the GeoZL and Rumi decks.
+    (function () {
+      var box = document.querySelector('.lnx');
+      if (!box) return;
+      var tabs = Array.prototype.slice.call(box.querySelectorAll('.ln-tabs button'));
+      var pres = Array.prototype.slice.call(box.querySelectorAll('.ln-code pre'));
+      var parts = Array.prototype.slice.call(box.querySelectorAll('.ln-fig [data-lang]'));
+      function pick(lang) {
+        tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.lang === lang)); });
+        pres.forEach(function (p) { p.hidden = p.dataset.lang !== lang; });
+        parts.forEach(function (p) { p.classList.toggle('is-on', p.dataset.lang === lang); });
+      }
+      tabs.forEach(function (t) { t.addEventListener('click', function () { pick(t.dataset.lang); }); });
+      box.querySelectorAll('.ln-fig g.ln, .ln-fig .ln-core-hit').forEach(function (g) {
+        g.addEventListener('mouseenter', function () { pick(g.dataset.lang); });
+        g.addEventListener('click', function () { pick(g.dataset.lang); });
+      });
+      pick('C');
+    })();
+  </script>
+</body>
+</html>

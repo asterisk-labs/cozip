@@ -1,0 +1,331 @@
+/* The cozip deck, on the shell of the Rumi and Karu decks. Each slide adds its own block below,
+   every selector under the slide's sNN class. */
+*, *::before, *::after { box-sizing: border-box; }
+/* clip, not hidden, so focusing a control inside a scaled slide never scrolls the page */
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; overflow: clip; }
+:root {
+  color-scheme: light;
+  --ink: #000;
+  --soft: #2b2f36;
+  --dim: #5c6370;
+  --faint: #8a919c;
+  --rule: #dedede;
+  --line: #c9cbd3;
+  --grey: #ececef;
+  --violet: #492ae8;
+  --violet-soft: #ebe7fd;
+  --mint: #26745f;
+  --bg: #fff;
+  --edge: rgba(0, 0, 0, .1);
+  --ink-soft: #1d2025;
+  --wash: #f6f6f4;
+  --wash-deep: #eeeeeb;
+  --sans: 'League Spartan', Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SFMono-Regular', monospace;
+}
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--sans);
+}
+.deck {
+  position: relative;
+  flex: none;
+  width: 960px;
+  height: 540px;
+  transform-origin: center;
+  background: #fff;
+  box-shadow: 0 18px 55px #0002;
+}
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 48px 24px;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .22s ease;
+  overflow: hidden;
+}
+.slide.active { opacity: 1; pointer-events: auto; }
+.slide.cover { align-items: center; justify-content: center; padding: 0; }
+.cover-asterisk { position: absolute; top: 32px; right: 48px; display: block; width: 185px; height: auto; }
+.cover-inner { display: flex; align-items: center; gap: 32px; }
+.cover-logo { display: block; width: 116px; height: 116px; }
+.cover h1 { margin: 0 0 12px; font-size: 92px; line-height: .86; font-weight: 700; }
+.cover p { margin: 0; color: var(--soft); font-size: 25px; }
+.closing .cover-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
+.closing h1 { margin: 0; }
+.end-install { display: inline-flex; align-items: center; gap: 12px; padding: 10px 22px; border: 0; background: var(--wash); color: var(--ink); cursor: pointer; font: 500 20px var(--mono); }
+.end-install::before { color: var(--violet); content: "$"; }
+.end-install::after { color: var(--faint); font: 400 14px var(--sans); content: "copy"; }
+.end-install.is-copied::after { color: var(--violet); content: "copied"; }
+.end-links { display: flex; gap: 12px; }
+.end-links a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border: 1px solid var(--violet); color: var(--violet); font: 500 17px var(--sans); text-decoration: none; }
+.end-links a:hover,
+.end-links a:focus-visible { background: #ece9fd; outline: none; }
+.slide header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+}
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand-icon { display: block; width: 30px; height: 30px; }
+.brand-name { font-size: 26px; font-weight: 700; letter-spacing: -.045em; }
+.count { color: var(--dim); font: 500 11px var(--mono); }
+h1 {
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: -.042em;
+  font-weight: 600;
+  margin: 0;
+}
+.title-mark { position: relative; isolation: isolate; display: inline-block; }
+.title-mark::before { position: absolute; inset: .56em -.06em .02em -.04em; z-index: -1; content: ''; background: #c4ffc2; transform: rotate(-.8deg); }
+.title-mark.red::before { background: #ffc4c2; }
+p { margin: 0; }
+code, pre { font-family: var(--mono); font-variant-ligatures: none; }
+.mono { font-family: var(--mono); font-variant-ligatures: none; }
+
+/* Shared figure parts. */
+.fig {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 22px;
+}
+.who { font-size: 26px; font-weight: 600; letter-spacing: -.03em; line-height: 1; }
+.who span { display: block; margin-top: 4px; color: var(--dim); font-size: 14px; font-weight: 400; letter-spacing: 0; }
+.end-install.is-plain::before { content: none; }
+
+/* Code, in the colours of the docs code blocks. */
+.code {
+  align-self: center;
+  margin: 0;
+  padding: 12px 20px;
+  background: var(--wash);
+  color: var(--ink);
+  font: 13.5px/1.65 var(--mono);
+  font-variant-ligatures: none;
+}
+.tok-fn { color: #0a5fb4; }
+.tok-str { color: #17803d; }
+.tok-num { color: #c2410c; }
+.tok-kw { color: #492ae8; }
+.tok-com { color: #8a919c; }
+
+.path-note { color: var(--dim); font-size: 14.5px; line-height: 1.3; text-align: center; }
+
+.progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  height: 3px;
+  background: var(--violet);
+  transition: width .25s ease;
+}
+.site-back {
+  position: fixed;
+  top: 13px;
+  left: 15px;
+  z-index: 1000;
+  color: var(--soft);
+  font: 500 12px var(--mono);
+  text-decoration: none;
+}
+.site-back:hover, .site-back:focus-visible { color: var(--violet); }
+.is-embedded, .is-embedded body { background: white; }
+.is-embedded .site-back { display: none; }
+@media (prefers-reduced-motion: reduce) { .slide, .progress, .s05 .sz-bar { transition: none; } }
+@media print {
+  html, body { height: auto; overflow: visible; background: white; }
+  .deck { width: 960px; height: auto; transform: none !important; box-shadow: none; }
+  .slide { position: relative; width: 960px; height: 540px; opacity: 1; pointer-events: auto; page-break-after: always; break-after: page; }
+  .site-back, .progress { display: none; }
+}
+
+/* 02 The Asterisk stack for AI, the Rumi and Karu decks' figure with cozip in violet. */
+.s02 .st-wrap { flex: 1; min-height: 0; margin: 0; display: flex; align-items: center; }
+.s02 .st-fig { width: 100%; height: auto; overflow: visible; }
+.s02 .st-fig text { font-family: var(--sans); fill: var(--ink); }
+.s02 .st-fig .st-layer { font: 500 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; fill: var(--dim); }
+.s02 .st-box { fill: #f6f6f4; stroke: #777; stroke-width: 1.2; }
+.s02 .st-open { fill: none; stroke: #999; stroke-dasharray: 5 4; }
+.s02 .st-on { fill: #ece9fd; stroke: #492ae8; stroke-width: 2.4; }
+.s02 .st-fig .st-name { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.s02 .st-fig .st-text { font-size: 14px; fill: var(--dim); }
+.s02 .st-call { fill: none; stroke: #777; stroke-width: 1.5; }
+.s02 .st-call.on { stroke: #492ae8; stroke-width: 2; }
+.s02 .st-hold { fill: none; stroke: #777; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.s02 .st-hold.on { stroke: #492ae8; stroke-width: 2; }
+.s02 .st-fig .st-tag { font: 500 11px var(--mono); fill: var(--dim); text-anchor: middle; }
+
+/* 05 The manifest of cities.zip in three steps: the required columns and yours, the European rows
+   picked, then the location the reader adds to every row. */
+.s05 .tb-wr { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+.s05 .tb-stage { display: grid; align-items: center; justify-items: center; }
+.s05 .tb-stage > * { grid-area: 1 / 1; transition: opacity .3s ease; }
+.s05 .tb { border-collapse: separate; border-spacing: 0; font: 11.5px/1 var(--mono); }
+.s05 .tb th { padding: 0 14px 6px 0; border-bottom: 1px solid var(--ink); color: var(--faint); font: 600 10.5px var(--sans); letter-spacing: .08em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+.s05 .tb td { padding: 3.5px 14px 3.5px 0; border-bottom: 1px solid var(--grey); color: var(--soft); white-space: nowrap; transition: opacity .3s ease, background .3s ease; }
+.s05 .tb .num { text-align: right; }
+.s05 .tb .tb-grp th { padding-bottom: 6px; border-bottom: 0; }
+.s05 .tb .tb-grp span { display: block; padding-bottom: 4px; border-bottom: 1.8px solid var(--violet); color: var(--violet); font: 600 13px var(--sans); letter-spacing: 0; text-align: center; text-transform: none; transition: opacity .3s ease; }
+.s05 .tb .tb-grp th:last-child span { margin-right: -14px; }
+.s05 .tb tr.is-more td { color: var(--faint); font-family: var(--sans); border-bottom: 0; }
+.s05[data-step="2"] .tb-grp :is(.is-req, .is-own) span { opacity: 0; }
+.s05[data-step="2"] .tb tbody tr:not(.is-hit) td { opacity: .3; }
+.s05[data-step="2"] .tb tr.is-hit td { background: #c4ffc2; color: var(--ink); font-weight: 700; }
+.s05[data-step="3"] .tb { opacity: 0; }
+/* step 3: the bars grow from zero to the measured sizes */
+.s05 .sz { width: 680px; opacity: 0; }
+.s05[data-step="3"] .sz { opacity: 1; }
+.s05 .sz-row { display: grid; grid-template-columns: 200px 1fr 84px; align-items: center; gap: 14px; margin: 16px 0; }
+.s05 .sz-k { color: var(--ink-soft); font-size: 16px; text-align: right; }
+.s05 .sz-track { display: block; }
+.s05 .sz-bar { display: block; width: 0; height: 30px; background: var(--violet); border: 1.2px solid var(--ink); transition: width .7s ease; }
+.s05 .sz-bar.is-cd { background: #e4e4e8; }
+.s05[data-step="3"] .sz-bar { width: var(--w); }
+.s05 .sz-v { font: 600 15px var(--mono); }
+.s05 .tb-note { min-height: 52px; }
+.s05 .tb-note p { display: none; max-width: 800px; margin: 0 auto; color: var(--ink-soft); font-size: 19px; line-height: 1.35; text-align: center; }
+.s05 .tb-note .mono { font-size: 16px; }
+.s05 .tb-note .title-mark { color: var(--ink); font-weight: 600; }
+.s05[data-step="1"] .tb-note [data-k="1"],
+.s05[data-step="2"] .tb-note [data-k="2"],
+.s05[data-step="3"] .tb-note [data-k="3"] { display: block; }
+
+/* 06 unzip lists a cozip like any ZIP. Step 1 names the three entries cozip adds, step 2 the ZIP
+   features it turns off. */
+.s06 .ux-wr { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+.s06 .ux-row { display: flex; align-items: center; gap: 36px; }
+.s06 .ux-term { flex: none; margin: 0; padding: 12px 18px; background: #16151c; color: #d4d4d8; font: 10.5px/1.45 var(--mono); font-variant-ligatures: none; }
+.s06 .ux-term .ux-cmd { color: #fff; }
+.s06 .ux-term b { font-weight: 500; transition: color .3s ease; }
+.s06 .ux-term .ux-skip { color: #8b8b95; font-style: italic; }
+.s06[data-step="1"] .ux-term b { color: #c4ffc2; font-weight: 700; }
+.s06 .ux-side { display: grid; flex: 1; min-width: 0; }
+.s06 .ux-panel { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 16px; opacity: 0; transition: opacity .3s ease; }
+.s06[data-step="1"] .ux-panel[data-k="1"],
+.s06[data-step="2"] .ux-panel[data-k="2"] { opacity: 1; }
+.s06 .ux-lead { color: var(--ink-soft); font-size: 21px; line-height: 1.3; }
+.s06 .ux-lead .title-mark { color: var(--ink); font-weight: 600; }
+.s06 .ux-keep { white-space: nowrap; }
+.s06 .ux-list { margin: 0; }
+.s06 .ux-list dt { margin-top: 12px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.s06 .ux-list dt.mono { font-size: 14.5px; }
+.s06 .ux-list dt:first-child { margin-top: 0; }
+.s06 .ux-list dd { margin: 2px 0 0; color: var(--dim); font-size: 14.5px; line-height: 1.3; }
+.s06 .ux-list dd .mono { font-size: 13px; }
+
+/* 07 The Python round trip and one install line per language. */
+.lnx { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+.ln-fig { display: block; width: 100%; height: auto; overflow: visible; }
+.ln-fig text { font-family: var(--sans); }
+.ln-fig .lg text { font-family: Arial, Helvetica, sans-serif; }
+.ln-hit { fill: transparent; cursor: pointer; }
+.ln-fig .ln-name { fill: var(--ink); font-size: 17px; font-weight: 600; text-anchor: middle; }
+.ln-fig .ln-how { fill: var(--dim); font: 500 12px var(--mono); text-anchor: middle; }
+.ln-fig .ln-pq-name { fill: var(--violet); font: 500 12px var(--mono); }
+.ln-edge { fill: none; stroke: var(--line); stroke-width: 2; transition: stroke 160ms ease; }
+.ln-edge.is-on { stroke: var(--violet); stroke-width: 2.5; }
+.ln-fig g.ln { opacity: .55; transition: opacity 160ms ease; }
+.ln-fig g.ln.is-on { opacity: 1; }
+.ln-core { fill: var(--violet-soft); stroke: var(--violet); stroke-width: 2; }
+.ln-bus { stroke: var(--line); stroke-width: 2; }
+.ln-core-hit { fill: transparent; cursor: pointer; }
+.ln-core.is-on { stroke-width: 3.5; fill: #ddd6fc; }
+.ln-fig .ln-pq .lg { opacity: .55; transition: opacity 160ms ease; }
+.ln-fig .ln-pq.is-on .lg { opacity: 1; }
+.ln-fig .ln-core-name { fill: var(--ink); font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+.ln-fig .ln-core-sub { fill: var(--ink-soft); font-size: 13.5px; }
+.ln-tabs { display: flex; gap: 18px; margin-bottom: 6px; }
+.ln-tabs button { padding: 4px 0; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--dim); font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+.ln-tabs button[aria-selected="true"] { border-color: var(--ink); color: var(--ink); }
+.ln-code pre { margin: 0; padding: 10px 16px; min-height: 64px; background: var(--wash); color: var(--ink); font: 13px/1.6 var(--mono); white-space: pre; overflow: hidden; }
+
+/* Step tabs, as on the Karu deck: the arrows step through a slide (app.js), a tab jumps to a
+   step. A slide marks its active tab by data-step, so it is right before the script runs. */
+.tabs { display: flex; gap: 20px; }
+.tabs button { padding: 4px 0; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--dim); font: 500 12px var(--mono); cursor: pointer; }
+.tabs { margin-top: 4px; }
+.tabs button:hover { color: var(--ink); }
+.tabs button:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+.slide[data-step="1"] .tabs [data-to="1"],
+.slide[data-step="2"] .tabs [data-to="2"],
+.slide[data-step="3"] .tabs [data-to="3"] { border-color: var(--ink); color: var(--ink); }
+
+/* 03 and 04 The same 100,000 files as an ordinary ZIP and as a cozip. Slide 03 reads the end, the
+   whole directory, then the file. Slide 04 reads the head and tail, the manifest, then the file. */
+:is(.s03, .s04) .zd-wr { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+:is(.s03, .s04) .zd-fig { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--sans); }
+:is(.s03, .s04) .zd-file rect, :is(.s03, .s04) .zd-dir > rect:first-child, :is(.s03, .s04) .zd-end rect { stroke: var(--ink); stroke-width: 1.2; }
+/* files stay quiet beside the index and the manifest */
+:is(.s03, .s04) .zd-file rect { stroke: #9b9ea6; }
+:is(.s03, .s04) .zd-name { fill: var(--ink); font: 600 12.5px var(--sans); text-anchor: middle; }
+:is(.s03, .s04) .zd-name.is-faint { fill: var(--faint); font-size: 20px; }
+:is(.s03, .s04) .zd-size { fill: var(--dim); font: 500 10.5px var(--mono); text-anchor: middle; }
+:is(.s03, .s04) .zd-dir-title { fill: var(--ink); font: 600 13px var(--sans); }
+:is(.s03, .s04) .zd-row { fill: var(--soft); font: 500 11px var(--mono); }
+:is(.s03, .s04) .zd-row.is-size { fill: var(--dim); text-anchor: end; }
+:is(.s03, .s04) .zd-row.is-faint { fill: var(--faint); font-family: var(--sans); }
+:is(.s03, .s04) .zd-row-mark { fill: #c4ffc2; opacity: 0; transition: opacity .3s ease; }
+:is(.s03, .s04)[data-step="2"] .zd-row-mark, :is(.s03, .s04)[data-step="3"] .zd-row-mark { opacity: 1; }
+:is(.s03, .s04) .zd-end-label { fill: #fff; font: 600 12.5px var(--sans); text-anchor: middle; }
+:is(.s03, .s04) .zd-end-size { fill: rgba(255, 255, 255, .75); font: 500 10px var(--mono); text-anchor: middle; }
+:is(.s03, .s04) .zd-ruler { fill: var(--faint); font: 500 11px var(--mono); }
+:is(.s03, .s04) .zd-hit { fill: none; stroke: var(--violet); stroke-width: 3.2; }
+:is(.s03, .s04) .zd-arrow { fill: none; stroke: var(--violet); stroke-width: 2; }
+:is(.s03, .s04) .zd-span { fill: none; stroke: var(--violet); stroke-width: 1.8; }
+:is(.s03, .s04) .zd-say { fill: var(--violet); font: 600 14px var(--sans); text-anchor: middle; }
+:is(.s03, .s04) .zd-k { opacity: 0; transition: opacity .3s ease; }
+:is(.s03, .s04)[data-step="1"] .zd-k[data-k="1"],
+:is(.s03, .s04)[data-step="2"] .zd-k[data-k="2"],
+:is(.s03, .s04)[data-step="3"] .zd-k[data-k="3"] { opacity: 1; }
+:is(.s03, .s04) .zd-file { transition: opacity .3s ease; }
+:is(.s03, .s04)[data-step="3"] .zd-file:not(.is-target) { opacity: .3; }
+:is(.s03, .s04) .zd-chip rect { fill: var(--wash); stroke: var(--rule); }
+:is(.s03, .s04) .zd-chip text { fill: var(--ink-soft); font: 500 13px var(--mono); }
+:is(.s03, .s04) .zd-chip .n { fill: var(--violet); font-weight: 700; }
+:is(.s03, .s04) .zd-then { fill: var(--faint); font: 500 12px var(--sans); }
+:is(.s03, .s04) .zd-chip, :is(.s03, .s04) .zd-then { opacity: 0; transition: opacity .3s ease; }
+:is(.s03, .s04)[data-step="1"] :is(.zd-chip, .zd-then)[data-k="1"],
+:is(.s03, .s04)[data-step="2"] :is(.zd-chip, .zd-then):is([data-k="1"], [data-k="2"]),
+:is(.s03, .s04)[data-step="3"] :is(.zd-chip, .zd-then) { opacity: 1; }
+:is(.s03, .s04) .zd-note { min-height: 52px; }
+:is(.s03, .s04) .zd-note p { display: none; max-width: 800px; margin: 0 auto; color: var(--ink-soft); font-size: 19px; line-height: 1.35; text-align: center; }
+:is(.s03, .s04) .zd-note .title-mark { color: var(--ink); font-weight: 600; }
+:is(.s03, .s04)[data-step="1"] .zd-note [data-k="1"],
+:is(.s03, .s04)[data-step="2"] .zd-note [data-k="2"],
+:is(.s03, .s04)[data-step="3"] .zd-note [data-k="3"] { display: block; }
+
+/* 04 What a cozip adds to the drawing of 03: the index at the start, the manifest as a table, and
+   the Central Directory hatched because the reader never parses it. */
+.s04 .zd-index rect, .s04 .zd-man > rect:first-child, .s04 .zd-cd rect { stroke: var(--ink); stroke-width: 1.2; }
+.s04 .zd-index-label { fill: #fff; font: 600 12.5px var(--sans); text-anchor: middle; }
+.s04 .zd-index-size { fill: rgba(255, 255, 255, .75); font: 500 10px var(--mono); text-anchor: middle; }
+.s04 .zd-col { fill: var(--faint); font: 500 9.5px var(--mono); }
+.s04 .zd-col.is-num, .s04 .zd-row.is-num { text-anchor: end; }
+.s04 .zd-cd-label { fill: var(--faint); font: 600 12px var(--sans); text-anchor: middle; }
+.s04 .zd-cd-size { fill: var(--faint); font: 500 10px var(--mono); text-anchor: middle; }
+.s04 .zd-no { fill: #ffc4c2; }
+.s04 .zd-no-text { fill: var(--ink); font: 600 13px var(--sans); text-anchor: middle; }
+.s04 .zd-man .zd-row:not(.is-faint) { font-size: 10px; }
+/* the manifest is violet like the index, so its table is drawn in white; the row of the
+   file being read turns mint with dark text */
+.s04 .zd-man .zd-dir-title, .s04 .zd-man .zd-row { fill: #fff; }
+.s04 .zd-man .zd-col, .s04 .zd-man .zd-row.is-faint { fill: rgba(255, 255, 255, .72); }
+.s04 .zd-man .zd-row-mark { fill: #c4ffc2; }
+.s04:is([data-step="2"], [data-step="3"]) .zd-man .zd-row.is-marked { fill: var(--ink); }
+.s04 .zd-hit.is-ink { stroke: var(--ink); }

@@ -15,6 +15,7 @@ python/cozip/_lib/cozip.so
 python/cozip/_lib/cozip.dll
 julia/Manifest.toml
 dist/
+_site/
 python/__pycache__/
 
 python/cozip/__pycache__/

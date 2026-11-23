@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="The cozip JavaScript reader, function by function.">
+<title>cozip · JavaScript</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html" class="here">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="doc">
+    <nav class="toc" aria-label="Contents">
+      <p class="toc-title">API</p>
+      <ol class="toc-pages">
+        <li><a href="api.html">Overview</a></li>
+        <li class="toc-group">Languages</li>
+        <li><a href="api-python.html">Python</a></li>
+        <li><a href="api-r.html">R</a></li>
+        <li><a href="api-julia.html">Julia</a></li>
+        <li><a href="api-c.html">C</a></li>
+        <li><a href="api-js.html" class="here" aria-current="page">JavaScript</a></li>
+      </ol>
+    </nav>
+
+    <article class="content">
+      <h1>JavaScript</h1>
+<ul class="facts">
+        <li>Package <code>@asterisk-labs/cozip</code> on <a href="https://www.npmjs.com/package/@asterisk-labs/cozip" rel="noopener noreferrer">npm</a>, an ES module for Node 20 or newer and modern browsers</li>
+        <li>Reader only</li>
+      </ul>
+<pre><code class="language-sh">npm install @asterisk-labs/cozip</code></pre>
+      <p>The package reads Flat archives over HTTP. It has no writer and no native code. <a href="https://github.com/hyparam/hyparquet" rel="noopener noreferrer">hyparquet</a> decodes the manifest, with Snappy, gzip, Brotli, zstd and LZ4 compression. Types ship in <code>types/index.d.ts</code>. The rules every reader shares are on the <a href="api.html">API overview</a>.</p>
+
+      <h2 class="part" id="reading">Reading</h2>
+
+      <h3 id="read">read</h3>
+<pre><code class="sig language-js">read(url, { columns, location = true } = {}) -&gt; Promise&lt;object[]&gt;</code></pre>
+      <p>Reads the manifest of a Flat archive and returns one plain object per file, in manifest order. The arguments are described under <a href="api.html#read">Read</a>.</p>
+      <table class="spec">
+        <tr><th>url</th><td>A non-empty ASCII string that starts with <code>http://</code> or <code>https://</code>. <code>s3://</code>, <code>gs://</code>, <code>file://</code> and local paths are refused, so use a public or presigned HTTPS URL. Percent-encode any other character first.</td></tr>
+        <tr><th>columns</th><td>An array of non-empty strings. The listed columns come after <code>name</code>, <code>offset</code> and <code>size</code> and before <code>cozip:location</code>. An unknown name rejects the read.</td></tr>
+        <tr><th>location</th><td>A boolean.</td></tr>
+      </table>
+      <p>Options must be an object, not an array. Wrong types throw <code>TypeError</code> before any fetch.</p>
+<pre><code class="language-js">import { read } from "@asterisk-labs/cozip";
+
+const url = "https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip";
+const rows = await read(url, { columns: ["label", "continent", "geometry"] });
+rows[0];</code></pre>
+<pre class="output"><code>{
+  name: 'cities/lima.geojson',
+  offset: 141n,
+  size: 181n,
+  label: 'Lima',
+  continent: 'South America',
+  geometry: { type: 'Point', coordinates: [ -77.04, -12.05 ] },
+  'cozip:location': '/vsisubfile/141_181,/vsicurl/https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip'
+}</code></pre>
+
+      <h3 id="requests">Requests</h3>
+      <p>Unlike the native reader, which asks for both ends at once, this one sends its ranges in order and skips the ones an earlier response already covers.</p>
+      <ol class="list">
+        <li><code>Range: bytes=0-65535</code>, for the local header, the 41-byte Flat index and the profile.</li>
+        <li>The last 32 KiB, for the integrity hash.</li>
+        <li>The manifest and up to 1,066 bytes before it, for its local header.</li>
+      </ol>
+      <p><code>cities.zip</code> fits in the first request, and larger archives take two or three. The reader checks each <code>Content-Range</code> against the range it asked for, and sends a strong <code>ETag</code> back as <code>If-Match</code>, as <a href="api.html#how">How it works</a> describes.</p>
+
+      <h3 id="verify">verify</h3>
+<pre><code class="sig language-js">verify(url) -&gt; Promise&lt;void&gt;</code></pre>
+      <p>Checks an archive of any profile, as described under <a href="api.html#verify">Verify</a>. Resolves to <code>undefined</code>, or rejects with an error whose <code>code</code> names the broken rule.</p>
+
+      <h2 class="part" id="rows">Rows</h2>
+      <p>hyparquet decides the JavaScript type of each value.</p>
+      <ul class="list">
+        <li>64-bit integers are <code>BigInt</code>, <code>offset</code> and <code>size</code> included. Mixing a <code>BigInt</code> with a <code>Number</code> throws <code>TypeError: Cannot mix BigInt and other types</code>.</li>
+        <li>Doubles and 32-bit integers are numbers, and strings are strings.</li>
+        <li>A GeoParquet geometry becomes a GeoJSON geometry object, such as <code>{ type: "Point", coordinates: [-77.04, -12.05] }</code>.</li>
+        <li><code>cozip:location</code> is <code>/vsisubfile/{offset}_{size},/vsicurl/{url}</code>, with the URL exactly as given.</li>
+      </ul>
+
+      <h2 class="part" id="files">Reading a file</h2>
+<pre><code class="language-js">const lima = rows.find((row) =&gt; row.name === "cities/lima.geojson");
+const response = await fetch(url, {
+  headers: { Range: `bytes=${lima.offset}-${lima.offset + lima.size - 1n}` },
+});
+response.status;                 // 206
+JSON.parse(await response.text()).properties.id;   // "lima"</code></pre>
+      <p>Keep the arithmetic in <code>BigInt</code>, as <code>- 1n</code> does, or convert once with <code>Number(row.offset)</code>. Both are exact below 2<sup>53</sup>, and the reader refuses a <code>Content-Range</code> beyond that, so every offset it returns is exact.</p>
+
+      <h2 class="part" id="browser">In the browser</h2>
+      <p>The package needs no build step, and a page can import it from a CDN, as the <a href="playground.html">playground</a> does.</p>
+<pre><code class="language-js">import { read } from "https://esm.sh/@asterisk-labs/cozip@2026.9.27";</code></pre>
+      <p>The server must meet the <a href="api.html#hosting">hosting requirements</a>, CORS included. A server that ignores <code>Range</code> and returns the whole object with <code>200</code> still works, because the reader takes everything from that one response.</p>
+
+      <h2 class="part" id="errors">Errors</h2>
+      <p>Wrong argument types raise <code>TypeError</code>. Malformed archives raise <code>Error</code> with a <code>code</code>, the names on the <a href="api.html#errors">API overview</a>, with <code>UNKNOWN_PROFILE</code> for a profile other than Flat. HTTP and Parquet errors have no <code>code</code>. Messages omit URL credentials, queries and fragments. These come only from this reader:</p>
+      <table class="spec"><thead><tr><th>message, in part</th><th>cause</th></tr></thead><tbody>
+        <tr><td><code>only http(s) URLs are supported</code></td><td>A URL that is not HTTP or HTTPS.</td></tr>
+        <tr><td><code>URL contains non-ASCII characters</code></td><td>Percent-encode the URL first.</td></tr>
+        <tr><td><code>HTTP 403 Forbidden for ...</code></td><td>Any status other than 200 or 206, such as missing permissions or an expired presigned URL.</td></tr>
+        <tr><td><code>columns not in the manifest: "missing"</code></td><td>A name in <code>columns</code> that the manifest does not have.</td></tr>
+        <tr><td><code>range response has no valid Content-Range header</code></td><td>CORS does not expose <code>Content-Range</code>, or a proxy rewrote the response.</td></tr>
+        <tr><td><code>archive changed while reading</code>, <code>archive size changed while reading</code></td><td>The object was replaced during the read.</td></tr>
+      </tbody></table>
+
+      <h2 class="part" id="development">Development</h2>
+<pre><code class="language-sh">cd javascript
+npm install
+npm run types    # tsc, writes types/index.d.ts from the JSDoc
+npm test         # node --test; some tests fetch a fixture from GitHub</code></pre>
+      <p><code>make javascript</code> runs the same steps after <code>make sync</code>. The package version follows the repository's <code>VERSION</code> file.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="api-c.html"><span>Previous</span>C</a>
+      </nav>
+    </article>
+
+    <nav class="toc onpage" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ol class="toc-sections">
+        <li><a href="#reading">Reading</a></li>
+        <li><a href="#rows">Rows</a></li>
+        <li><a href="#files">Reading a file</a></li>
+        <li><a href="#browser">In the browser</a></li>
+        <li><a href="#errors">Errors</a></li>
+        <li><a href="#development">Development</a></li>
+      </ol>
+    </nav>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/toc.js?v=1" defer></script>
+<script src="assets/js/code.js?v=1" defer></script>
+
+</body>
+</html>

@@ -1,0 +1,274 @@
+/* The hero: a cozip drawn as a column of its parts, in four steps the reader
+   picks with the carousel of the GeoZL page. Each step lights its part and
+   dims the rest. Drawn in the style of the Rumi and Karu figures: hairlines
+   and square blocks. */
+
+.read {
+  min-width: 0;
+  margin: 0;
+}
+
+/* the step: its number and one sentence, then the code it runs */
+.read-step {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 46px;
+}
+
+.read-n {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  background: var(--violet);
+  color: #fff;
+  font: 600 13px/1 var(--sans);
+  transform: translateY(-2px);
+}
+
+.read-text {
+  margin: 0;
+  color: var(--ink);
+  font: 500 17px/1.35 var(--sans);
+}
+
+/* the key phrase of a step, marked in the yellow of the hero title; the band
+   is a background, so it follows the phrase when it wraps */
+.read-mark {
+  padding: 0 0.06em;
+  background: linear-gradient(transparent 48%, #f7cc09 48%, #f7cc09 94%, transparent 94%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  color: inherit;
+}
+
+.read-mark.is-green {
+  background: linear-gradient(transparent 48%, #c4ffc2 48%, #c4ffc2 94%, transparent 94%);
+}
+
+.read-code {
+  display: block;
+  min-height: 30px;
+  padding: 2px 0 8px 32px;
+  color: var(--ink-soft);
+  font: 12.5px/1.5 var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rd-fn { color: #0a5fb4; }
+.rd-str { color: #a14730; }
+
+.read > svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  font-family: var(--mono);
+  overflow: visible;
+}
+
+@media (min-width: 861px) {
+  .read > svg { max-height: calc(100svh - 300px); }
+}
+
+/* the archive */
+.rd-title { fill: var(--ink); font: 600 13px var(--sans); }
+.rd-zip { fill: #fff; stroke: var(--ink); stroke-width: 1.6; }
+.rd-tooth { fill: var(--ink); opacity: 0.8; }
+
+.rd-block { transition: opacity 260ms ease; }
+.rd-block.is-dim { opacity: 0.25; }
+
+.rd-block-box {
+  fill: var(--tone);
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  transition: stroke-width 200ms ease, stroke 200ms ease;
+}
+
+.rd-block.is-lit .rd-block-box,
+.rd-block.is-hit .rd-block-box { stroke-width: 3; }
+
+/* files stay quiet beside the index and the manifest until they are read */
+.is-file .rd-block-box { stroke: #9b9ea6; }
+.is-file.is-lit .rd-block-box,
+.is-file.is-hit .rd-block-box { stroke: var(--ink); }
+.is-file .rd-block-label { fill: var(--ink-soft); font-weight: 500; }
+.is-file.is-hit .rd-block-label { font-weight: 600; }
+
+.rd-block-label { fill: var(--ink); font: 600 12px var(--sans); }
+.rd-block-sub { fill: var(--dim); font-size: 10px; }
+.is-index .rd-block-label { fill: #fff; }
+.is-index .rd-block-sub { fill: rgba(255, 255, 255, 0.8); }
+.is-manifest .rd-block-label { fill: #fff; }
+.is-dir .rd-block-box { fill: url(#rd-hatch); }
+.is-dir .rd-block-label { fill: var(--dim); font-weight: 500; }
+.is-dir.is-noted .rd-block-box { stroke: var(--violet); stroke-width: 2.4; }
+
+.rd-fold { fill: none; stroke: var(--ink); stroke-width: 1; }
+.rd-glyph rect, .rd-glyph path { fill: none; stroke: #fff; stroke-width: 1.2; }
+
+/* the index points at the manifest */
+.rd-pointer {
+  fill: none;
+  stroke: var(--violet);
+  stroke-width: 2;
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.rd-pointer.is-shown { opacity: 1; }
+
+/* the panel on the right: the index fields, or the table */
+.rd-panel { opacity: 0; pointer-events: none; transition: opacity 260ms ease; }
+.rd-panel.is-shown { opacity: 1; }
+.rd-panel-box { fill: #fff; stroke: var(--ink); stroke-width: 1.2; }
+.rd-panel-tie { fill: none; stroke: var(--violet); stroke-width: 1.2; stroke-dasharray: 3 3; transition: opacity 260ms ease; }
+.rd-panel-tie.is-dim { opacity: 0.2; }
+.rd-panel-rule { stroke: var(--hair, #ececef); stroke-width: 1; }
+.rd-col { fill: var(--faint); font-size: 10px; }
+
+.rd-field-key { fill: var(--dim); font: 500 12px var(--sans); }
+.rd-field-value { fill: var(--ink); font-size: 12.5px; }
+.rd-field-value.is-key { fill: var(--violet); font-weight: 600; }
+.rd-field-note { fill: var(--faint); font: 400 11px var(--sans); }
+
+.rd-note { fill: var(--ink-soft); font: 400 13px var(--sans); opacity: 0; transition: opacity 260ms ease; }
+.rd-note.is-shown { opacity: 1; }
+.rd-red { fill: #ffc4c2; }
+
+/* the table */
+.rd-row { transition: opacity 260ms ease; }
+.rd-row.is-dim { opacity: 0.28; }
+.rd-pick { fill: rgba(247, 204, 9, 0.22); opacity: 0; transition: opacity 260ms ease; }
+.rd-row.is-picked .rd-pick { opacity: 1; }
+.rd-chip { fill: var(--tone); stroke: var(--ink); stroke-width: 1; }
+.rd-cell { fill: var(--ink-soft); font-size: 11.5px; }
+.rd-row.is-picked .rd-cell { fill: var(--ink); }
+.rd-location { fill: var(--dim); font-size: 11px; }
+.rd-row.is-picked .rd-location { fill: var(--violet); }
+
+.rd-link {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.rd-link.is-shown { opacity: 0.45; }
+.rd-link.is-shown.is-dim { opacity: 0.1; }
+
+.rd-read {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.8;
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.rd-read.is-shown { opacity: 1; }
+
+.rd-check {
+  fill: none;
+  stroke: #26745f;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.rd-check.is-shown { opacity: 1; }
+
+/* the carousel of the GeoZL page */
+.read-carousel {
+  width: max-content;
+  max-width: 100%;
+  margin: 6px auto 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--mono);
+}
+
+.read-carousel__button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.read-carousel__button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.read-carousel__button:hover,
+.read-carousel__button:focus-visible { color: var(--ink); }
+
+.read-carousel__button:focus-visible,
+.read-carousel__dot:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+
+.read-carousel__steps {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.read-carousel__dot {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.read-carousel__dot:hover,
+.read-carousel__dot:focus-visible { color: var(--ink-soft); }
+
+.read-carousel__dot.is-active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.read-carousel__announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-block, .rd-block-box, .rd-pointer, .rd-panel, .rd-panel-tie, .rd-note, .rd-row, .rd-pick,
+  .rd-link, .rd-read, .rd-check, .read-carousel__button, .read-carousel__dot { transition: none; }
+}
+
+@media (max-width: 560px) {
+  .read-text { font-size: 15px; }
+  .read-code { padding-left: 0; font-size: 11px; }
+  .read-carousel__steps { gap: 12px; }
+}

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="The cozip R API, function by function.">
+<title>cozip · R</title>
+<link rel="icon" href="assets/svg/cozip-mark-static.svg?v=3" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=League+Spartan:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/reading.css?v=2">
+<link rel="stylesheet" href="assets/css/docs.css?v=4">
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="lockup" href="index.html" aria-label="cozip home">
+      <img class="marksvg" src="assets/svg/cozip-mark.svg?v=3" alt="">
+      <span class="wm-sm">cozip</span>
+    </a>
+
+    <div class="offsite" aria-label="Project links">
+      <a href="https://github.com/asterisk-labs/cozip" title="GitHub" aria-label="cozip on GitHub" rel="noopener noreferrer">
+        <svg class="github" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"></path></svg>
+      </a>
+      <a class="pypi" href="https://pypi.org/project/cozip/" title="PyPI" aria-label="cozip on PyPI" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.3 14.3 4.7v6.6L8 14.7l-6.3-3.4V4.7Z"></path><path d="M1.7 4.7 8 8.1l6.3-3.4M8 8.1v6.6"></path></svg>
+        <img class="mark-color" src="assets/svg/pypi-color.svg" alt="" width="18" height="16">
+      </a>
+      <a class="karu" href="https://asterisk.coop/karu/" title="Karu" aria-label="Karu, the byte-range transport cozip reads through" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9M6.5 2.5v11.5M9.5 2.5v7M12.5 2.5v10"></path></svg>
+        <img class="mark-color" src="assets/svg/karu-mark-color.svg" alt="" width="16" height="16">
+      </a>
+      <a class="asterisk" href="https://asterisk.coop" title="asterisk labs" aria-label="asterisk labs" rel="noopener noreferrer">
+        <img class="mark-mono" src="assets/svg/asterisk-mark-black.svg" alt="" width="16" height="18">
+        <img class="mark-color" src="assets/svg/asterisk-mark-color.svg" alt="" width="16" height="18">
+      </a>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="api.html" class="here">API</a>
+      <a href="playground.html">Playground</a>
+      <a href="spec.html">Spec</a>
+      <a href="deck/index.html">Deck</a>
+    </nav>
+  </header>
+
+  <main class="doc">
+    <nav class="toc" aria-label="Contents">
+      <p class="toc-title">API</p>
+      <ol class="toc-pages">
+        <li><a href="api.html">Overview</a></li>
+        <li class="toc-group">Languages</li>
+        <li><a href="api-python.html">Python</a></li>
+        <li><a href="api-r.html" class="here" aria-current="page">R</a></li>
+        <li><a href="api-julia.html">Julia</a></li>
+        <li><a href="api-c.html">C</a></li>
+        <li><a href="api-js.html">JavaScript</a></li>
+      </ol>
+    </nav>
+
+    <article class="content">
+      <h1>R</h1>
+<ul class="facts">
+        <li>Package <code>cozip</code> on <a href="https://asterisk-labs.r-universe.dev/cozip" rel="noopener noreferrer">r-universe</a>, with binaries for Linux, macOS and Windows, on R 4.3 or newer.</li>
+      </ul>
+<pre><code class="language-r">install.packages("cozip", repos = "https://asterisk-labs.r-universe.dev")</code></pre>
+      <p>R compiles libcozip and its vendored dependencies. Arrow writes manifests and DuckDB decodes them. A source install needs GNU make, a C++23 compiler, pkg-config, libcurl 7.83 or newer and OpenSSL 3.</p>
+      <p>The exported functions are <a href="#create"><code>create</code></a> and its alias <code>write</code>, <a href="#stage_metadata"><code>stage_metadata</code></a>, <a href="#stage_create"><code>stage_create</code></a> and <a href="#read"><code>read</code></a>. <code>library(cozip)</code> masks <code>base::write</code>, so call <code>cozip::write</code>, or <code>base::write</code> when you need both. The rules every binding shares are on the <a href="api.html">API overview</a>.</p>
+
+      <h2 class="part" id="writing">Writing</h2>
+
+      <h3 id="create">create</h3>
+<pre><code class="sig language-r">create(out_path, table, temp_dir = NULL)</code></pre>
+      <p>Writes a Flat archive from a table, as <a href="api.html#write">Write</a> describes. <code>write</code> is the same function. It returns the absolute path of the archive, from <code>normalizePath()</code> after the write, with a leading <code>~</code> expanded first.</p>
+      <table class="spec">
+        <tr><th>out_path</th><td>The destination archive. An existing file is replaced.</td></tr>
+        <tr><th>table</th><td>An <code>arrow::Table</code> with <code>name</code>, <code>path</code> and your columns. Convert a data frame with <code>arrow::as_arrow_table(df)</code>.</td></tr>
+        <tr><th>temp_dir</th><td>Where the temporary manifest Parquet goes, created if missing. The default is <code>tempdir()</code>.</td></tr>
+      </table>
+<pre><code class="language-r">library(cozip)
+
+tbl &lt;- arrow::arrow_table(
+  name  = c("a.txt", "data/b.bin"),
+  path  = c("a.txt", "b.bin"),
+  split = c("train", "val")
+)
+create("out.zip", tbl)</code></pre>
+      <p><code>create()</code> uses zstd when Arrow provides it and chooses dictionary encoding per column from the first 10,000 rows. <code>name</code> and <code>path</code> may be character or factor columns, with no missing values.</p>
+
+      <h3 id="stage_metadata">stage_metadata</h3>
+<pre><code class="sig language-r">stage_metadata(table)</code></pre>
+      <p>Plans the archive without writing anything, the first of the <a href="api.html#stages">two stages</a>. It returns a list with <code>metadata</code>, the manifest as an <code>arrow::Table</code>, and <code>paths</code>, a data frame of <code>name</code> and <code>path</code> in the same order. <code>table</code> is as for <a href="#create"><code>create</code></a>.</p>
+<pre><code class="language-r">res &lt;- stage_metadata(tbl)
+as.data.frame(res$metadata)</code></pre>
+<pre class="output"><code>        name offset  size split
+1      a.txt    127    96 train
+2 data/b.bin    263 40960   val</code></pre>
+
+      <h3 id="stage_create">stage_create</h3>
+<pre><code class="sig language-r">stage_create(out_path, paths, metadata_parquet, validate = TRUE)</code></pre>
+      <p>Writes the archive around a manifest Parquet you wrote and returns its path, as <a href="#create"><code>create</code></a> does.</p>
+      <table class="spec">
+        <tr><th>out_path</th><td>The destination archive, a single non-empty string.</td></tr>
+        <tr><th>paths</th><td>A data frame with character <code>name</code> and <code>path</code> columns and no <code>NA</code>, in the manifest's row order.</td></tr>
+        <tr><th>metadata_parquet</th><td>The Parquet file, stored byte for byte as <code>__metadata__</code>.</td></tr>
+        <tr><th>validate</th><td>A single <code>TRUE</code> or <code>FALSE</code>.</td></tr>
+      </table>
+<pre><code class="language-r">res &lt;- stage_metadata(tbl)
+arrow::write_parquet(res$metadata, "metadata.parquet", compression = "zstd")
+stage_create("out.zip", res$paths, "metadata.parquet")</code></pre>
+
+      <h2 class="part" id="reading">Reading</h2>
+
+      <h3 id="read">read</h3>
+<pre><code class="sig language-r">read(source, columns = NULL, location = TRUE)</code></pre>
+      <p>Reads the manifest of a Flat archive into a tibble, one row per file. The arguments are described under <a href="api.html#read">Read</a>.</p>
+      <table class="spec">
+        <tr><th>source</th><td>A single string, in one of the <a href="api.html#sources">source forms</a>.</td></tr>
+        <tr><th>columns</th><td><code>NULL</code>, or a character vector. With a vector, the columns are <code>name</code>, <code>offset</code>, <code>size</code>, <code>cozip:location</code>, then the listed ones. An unknown name stops with an error.</td></tr>
+        <tr><th>location</th><td><code>TRUE</code> or <code>FALSE</code>.</td></tr>
+      </table>
+<pre><code class="language-r">url &lt;- "https://huggingface.co/datasets/asterisk-labs/cozip-api-fixtures/resolve/v0.1.0/data/cities.zip"
+manifest &lt;- cozip::read(url, columns = c("label", "continent"))
+manifest[manifest$continent == "Europe", c("name", "offset", "size")]</code></pre>
+<pre class="output"><code># A tibble: 2 x 3
+  name                 offset  size
+  &lt;chr&gt;                 &lt;dbl&gt; &lt;dbl&gt;
+1 cities/paris.geojson   1092   172
+2 cities/oslo.geojson    1313   171</code></pre>
+      <p><code>offset</code> and <code>size</code> come back as doubles, because DuckDB maps unsigned 64-bit integers to doubles in R. They are exact up to 2<sup>53</sup> bytes.</p>
+      <p><code>read</code> writes the manifest to a <code>tempfile()</code> and decodes it in a new DuckDB database, disconnected before the file is removed. Where the installed duckdb allows it, that database refuses extensions and stays out of <code>~/.duckdb</code>.</p>
+
+      <h3 id="verify">verify</h3>
+<pre><code class="sig language-r">verify(source)</code></pre>
+      <p>Checks an archive of any profile, as described under <a href="api.html#verify">Verify</a>. Returns <code>NULL</code> invisibly, or stops with an error such as <code>[cozip:HASH_MISMATCH] cozip integrity hash mismatch: dataset.zip</code>.</p>
+
+      <h3 id="files">Opening the files</h3>
+      <p>terra and sf open <code>cozip:location</code> through GDAL. A local archive also opens with a seek and a read of the <a href="api.html#files">byte range</a>.</p>
+<pre><code class="language-r">m &lt;- cozip::read(normalizePath("tiles.zip"))
+r &lt;- terra::rast(m[["cozip:location"]][1])
+
+con &lt;- file("tiles.zip", "rb")
+seek(con, m$offset[1])
+bytes &lt;- readBin(con, "raw", m$size[1])
+close(con)</code></pre>
+
+      <h2 class="part" id="geoparquet">GeoParquet manifests</h2>
+      <p>Store the geometry as WKB in a binary column and attach the <code>geo</code> key to the table. <code>stage_metadata</code> copies the schema metadata, so <code>create</code> writes a GeoParquet manifest.</p>
+<pre><code class="language-r">geo &lt;- '{"version": "1.1.0", "primary_column": "geometry",
+         "columns": {"geometry": {"encoding": "WKB", "geometry_types": ["Point"]}}}'
+
+tbl &lt;- arrow::arrow_table(
+  name     = names,
+  path     = files,
+  geometry = arrow::Array$create(unclass(sf::st_as_binary(geometries)), type = arrow::binary())
+)
+tbl$metadata$geo &lt;- geo
+cozip::create("dataset.zip", tbl)</code></pre>
+      <p><code>read</code> returns the geometry as a list of raw WKB vectors, which sf turns back into geometries.</p>
+<pre><code class="language-r">m &lt;- cozip::read("dataset.zip")
+g &lt;- sf::st_as_sfc(structure(m$geometry, class = "WKB"), crs = "OGC:CRS84")</code></pre>
+      <p>An sf data frame written with <code>arrow::write_parquet</code> and geoarrow is not a valid manifest. The Parquet has GeoArrow columns but no <code>geo</code> key, and <code>offset</code> and <code>size</code> become 32-bit integers.</p>
+
+      <h2 class="part" id="errors">Errors</h2>
+      <p>A check made in R stops with a message that starts with <code>cozip: </code> and counts rows from one. A failure inside libcozip carries its status name and counts entries from zero. The <a href="api.html#errors">API overview</a> lists the causes.</p>
+<pre class="output"><code>cozip: duplicate name 'a' at row 2
+[cozip:INVALID_ARGUMENT] entry 0 ('e') has a zero-byte payload; FLAT user entries must be non-empty
+[cozip:HASH_MISMATCH] cozip integrity hash mismatch: bad.zip</code></pre>
+      <p>Use a UTF-8 locale. Under <code>LC_ALL=C</code>, R turns a non-ASCII name such as <code>niño</code> into the ASCII text <code>ni&lt;c3&gt;&lt;b1&gt;o</code> before it reaches C, so it passes the ASCII rule and is stored under that name. In a UTF-8 locale the same name is refused. <code>Sys.getlocale("LC_CTYPE")</code> shows the current one.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a class="prev" href="api-python.html"><span>Previous</span>Python</a>
+        <a class="next" href="api-julia.html"><span>Next</span>Julia</a>
+      </nav>
+    </article>
+
+    <nav class="toc onpage" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ol class="toc-sections">
+        <li><a href="#writing">Writing</a></li>
+        <li><a href="#reading">Reading</a></li>
+        <li><a href="#geoparquet">GeoParquet manifests</a></li>
+        <li><a href="#errors">Errors</a></li>
+      </ol>
+    </nav>
+  </main>
+
+  <footer class="colophon">
+    <span>Made with</span>
+    <span class="heart" role="img" aria-label="love"></span>
+    <span>by</span>
+    <a class="by" href="https://asterisk.coop" rel="noopener noreferrer" aria-label="Asterisk Labs">
+      <img src="assets/svg/asterisk-mark.svg" alt="Asterisk Labs">
+    </a>
+  </footer>
+</div>
+<script src="assets/js/toc.js?v=1" defer></script>
+<script src="assets/js/code.js?v=1" defer></script>
+
+</body>
+</html>
